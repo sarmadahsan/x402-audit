@@ -65,6 +65,23 @@ The background poller re-checks the chain for 24 h after signing.
 - Resolved rows keep the `resolved_late` flag so the report can show how many
   headline rows were classified after the 10-minute window.
 
+### Delivered without a visible settlement
+
+If the seller returned 2xx but no settlement is ever found on-chain (the
+facilitator may have settled through a path our scanner does not see, or not
+at all), the row is classified by the validators as if paid, with the reason
+`settlement_unconfirmed` (and `settlement_absent_after_24h` once the poll
+window closes). Such rows stay in the count-weighted denominator; their dollar
+weight is the amount from the settlement response header if one was returned,
+otherwise zero. The report prints how many rows this is.
+
+### Validator configuration errors
+
+If our own config is broken (a JSON Schema that does not compile, an invalid
+JSONPath), the validator returns `skipped` with reason `schema_invalid` or
+`path_invalid`, never `fail`: the seller is not blamed for our mistake, and the
+row is flagged `schema_missing`.
+
 ### Probe rows
 
 Probe rows (module 2, no payment) can only be `ok`, `overcharge` or `our_error`

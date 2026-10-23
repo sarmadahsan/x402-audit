@@ -36,8 +36,10 @@ export interface ClassificationInput {
   quoteAmountAtomic: string;
   referencePriceAtomic?: string;
   referenceSource?: ReferenceSource;
-  /** Whether the quote was actually paid (false when over MAX_PER_CALL_USD). */
+  /** Whether the quote was actually paid (false when over MAX_PER_CALL_USD, and false for probe rows). */
   paid: boolean;
+  /** True when a buy attempt was skipped because the quote exceeded MAX_PER_CALL_USD. Distinguishes "unpaid because over cap" from probe rows. */
+  overCap?: boolean;
   validators?: Partial<Record<ValidatorName, ValidatorResult>>;
   latencyMs?: number;
   declaredMaxTimeoutSeconds?: number;
@@ -167,7 +169,7 @@ function decide(input: ClassificationInput, isOver: boolean, reasons: string[], 
   }
 
   // Quote over reference and over the per-call cap: nothing paid, nothing delivered.
-  if (isOver && !input.paid) {
+  if (isOver && !input.paid && input.overCap) {
     flags.add(FLAGS.UNPAID_OVERCHARGE);
     reasons.push("unpaid_overcharge:quote_over_reference_not_paid");
     return OUTCOMES.OVERCHARGE;

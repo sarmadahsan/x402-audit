@@ -182,6 +182,7 @@ describe("classify: one test per flag", () => {
       base({
         quoteAmountAtomic: "5000000000",
         paid: false,
+        overCap: true,
         paymentSent: false,
         settlementCount: 0,
         responseReceived: false,
@@ -191,6 +192,13 @@ describe("classify: one test per flag", () => {
     expect(c.outcome).toBe("overcharge");
     expect(c.flags).toContain("unpaid_overcharge");
     expect(c.flags).not.toContain("overcharged");
+  });
+  it("probe rows over the reference are overcharge without the unpaid_overcharge flag", () => {
+    const c = classify(
+      base({ quoteAmountAtomic: "5000000000", paid: false, paymentSent: false, settlementCount: 0, responseReceived: false, validators: {} }),
+    );
+    expect(c.outcome).toBe("overcharge");
+    expect(c.flags).not.toContain("unpaid_overcharge");
   });
   it("unpaid_overcharge loses to our_error", () => {
     const c = classify(base({ quoteAmountAtomic: "20000", paid: false, ourError: { reason: "cap" } }));
