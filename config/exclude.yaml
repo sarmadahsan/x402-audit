@@ -1,0 +1,8 @@
+# Sellers never probed or bought from. Match on seller domain (exact) or
+# resource URL prefix. Reasons are recorded for the report.
+sellers:
+  - domain: localhost
+    reason: local only
+  - domain: 127.0.0.1
+    reason: local only
+resource_prefixes: []

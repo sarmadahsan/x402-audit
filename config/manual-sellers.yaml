@@ -1,0 +1,12 @@
+# Endpoints not in Bazaar or x402scan. Each entry becomes a `resources` row with
+# source = manual. Price is in atomic units of the asset (USDC = 6 decimals).
+resources: []
+# - url: https://example.com/api/thing
+#   method: GET
+#   seller_domain: example.com
+#   category: data          # inference | data | scraping | compute | other
+#   declared_price_atomic: "10000"   # $0.01
+#   asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+#   network: eip155:8453
+#   pay_to: "0x..."
+#   description: ""

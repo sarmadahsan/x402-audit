@@ -1,0 +1,19 @@
+# Stratified sampling plan for `buy`. Weights are relative within a tier.
+target_calls: 3000
+max_total_usd: 300
+tiers:
+  top:
+    size: 20            # top N sellers by 30-day settlement volume
+    share: 0.5          # share of target_calls
+  tail:
+    size: 40            # random N from the rest (seeded; seed recorded in runs)
+    share: 0.5
+categories: [inference, data, scraping, compute, other]
+# Price weighting: a resource's selection weight is proportional to
+# 1 / max(price_usd, price_floor_usd), capped so one cheap resource cannot
+# dominate a stratum.
+price_floor_usd: 0.001
+max_share_per_resource: 0.05
+seed: 20261023
+# Rate limits
+min_seconds_between_calls_per_resource: 60
