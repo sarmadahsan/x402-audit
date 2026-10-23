@@ -1,0 +1,23 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# runtime data
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+halt
+
+# build / deps
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
