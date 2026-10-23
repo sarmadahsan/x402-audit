@@ -6,23 +6,25 @@ import { decodeBody } from "./util.js";
  * Conservative injection scanner. Both lists are audited by hand; extend them deliberately.
  * Phrases are matched case-insensitively as literals. Patterns use their own flags.
  */
+/**
+ * Conservative literal phrase list. Deliberately excludes phrases that appear in
+ * ordinary inference output or API data ("as an AI", "you are now", "assistant:",
+ * "exfiltrate"): a hit here is "flagged for human review", so false positives
+ * cost reviewer time and credibility. Extend only with docs/taxonomy.md updated.
+ */
 export const INJECTION_PHRASES: readonly string[] = [
   "ignore previous instructions",
   "ignore all previous instructions",
   "ignore the above",
   "disregard your instructions",
-  "you are now",
-  "as an ai",
   "system prompt",
   "developer message",
   "<|im_start|>",
   "[INST]",
   "###instruction",
-  "assistant:",
   "do not tell the user",
   "call the following tool",
   "run this command",
-  "exfiltrate",
   "send your api key",
   "print your system prompt",
 ];

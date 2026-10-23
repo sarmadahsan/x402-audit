@@ -126,6 +126,33 @@ polling in the background for 24 h.
 6. Mock seller with every failure mode on demand, and an in-memory facilitator.
 7. End-to-end local test: mock seller -> harness client -> validators -> classifier -> DB row.
 
+## Milestone 1 status (2026-10-23)
+
+Done. Everything runs locally against the mock seller; no network, no keys, no money.
+
+- `pnpm test`: 176 tests in 18 files. Taxonomy constants are checked against
+  `docs/taxonomy.md`; every validator has pass/fail/skipped tests; every
+  outcome and flag has a classifier test; the official client wrapper is tested
+  against a throwaway HTTP seller; the mock seller is paid by a real
+  `@x402/fetch` client; and `test/e2e-mock.test.ts` drives each mock failure
+  route through client, ledger, validators, settlement lookup, classifier and
+  SQLite, asserting the designed outcome.
+- Protocol facts were read from `coinbase/x402` at `0e6e8c5` (2026-10-15) and
+  index facts from live docs and probes on 2026-10-23; see `docs/protocol-notes.md`.
+- Findings that shape milestone 2+:
+  - CDP Bazaar discovery is public, keyless, ~37.9k resources, all v2; it gives
+    30-day call counts per resource but not USDC volume.
+  - x402scan's per-merchant volume endpoint is paid ($0.01 per 100 rows, via
+    x402 on Base mainnet), so even the cross-check is a mainnet purchase.
+  - Per-payTo 30-day volume therefore comes from chain logs (USDC `Transfer`
+    joined to `AuthorizationUsed` in the same tx; publicnode RPC allows
+    50k-block log queries; `mainnet.base.org` returns 429 for `eth_getLogs`).
+  - The reference express middleware settles only after a successful handler,
+    so "500 after settlement" needs a seller using the `upfront` flow or a
+    non-reference implementation; the mock settles upfront.
+  - Permit2 and non-`exact` requirements are excluded from buying; the client
+    wrapper signs only EIP-3009 authorizations.
+
 ## Open decisions for the operator
 
 - Precedence of `overcharge` versus delivery failures (currently severity order; see taxonomy).
