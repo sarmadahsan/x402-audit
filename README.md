@@ -43,7 +43,35 @@ sending and enforces the per-call cap before signing), `src/pipeline/paidCall.ts
 (the one paid-call path: ledger row before signing, validators, settlement
 lookup, classifier, DB row), `src/db/schema.sql`, `tools/mock-seller/`.
 
-## Wallets
+## Wallets (manual funding only)
 
-Not yet. Milestone 3 documents the manual funding procedure. The harness
-never funds wallets.
+The harness never funds a wallet and never moves funds between wallets. It
+only signs EIP-3009 `transferWithAuthorization` payments from the pool you
+give it, and only under the caps in `.env`.
+
+1. Generate N fresh keys locally (N is the pool size; 3 to 5 is enough for
+   round-robin per seller). For example with the installed foundry tools:
+
+   ```bash
+   cast wallet new
+   ```
+
+   Keep the private keys in a password manager. Never paste them anywhere but `.env`.
+2. Put them in `.env` as `X402_AUDIT_WALLET_KEYS=0x...,0x...,0x...` (comma
+   separated). `.env` is gitignored; `pnpm cli status` prints only the count.
+3. Fund each address with USDC on the target network from a wallet you
+   control. No ETH is needed: the seller's facilitator pays gas for EIP-3009
+   settlement (see `docs/protocol-notes.md`).
+   - Base Sepolia: Circle faucet, https://faucet.circle.com (20 USDC per 2 h).
+   - Base mainnet: send USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
+     from an exchange or your own wallet. Fund only what the approved plan
+     needs: `pnpm cli buy plan` prints the planned spend per stratum and the
+     total; `MAX_TOTAL_USD` caps it in code regardless of balances.
+4. Check balances before a run: `pnpm cli buy balances` (reads on-chain USDC
+   balances for every pool wallet; moves nothing).
+5. After the study, sweep the remaining USDC out manually. The harness has
+   no sweep command on purpose.
+
+Mainnet spending additionally requires `--live`, `X402_AUDIT_LIVE=1`, and
+`--network eip155:8453` on every invocation, and a passing integration suite
+(`pnpm test`).
