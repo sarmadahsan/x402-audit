@@ -9,6 +9,7 @@ import { registerDiscover } from "./cli/discover.js";
 import { registerProbe } from "./cli/probe.js";
 import { registerTelemetry } from "./cli/telemetry.js";
 import { registerReport } from "./cli/report.js";
+import { registerBuy, registerStress } from "./cli/buy.js";
 
 export interface GlobalOpts {
   dryRun: boolean;
@@ -34,11 +35,6 @@ export function requireLiveOrDryRun(g: GlobalOpts): { live: boolean; reason: str
   if (reason && g.live && g.network === MAINNET) throw new Error(`refusing live mainnet run: ${reason}`);
   return { live: reason === null, reason };
 }
-
-const notYet = (name: string, milestone: number) => () => {
-  log.warn(`${name}: not implemented yet (milestone ${milestone}). See docs/PLAN.md.`);
-  process.exitCode = 2;
-};
 
 export function buildProgram(): Command {
   const program = new Command("x402-audit")
@@ -102,8 +98,8 @@ export function buildProgram(): Command {
 
   registerDiscover(program, (cmd) => globalOpts(cmd));
   registerProbe(program, (cmd) => globalOpts(cmd));
-  program.command("buy").description("make real purchases under hard caps (milestone 3/4)").action(notYet("buy", 3));
-  program.command("stress").description("duplicate and timeout tests on a small subset (milestone 3/4)").action(notYet("stress", 3));
+  registerBuy(program, (cmd) => globalOpts(cmd), requireLiveOrDryRun);
+  registerStress(program, (cmd) => globalOpts(cmd), requireLiveOrDryRun);
   registerChain(program, (cmd) => globalOpts(cmd));
   registerTelemetry(program, (cmd) => globalOpts(cmd));
   registerReport(program, (cmd) => globalOpts(cmd));

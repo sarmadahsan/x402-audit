@@ -56,7 +56,8 @@ export interface ReportData {
     wallet_count: number;
     spend_atomic: string;
     spend_usdc: string;
-    spend_by_source: { source: string; paid_calls: number; spent_atomic: string; spent_usdc: string }[];
+    /** spent = sum of signed authorizations (upper bound); settled = sum of on-chain settlements matched to those calls (exact). */
+    spend_by_source: { source: string; paid_calls: number; spent_atomic: string; spent_usdc: string; settled_atomic: string; settled_usdc: string }[];
     calls_by_source: Record<string, number>;
     calls_by_source_outcome: { source: string; outcome: string; n: number }[];
   };
@@ -184,7 +185,7 @@ export function computeReport(db: Db, opts: ComputeOptions): ReportData {
 
   // ---- meta
   const bySourceOutcome = q<{ source: string; outcome: string; n: number }>("meta", "calls_by_source_outcome");
-  const spendRows = q<{ source: string; paid_calls: number; spent_atomic: string }>("meta", "spend_total");
+  const spendRows = q<{ source: string; paid_calls: number; spent_atomic: string; settled_atomic: string }>("meta", "spend_total");
   const wallets = num(q<{ wallets: number }>("meta", "wallets_used")[0]?.wallets);
   const dr = q<{ min_ts: number | null; max_ts: number | null }>("meta", "date_range")[0];
   const configHashes = q<{ config_hash: string }>("meta", "config_hashes").map((r) => r.config_hash);
@@ -411,7 +412,7 @@ export function computeReport(db: Db, opts: ComputeOptions): ReportData {
       wallet_count: wallets,
       spend_atomic: spend.toString(),
       spend_usdc: atomicToUsd(spend),
-      spend_by_source: spendRows.map((r) => ({ source: r.source, paid_calls: num(r.paid_calls), spent_atomic: big(r.spent_atomic).toString(), spent_usdc: atomicToUsd(big(r.spent_atomic)) })),
+      spend_by_source: spendRows.map((r) => ({ source: r.source, paid_calls: num(r.paid_calls), spent_atomic: big(r.spent_atomic).toString(), spent_usdc: atomicToUsd(big(r.spent_atomic)), settled_atomic: big(r.settled_atomic).toString(), settled_usdc: atomicToUsd(big(r.settled_atomic)) })),
       calls_by_source: callsBySource,
       calls_by_source_outcome: bySourceOutcome.map((r) => ({ source: r.source, outcome: r.outcome, n: num(r.n) })),
     },

@@ -241,6 +241,11 @@ export async function runStressDuplicate(db: Db, o: StressOptions): Promise<Stre
     const callIds = b ? [a.callId, b.callId] : [a.callId];
     const n = settlementsForIntent(db, intentId);
     rows.push({ resourceId: r.resourceId, url: r.url, intentId, callIds, settlements: n, doubleSettled: n > 1 });
+    if (n > 1) {
+      // docs/taxonomy.md: "the same purchase intent produced more than one on-chain settlement" is `duplicate`.
+      // Both rows of the intent get the outcome; the stress report still counts per intent.
+      db.prepare(`UPDATE calls SET outcome = 'duplicate', settlement_count = ?, classified_at = ? WHERE intent_id = ? AND source = 'stress_duplicate'`).run(n, Date.now(), intentId);
+    }
     c.L.info(`stress duplicate ${r.url}: ${n} settlement(s) for intent ${intentId.slice(0, 8)}`);
     if (!b) break;
   }

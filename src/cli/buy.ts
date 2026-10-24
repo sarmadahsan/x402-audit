@@ -1,0 +1,178 @@
+import type { Command } from "commander";
+import { erc20Abi, formatUnits } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { buildBuyPlan, renderPlan, assertPlanWithinCaps, planToJSON } from "../buy/plan.js";
+import { runBuy } from "../buy/run.js";
+import { loadServiceConfigs, serviceLookup } from "../buy/services.js";
+import { blockAtTimestamp, makeChainClient, usdcFor } from "../chain/client.js";
+import { makeChainLookupFactory, makeChainSettlementLookup, resolvePendingIndeterminate } from "../chain/confirm.js";
+import { atomicToUsd, capsFromEnv, loadEnv, loadFileConfigs, MAINNET, type Env, type Network } from "../config/index.js";
+import { openDb, type Db } from "../db/index.js";
+import { log } from "../log.js";
+import { runStressDuplicate, runStressTimeout, stressReport, selectStressResources } from "../stress/index.js";
+import { createPayer, type Payer } from "../x402/pay.js";
+import { finishRun, startRun } from "./runs.js";
+
+export interface MoneyGlobals { network: Network; db: string; live: boolean; dryRun: boolean }
+
+function rpcFor(env: Env, network: Network): string {
+  return network === MAINNET ? env.BASE_LOGS_RPC_URL : env.BASE_SEPOLIA_RPC_URL;
+}
+
+/** Wallet pool from .env. Keys never leave this function except inside Payer objects; nothing logs them. */
+export function payersFromEnv(env: Env, network: Network, perCallCapAtomic: bigint): Payer[] {
+  const keys = env.X402_AUDIT_WALLET_KEYS.split(",").map((k) => k.trim()).filter(Boolean);
+  if (keys.length === 0) throw new Error("X402_AUDIT_WALLET_KEYS is empty; see README 'Wallets'");
+  return keys.map((k) => {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(k)) throw new Error("a wallet key in X402_AUDIT_WALLET_KEYS is not a 32-byte hex string");
+    return createPayer({ privateKey: k as `0x${string}`, network, maxAmountAtomic: perCallCapAtomic, timeoutMs: 60_000 });
+  });
+}
+
+/** The gate every money-moving command passes through. Throws unless dry-run or every live condition holds. */
+export function moneyGate(g: MoneyGlobals, requireLive: (g: MoneyGlobals) => { live: boolean; reason: string | null }): { live: boolean } {
+  const gate = requireLive(g);
+  if (!g.dryRun && !gate.live) throw new Error(`refusing to move money: ${gate.reason}`);
+  if (gate.live && g.network === MAINNET) log.warn("LIVE MAINNET RUN: real USDC will be spent under the caps in .env");
+  return { live: gate.live };
+}
+
+export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGlobals, requireLive: (g: MoneyGlobals) => { live: boolean; reason: string | null }) {
+  const b = program.command("buy").description("make real purchases under hard caps (dry-run by default)");
+
+  b.command("plan")
+    .description("stratified sampling plan with planned spend per stratum; refuses if it exceeds MAX_TOTAL_USD")
+    .option("--seed <n>", "PRNG seed (default: config/sample.yaml)", (v) => parseInt(v, 10))
+    .option("--json", "print JSON", false)
+    .action(function (this: Command, o: { seed?: number; json: boolean }) {
+      const g = globals(this);
+      const env = loadEnv();
+      const files = loadFileConfigs();
+      const db = openDb(g.db);
+      const plan = buildBuyPlan(db, { sample: files.sample, caps: capsFromEnv(env), network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: true });
+      console.log(o.json ? JSON.stringify(planToJSON(plan), null, 2) : renderPlan(plan));
+      assertPlanWithinCaps(plan, capsFromEnv(env));
+      console.log(`\nPlanned total: ${plan.totalCalls} calls, ${atomicToUsd(plan.totalSpendAtomic)} USDC (cap MAX_TOTAL_USD=${env.MAX_TOTAL_USD})`);
+    });
+
+  b.command("balances")
+    .description("on-chain USDC balance of every pool wallet (moves nothing)")
+    .action(async function (this: Command) {
+      const g = globals(this);
+      const env = loadEnv();
+      const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
+      const keys = env.X402_AUDIT_WALLET_KEYS.split(",").map((k) => k.trim()).filter(Boolean);
+      const rows = [];
+      for (const k of keys) {
+        const addr = privateKeyToAccount(k as `0x${string}`).address;
+        const bal = await client.readContract({ address: usdcFor(g.network), abi: erc20Abi, functionName: "balanceOf", args: [addr] });
+        rows.push({ address: addr, usdc: formatUnits(bal, 6) });
+      }
+      console.log(JSON.stringify({ network: g.network, wallets: rows }, null, 2));
+    });
+
+  b.command("run")
+    .description("execute the plan; dry-run unless --live AND X402_AUDIT_LIVE=1 AND (for mainnet) --network eip155:8453")
+    .option("--seed <n>", "PRNG seed (default: config/sample.yaml)", (v) => parseInt(v, 10))
+    .option("--max-calls <n>", "stop after N calls this run", (v) => parseInt(v, 10))
+    .option("--confirm-minutes <n>", "settlement confirmation window", (v) => parseInt(v, 10), 10)
+    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number }) {
+      const g = globals(this);
+      const { live } = moneyGate(g, requireLive);
+      const env = loadEnv();
+      const files = loadFileConfigs();
+      const caps = capsFromEnv(env);
+      const db = openDb(g.db);
+      const plan = buildBuyPlan(db, { sample: files.sample, caps, network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: true });
+      assertPlanWithinCaps(plan, caps);
+      if (o.maxCalls) {
+        // Trim allocations proportionally for a partial run; the plan is re-derived from the same seed next time.
+        let left = o.maxCalls;
+        plan.allocations = plan.allocations.map((a) => { const c = Math.min(a.calls, left); left -= c; return { ...a, calls: c }; }).filter((a) => a.calls > 0);
+        plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
+      }
+      console.log(renderPlan(plan));
+      const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, live }, g.network, !live);
+      const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : [];
+      const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
+      try {
+        const stats = await runBuy(db, {
+          plan,
+          payers,
+          caps,
+          network: g.network,
+          settlementLookupFactory: makeChainLookupFactory({ client, network: g.network }),
+          services: serviceLookup(loadServiceConfigs()),
+          minSecondsBetweenCallsPerResource: files.sample.min_seconds_between_calls_per_resource,
+          confirmTimeoutMs: o.confirmMinutes * 60_000,
+          runId,
+          configHash: files.configHash,
+          log,
+          dryRun: !live,
+        });
+        finishRun(db, runId, stats.halted ? "halted" : "ok", { ...stats, callIds: undefined, schedule: undefined });
+        console.log(JSON.stringify({ ...stats, spentUsdc: atomicToUsd(stats.spentAtomic), callIds: undefined, schedule: undefined }, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+      } catch (e) {
+        finishRun(db, runId, "error", { error: (e as Error).message });
+        throw e;
+      }
+    });
+
+  b.command("resolve")
+    .description("re-check indeterminate calls against the chain (run periodically for 24 h after a buy run)")
+    .action(async function (this: Command) {
+      const g = globals(this);
+      const env = loadEnv();
+      const db = openDb(g.db);
+      const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
+      const oldest = db.prepare("SELECT MIN(ts) t FROM calls WHERE outcome = 'indeterminate'").get() as { t: number | null };
+      if (!oldest.t) { console.log(JSON.stringify({ checked: 0 })); return; }
+      const fromBlock = await blockAtTimestamp(client, Math.floor(oldest.t / 1000) - 600);
+      const lookup = makeChainSettlementLookup({ client, network: g.network, fromBlock, maxBlockRange: 50_000n });
+      const r = await resolvePendingIndeterminate(db, { lookup, defaultMaxTimeoutSeconds: 30 });
+      console.log(JSON.stringify(r));
+    });
+  return b;
+}
+
+export function registerStress(program: Command, globals: (cmd: Command) => MoneyGlobals, requireLive: (g: MoneyGlobals) => { live: boolean; reason: string | null }) {
+  const s = program.command("stress").description("duplicate and timeout tests on ~10 sellers; own caps, never in the headline");
+  const common = (cmd: Command) =>
+    cmd
+      .option("--count <n>", "number of sellers", (v) => parseInt(v, 10), 10)
+      .option("--max-rank <n>", "choose among sellers ranked 1..N by volume", (v) => parseInt(v, 10), 30)
+      .option("--confirm-minutes <n>", "settlement confirmation window", (v) => parseInt(v, 10), 10);
+  async function setup(cmd: Command, o: { count: number; maxRank: number }) {
+    const g = globals(cmd);
+    const { live } = moneyGate(g, requireLive);
+    const env = loadEnv();
+    const files = loadFileConfigs();
+    const caps = capsFromEnv(env);
+    const db = openDb(g.db);
+    const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
+    const resources = selectStressResources(db, { network: g.network, caps, count: o.count, maxRank: o.maxRank, exclude: files.exclude });
+    console.log(resources.map((r) => `${r.sellerDomain}\t${r.url}\t${r.priceAtomic !== undefined ? atomicToUsd(r.priceAtomic) : "?"}`).join("\n"));
+    return { g, live, env, files, caps, db, client, resources, payers: live ? payersFromEnv(env, g.network, caps.perCallAtomic) : [] };
+  }
+  common(s.command("duplicate").description("same intent twice back to back with fresh signatures; does it settle twice?")).action(async function (this: Command, o: { count: number; maxRank: number; confirmMinutes: number }) {
+    const c = await setup(this, o);
+    const runId = startRun(c.db, "stress duplicate", o, c.g.network, !c.live);
+    const r = await runStressDuplicate(c.db, { payers: c.payers, caps: c.caps, network: c.g.network, settlementLookupFactory: makeChainLookupFactory({ client: c.client, network: c.g.network }), resources: c.resources, services: serviceLookup(loadServiceConfigs()), confirmTimeoutMs: o.confirmMinutes * 60_000, runId, configHash: c.files.configHash, log, dryRun: !c.live });
+    finishRun(c.db, runId, "ok", r);
+    console.log(JSON.stringify(r, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+  });
+  common(s.command("timeout").description("sign, send, drop the connection after 2 s, check the chain, then retry like a naive client")).action(async function (this: Command, o: { count: number; maxRank: number; confirmMinutes: number }) {
+    const c = await setup(this, o);
+    const runId = startRun(c.db, "stress timeout", o, c.g.network, !c.live);
+    const r = await runStressTimeout(c.db, { payers: c.payers, caps: c.caps, network: c.g.network, settlementLookupFactory: makeChainLookupFactory({ client: c.client, network: c.g.network }), resources: c.resources, services: serviceLookup(loadServiceConfigs()), confirmTimeoutMs: o.confirmMinutes * 60_000, runId, configHash: c.files.configHash, log, dryRun: !c.live });
+    finishRun(c.db, runId, "ok", r);
+    console.log(JSON.stringify(r, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+  });
+  s.command("report").description("duplicate and timeout results per resource").action(function (this: Command) {
+    const g = globals(this);
+    console.log(stressReport(openDb(g.db)));
+  });
+  return s;
+}
+
+export type { Db };

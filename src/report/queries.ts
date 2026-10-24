@@ -209,7 +209,9 @@ export const QUERIES = {
 
   /** Exact spend: SUM(amount_paid_atomic) over paid=1 calls, by source. */
   spend_total: `SELECT c.source AS source, COUNT(*) AS paid_calls,
-      CAST(COALESCE(SUM(${intOf("c.amount_paid_atomic")}), 0) AS TEXT) AS spent_atomic
+      CAST(COALESCE(SUM(${intOf("c.amount_paid_atomic")}), 0) AS TEXT) AS spent_atomic,
+      CAST(COALESCE((SELECT SUM(${intOf("s.value_atomic")}) FROM settlements s JOIN calls c2 ON c2.id = s.call_id
+                      WHERE c2.source = c.source AND c2.ts BETWEEN @since AND @until), 0) AS TEXT) AS settled_atomic
     FROM calls c WHERE c.paid = 1 AND ${CALL_WINDOW}
     GROUP BY c.source ORDER BY c.source`,
 

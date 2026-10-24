@@ -59,7 +59,7 @@ export function renderMarkdown(data: ReportData): string {
   out.push("Calls by source and outcome (calls table):\n");
   out.push(table(["source", "outcome", "n"], m.calls_by_source_outcome.map((r) => [r.source, r.outcome, r.n])));
   out.push("Spend by source:\n");
-  out.push(table(["source", "paid calls", "spent"], m.spend_by_source.map((r) => [r.source, r.paid_calls, usdc(r.spent_atomic)])));
+  out.push(table(["source", "signed calls", "signed (upper bound)", "settled on-chain (exact)"], m.spend_by_source.map((r) => [r.source, r.paid_calls, usdc(r.spent_atomic), usdc(r.settled_atomic)])));
   out.push(queriesLine(data, "meta"));
 
   // 2

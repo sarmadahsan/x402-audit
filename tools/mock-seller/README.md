@@ -93,3 +93,36 @@ These are deliberate and are also noted in the code.
 - **Failure headers.** On verify or settle failure, the 402 carries both `PAYMENT-REQUIRED` (with `error`) and `PAYMENT-RESPONSE` success:false. The SDK sends only `PAYMENT-REQUIRED` on verify failure and only `PAYMENT-RESPONSE` on settle failure.
 - **Settle order.** Settlement happens before the handler (upfront-style) on every route.
 - **Nonce reuse.** A used nonce is caught by an in-memory nonce set, which stands in for the on-chain `authorizationState` simulation.
+
+## Chain mode (local anvil + TestUSDC)
+
+For milestone 3 integration tests the facilitator can settle for real on a local chain:
+
+```ts
+import { startAnvil, deployTestUsdc } from "./tools/mock-seller/anvil.js";
+const anvil = await startAnvil({ chainId: 84532, port: 0 });        // spawns /opt/homebrew/bin/anvil (or $ANVIL_BIN)
+const token = await deployTestUsdc(anvil.rpcUrl, anvil.accounts[0].privateKey);
+await token.mint(buyerAddress, 10_000_000n);
+const seller = await startMockSeller({
+  port: 0, network: "eip155:84532", asset: token.address,
+  chain: { rpcUrl: anvil.rpcUrl, tokenAddress: token.address, facilitatorPrivateKey: anvil.accounts[1].privateKey },
+});
+```
+
+- `contracts/TestUSDC.sol` is a minimal 6-decimal ERC-20 with EIP-3009 `transferWithAuthorization`
+  (both the `v, r, s` and the `bytes signature` overloads), EIP-712 domain `{name: "USDC", version: "2"}`
+  like Base Sepolia USDC, `Transfer` + `AuthorizationUsed(authorizer, nonce)` events, FiatTokenV2 revert
+  strings, and an owner-only `mint`. It is compiled once by `contracts/build.sh` (forge, solc 0.8.26) into the
+  committed `contracts/TestUSDC.json` `{abi, bytecode, compiler, sourceSha256}`; tests never need a compiler.
+  `chain.test.ts` fails if the artifact's `sourceSha256` no longer matches the source.
+- In chain mode `settle()` submits `transferWithAuthorization` from the facilitator account (a WalletClient,
+  submissions serialised) and returns the real tx hash after the receipt. Verify additionally checks the
+  token's `authorizationState`, and the validity window is checked against the latest block timestamp.
+  A reused nonce surfaces as `invalid_exact_evm_nonce_already_used` (FiatTokenV2 reverts are mapped to SDK codes).
+- `/fail/double-settle` answers **501** in chain mode: an on-chain exact-scheme duplicate of ONE authorization is
+  impossible (the token burns the nonce). Duplicates come from multiple signatures for one intent, which
+  `stress duplicate` measures.
+- `startAnvil` runs the chain clock 60 s behind wall-clock time (`clockLagSeconds`) so `/fail/slow`'s 1-second
+  authorization window (`validBefore = now + 1`) survives the settle transaction.
+- `anvil.ts` hard-codes anvil's default dev keys (from the public `test test ... junk` mnemonic). They are
+  public test keys and must never hold real funds.

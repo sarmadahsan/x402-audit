@@ -268,7 +268,8 @@ export function createMockFacilitator(opts: MockFacilitatorOptions): MockFacilit
 
     // 3/4. Time window. The SDK facilitator requires validBefore >= now + 6; we only require
     // validBefore > now so that /fail/slow (maxTimeoutSeconds: 1) is payable by a real client.
-    const now = BigInt(nowSec());
+    // In chain mode "now" is the latest block's timestamp, i.e. the clock the token itself checks.
+    const now = pub ? (await pub.getBlock({ blockTag: "latest" })).timestamp : BigInt(nowSec());
     if (BigInt(a.validBefore) <= now) return invalid("invalid_exact_evm_payload_authorization_valid_before", payer);
     if (BigInt(a.validAfter) > now) return invalid("invalid_exact_evm_payload_authorization_valid_after", payer);
 
