@@ -38,7 +38,7 @@ describe("assignSellerVolumes / topPayTos", () => {
       "INSERT INTO payto_volume (network, pay_to, from_block, to_block, from_ts, to_ts, transfer_count, sum_atomic, dust_count, dust_floor_atomic, unique_payers, computed_at) VALUES (?, ?, 0, 50, 0, 0, 99, '99999999999999999999', 0, '100', 1, 0)",
     ).run(NET, D);
 
-    expect(assignSellerVolumes(db, { network: NET, fromBlock: 100n, toBlock: 200n })).toEqual({ sellersRanked: 5 });
+    expect(assignSellerVolumes(db, { network: NET, fromBlock: 100n, toBlock: 200n })).toEqual({ sellersRanked: 5, shadows: 0 });
     const rows = db.prepare("SELECT domain, volume_30d_atomic AS v, volume_30d_calls AS c, volume_30d_source AS src, rank_30d AS r, volume_30d_computed_at AS at FROM sellers ORDER BY rank_30d").all() as any[];
     expect(rows.map((r) => [r.domain, r.v, r.c, r.r])).toEqual([
       ["big.example", "18014398509481986", 15, 1],
@@ -54,6 +54,26 @@ describe("assignSellerVolumes / topPayTos", () => {
       [A.toLowerCase(), "9007199254740993", ["big.example"]],
       [B.toLowerCase(), "9007199254740993", ["big.example"]],
       [C, "5000", ["b-tie.example"]],
+    ]);
+  });
+});
+
+describe("shared pay-to canonicalisation", () => {
+  it("gives rank only to the canonical seller of a shared pay-to", async () => {
+    const { openDb } = await import("../db/index.js");
+    const db = openDb(":memory:");
+    db.exec(`INSERT INTO sellers (id, domain, calls_30d_bazaar, first_seen_at, last_seen_at) VALUES (1,'main.example',1000,0,0),(2,'staging.example',3,0,0),(3,'other.example',50,0,0);
+             INSERT INTO resources (seller_id, url, source, pay_to, raw_json, first_seen_at, last_seen_at) VALUES
+               (1,'https://main.example/a','bazaar','0xAAAA','{}',0,0),(2,'https://staging.example/a','bazaar','0xaaaa','{}',0,0),(3,'https://other.example/a','bazaar','0xbbbb','{}',0,0);
+             INSERT INTO payto_volume (network, pay_to, from_block, to_block, from_ts, to_ts, transfer_count, sum_atomic, dust_count, dust_floor_atomic, unique_payers, computed_at) VALUES
+               ('eip155:8453','0xaaaa',1,2,0,0,10,'500000',0,'100',5,0),('eip155:8453','0xbbbb',1,2,0,0,3,'100000',0,'100',2,0);`);
+    const r = assignSellerVolumes(db, { network: "eip155:8453", fromBlock: 1n, toBlock: 2n });
+    expect(r).toEqual({ sellersRanked: 2, shadows: 1 });
+    const rows = db.prepare("SELECT domain, rank_30d, volume_30d_source, volume_30d_atomic FROM sellers ORDER BY id").all();
+    expect(rows).toEqual([
+      { domain: "main.example", rank_30d: 1, volume_30d_source: "chain", volume_30d_atomic: "500000" },
+      { domain: "staging.example", rank_30d: null, volume_30d_source: "chain:shadow_of:main.example", volume_30d_atomic: "500000" },
+      { domain: "other.example", rank_30d: 2, volume_30d_source: "chain", volume_30d_atomic: "100000" },
     ]);
   });
 });

@@ -78,6 +78,18 @@ export function registerChain(program: Command, globals: (cmd: Command) => { net
       console.log(JSON.stringify({ ...r.stats, sellersRanked: r.ranked.sellersRanked, fromBlock: r.fromBlock.toString(), toBlock: r.toBlock.toString(), payTos: r.payTos }));
     });
   chain
+    .command("rank")
+    .description("re-run seller ranking from the stored volume window without rescanning")
+    .action(function (this: Command) {
+      const g = globals(this);
+      const ctx = chainCtx(g.network, g.db);
+      const w = ctx.db.prepare("SELECT value FROM meta WHERE key = ?").get(`volume_window_${ctx.network}`) as { value: string } | undefined;
+      if (!w) throw new Error("no volume window stored; run chain scan-volume first");
+      const win = JSON.parse(w.value) as { fromBlock: string; toBlock: string };
+      const r = assignSellerVolumes(ctx.db, { network: ctx.network, fromBlock: BigInt(win.fromBlock), toBlock: BigInt(win.toBlock) });
+      console.log(JSON.stringify({ ...r, ...win }));
+    });
+  chain
     .command("top")
     .description("print the top N pay-to addresses by scanned volume")
     .option("--n <n>", "how many", (v) => parseInt(v, 10), 60)

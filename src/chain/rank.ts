@@ -14,7 +14,7 @@ export interface AssignOptions {
  * sellers.volume_30d_* and rank_30d (1 = largest; ties by transfer_count desc, then domain asc). Sellers with no
  * pay-to volume get "0" / 0 calls and rank after every non-zero seller.
  */
-export function assignSellerVolumes(db: Db, o: AssignOptions): { sellersRanked: number } {
+export function assignSellerVolumes(db: Db, o: AssignOptions): { sellersRanked: number; shadows: number } {
   // Distinct (seller, lowercase pay_to) pairs, so a pay-to listed by many resources of one seller counts once.
   // No filter on resources.network: v1 resources say "base", v2 "eip155:8453"; payto_volume is already per network.
   const pairs = db
@@ -40,19 +40,54 @@ export function assignSellerVolumes(db: Db, o: AssignOptions): { sellersRanked: 
     a.calls += v.transfer_count;
   }
 
+  // Shared pay-tos: several domains (staging hosts, mirrors, "evil" twins) often list the same pay-to, and the
+  // same on-chain volume would be attributed to each of them, letting one operator fill several top-N slots.
+  // For each pay-to the canonical seller is the one with the most Bazaar 30-day calls (tie: lowest id). A seller
+  // whose every pay-to is canonical for someone else is a shadow: it keeps its volume figures for the report but
+  // gets rank_30d = NULL and volume_30d_source = 'chain:shadow_of:<domain>', so top-N selections skip it.
+  const callsBySeller = new Map(
+    (db.prepare("SELECT id, COALESCE(calls_30d_bazaar, 0) c FROM sellers").all() as { id: number; c: number }[]).map((r) => [r.id, r.c]),
+  );
+  const sellersByPayTo = new Map<string, number[]>();
+  for (const p of pairs) {
+    if (!volByPayTo.has(p.pay_to)) continue;
+    sellersByPayTo.set(p.pay_to, [...(sellersByPayTo.get(p.pay_to) ?? []), p.seller_id]);
+  }
+  const canonicalByPayTo = new Map<string, number>();
+  for (const [payTo, ids] of sellersByPayTo) {
+    const best = [...new Set(ids)].sort((a, b) => (callsBySeller.get(b) ?? 0) - (callsBySeller.get(a) ?? 0) || a - b)[0]!;
+    canonicalByPayTo.set(payTo, best);
+  }
+  const shadowOf = new Map<number, number>();
+  for (const s of agg.values()) {
+    const mine = pairs.filter((p) => p.seller_id === s.id && volByPayTo.has(p.pay_to)).map((p) => p.pay_to);
+    if (mine.length === 0) continue;
+    const owners = new Set(mine.map((pt) => canonicalByPayTo.get(pt)!));
+    if (!owners.has(s.id) && owners.size >= 1) shadowOf.set(s.id, [...owners][0]!);
+  }
+
   const ordered = [...agg.values()].sort((x, y) => {
     if (x.sum !== y.sum) return x.sum > y.sum ? -1 : 1;
     if (x.calls !== y.calls) return y.calls - x.calls;
     return x.domain < y.domain ? -1 : x.domain > y.domain ? 1 : 0;
   });
   const upd = db.prepare(
-    "UPDATE sellers SET volume_30d_atomic = ?, volume_30d_calls = ?, volume_30d_source = 'chain', volume_30d_computed_at = ?, rank_30d = ? WHERE id = ?",
+    "UPDATE sellers SET volume_30d_atomic = ?, volume_30d_calls = ?, volume_30d_source = ?, volume_30d_computed_at = ?, rank_30d = ? WHERE id = ?",
   );
   const now = Date.now();
+  let rank = 0;
   db.transaction(() => {
-    ordered.forEach((s, i) => upd.run(s.sum.toString(), s.calls, now, i + 1, s.id));
+    for (const s of ordered) {
+      const owner = shadowOf.get(s.id);
+      if (owner !== undefined) {
+        upd.run(s.sum.toString(), s.calls, `chain:shadow_of:${agg.get(owner)?.domain ?? owner}`, now, null, s.id);
+      } else {
+        rank += 1;
+        upd.run(s.sum.toString(), s.calls, "chain", now, rank, s.id);
+      }
+    }
   })();
-  return { sellersRanked: ordered.length };
+  return { sellersRanked: rank, shadows: shadowOf.size };
 }
 
 export interface TopPayTo {
