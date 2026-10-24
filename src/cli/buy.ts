@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { erc20Abi, formatUnits } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { buildBuyPlan, renderPlan, assertPlanWithinCaps, planToJSON } from "../buy/plan.js";
 import { runBuy } from "../buy/run.js";
 import { loadServiceConfigs, serviceLookup } from "../buy/services.js";
@@ -27,6 +27,11 @@ export function payersFromEnv(env: Env, network: Network, perCallCapAtomic: bigi
     if (!/^0x[0-9a-fA-F]{64}$/.test(k)) throw new Error("a wallet key in X402_AUDIT_WALLET_KEYS is not a 32-byte hex string");
     return createPayer({ privateKey: k as `0x${string}`, network, maxAmountAtomic: perCallCapAtomic, timeoutMs: 60_000 });
   });
+}
+
+/** Dry runs sign nothing; they get throwaway in-memory keys so wallet rotation can be shown without any real key loaded. */
+export function ephemeralPayers(network: Network, perCallCapAtomic: bigint, n = 3): Payer[] {
+  return Array.from({ length: n }, () => createPayer({ privateKey: generatePrivateKey(), network, maxAmountAtomic: perCallCapAtomic }));
 }
 
 /** The gate every money-moving command passes through. Throws unless dry-run or every live condition holds. */
@@ -86,14 +91,25 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       const plan = buildBuyPlan(db, { sample: files.sample, caps, network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: true });
       assertPlanWithinCaps(plan, caps);
       if (o.maxCalls) {
-        // Trim allocations proportionally for a partial run; the plan is re-derived from the same seed next time.
+        // Partial run: take calls round-robin across allocations so a short run still spans sellers and strata.
+        // The full plan is re-derived from the same seed next time; spent calls are visible in the calls table.
+        const counts = new Map(plan.allocations.map((a) => [a.resourceId, 0]));
         let left = o.maxCalls;
-        plan.allocations = plan.allocations.map((a) => { const c = Math.min(a.calls, left); left -= c; return { ...a, calls: c }; }).filter((a) => a.calls > 0);
+        let progressed = true;
+        while (left > 0 && progressed) {
+          progressed = false;
+          for (const a of plan.allocations) {
+            if (left === 0) break;
+            const c = counts.get(a.resourceId)!;
+            if (c < a.calls) { counts.set(a.resourceId, c + 1); left -= 1; progressed = true; }
+          }
+        }
+        plan.allocations = plan.allocations.map((a) => ({ ...a, calls: counts.get(a.resourceId)! })).filter((a) => a.calls > 0);
         plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
       }
       console.log(renderPlan(plan));
       const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, live }, g.network, !live);
-      const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : [];
+      const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : ephemeralPayers(g.network, caps.perCallAtomic);
       const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
       try {
         const stats = await runBuy(db, {
@@ -152,7 +168,7 @@ export function registerStress(program: Command, globals: (cmd: Command) => Mone
     const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
     const resources = selectStressResources(db, { network: g.network, caps, count: o.count, maxRank: o.maxRank, exclude: files.exclude });
     console.log(resources.map((r) => `${r.sellerDomain}\t${r.url}\t${r.priceAtomic !== undefined ? atomicToUsd(r.priceAtomic) : "?"}`).join("\n"));
-    return { g, live, env, files, caps, db, client, resources, payers: live ? payersFromEnv(env, g.network, caps.perCallAtomic) : [] };
+    return { g, live, env, files, caps, db, client, resources, payers: live ? payersFromEnv(env, g.network, caps.perCallAtomic) : ephemeralPayers(g.network, caps.perCallAtomic) };
   }
   common(s.command("duplicate").description("same intent twice back to back with fresh signatures; does it settle twice?")).action(async function (this: Command, o: { count: number; maxRank: number; confirmMinutes: number }) {
     const c = await setup(this, o);

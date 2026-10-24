@@ -1,5 +1,6 @@
 import type { Db } from "../db/index.js";
 import { loadFileConfigs } from "../config/index.js";
+import { safeJson } from "../log.js";
 
 /** Every subcommand records a runs row so the report can list what ran with which config hash. */
 export function startRun(db: Db, subcommand: string, args: unknown, network: string, dryRun: boolean): number {
@@ -11,5 +12,5 @@ export function startRun(db: Db, subcommand: string, args: unknown, network: str
 }
 
 export function finishRun(db: Db, runId: number, status: "ok" | "halted" | "error", notes?: unknown): void {
-  db.prepare("UPDATE runs SET finished_at = ?, status = ?, notes = ? WHERE id = ?").run(Date.now(), status, notes === undefined ? null : JSON.stringify(notes), runId);
+  db.prepare("UPDATE runs SET finished_at = ?, status = ?, notes = ? WHERE id = ?").run(Date.now(), status, notes === undefined ? null : safeJson(notes), runId);
 }
