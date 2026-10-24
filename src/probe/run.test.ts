@@ -13,6 +13,8 @@ import { probeReport } from "./report.js";
 import { insertResource, insertSeller, silentLog } from "./test-helpers.js";
 
 const NET = "eip155:84532";
+// Tests must not be stopped by a `halt` file in the repo root (used to stop live jobs); each run gets its own empty halt root.
+const NO_HALT = mkdtempSync(join(tmpdir(), "x402-probe-nohalt-"));
 /** The mock's /fail/price-discriminate quotes 2x when the User-Agent contains "identity-b". */
 const TEST_IDENTITIES: ClientIdentity[] = [
   IDENTITY_A,
@@ -79,7 +81,7 @@ describe("runProbeRound against the mock seller", () => {
     expect(built.top + built.tail).toBe(PATHS.length);
     for (let i = 0; i < 2; i++) {
       stats.push(
-        await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, fetchImpl: slowFetch, perRequestGapMs: 0, log: silentLog, timeoutMs: 5000 }),
+        await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, fetchImpl: slowFetch, perRequestGapMs: 0, log: silentLog, timeoutMs: 5000, haltRoot: NO_HALT }),
       );
     }
   }, 30_000);
@@ -213,7 +215,7 @@ describe("reference price fallback", () => {
     buildProbeSet(db, { topSellers: 1, tailResources: 0, seed: 1, network: NET });
     db.prepare(`UPDATE resources SET declared_price_atomic = NULL WHERE id = ?`).run(rid);
     for (let i = 0; i < 3; i++) {
-      await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, perRequestGapMs: 0, log: silentLog });
+      await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, perRequestGapMs: 0, log: silentLog, haltRoot: NO_HALT });
     }
     const rows = rowsFor(db, rid);
     expect(rows).toHaveLength(6);
