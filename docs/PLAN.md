@@ -174,6 +174,40 @@ indeterminate resolver). Live status per milestone:
 - M6 `@x402-audit/client` + `telemetry serve`: built and tested; **unpublished**
   (a `prepublishOnly` guard refuses without `X402_AUDIT_PUBLISH_APPROVED=1`).
 
+## Milestone 2 numbers (2026-10-24, first hours)
+
+- `discover run`: 37,903 unique resources (38 index pages, 2 duplicates, 0 parse
+  rejects), 2,649 seller domains, 37,563 Base-exact resources, 0 permit2,
+  340 with no Base-exact option. Categories: data 23,089, other 8,457,
+  inference 2,645, scraping 2,023, compute 1,689.
+- `chain scan-volume --days 30`: blocks 51,712,495 to 53,008,495, 1,707
+  pay-to addresses, 1,292,210 USDC transfers stored, 460 RPC calls, 71 min on
+  publicnode. 1,617 canonical sellers ranked; 1,032 domains are shadows that
+  share a pay-to with a higher-traffic domain (staging hosts, mirrors, and a
+  domain literally named `jev-x402-evil.vercel.app` sharing a pay-to with
+  `jev-x402.vercel.app`). Top seller by volume: api.bitrefill.com at about
+  $607k over 30 days; the Bazaar call-count ranking and the dollar ranking
+  disagree sharply (ax1.vc has 443k transfers but $8.9k).
+- `probe plan`: 60 top sellers + 40 seeded tail resources (seed 20261023).
+- First two probe rounds: 200 requests each from identities A and B;
+  183 then 192 returned a 402; 2 then 6 quotes exceeded the Bazaar-listed
+  price (three resources, 1.6x to 2.5x, identical for both identities, so not
+  discrimination: either stale listings or real overcharge, which the 7-day
+  modal reference will separate); no pay-to changes, no price discrimination,
+  no 429s. The hourly loop is running (`data/probe-loop.log`).
+- `buy plan` (dry-run): 2,904 of 3,000 target calls across 57 sellers and
+  374 resources for about $42 USDC. Two single-seller strata (top/compute and
+  tail/scraping) carry $36 of it because their prices are $0.05 to $0.06.
+
+Reproduce:
+
+```bash
+pnpm cli --db data/audit.sqlite --network eip155:8453 discover report --top 100
+pnpm cli --db data/audit.sqlite --network eip155:8453 chain top --n 60
+pnpm cli --db data/audit.sqlite --network eip155:8453 probe report
+pnpm cli --db data/audit.sqlite --network eip155:8453 buy plan
+```
+
 ## Open decisions for the operator
 
 - Precedence of `overcharge` versus delivery failures (currently severity order; see taxonomy).
