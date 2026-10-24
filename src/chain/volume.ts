@@ -86,6 +86,8 @@ export const TOO_MUCH_PATTERNS = [
   "log response size exceeded",
   "response size exceeded",
   "response too large",
+  "exceeded the size limit",          // viem http transport: "HTTP response body exceeded the size limit." (10 MB)
+  "response body exceeded",
   "too many results",
   "block range is too large",
   "block range too large",

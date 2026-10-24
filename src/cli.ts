@@ -8,6 +8,7 @@ import { registerChain } from "./cli/chain.js";
 import { registerDiscover } from "./cli/discover.js";
 import { registerProbe } from "./cli/probe.js";
 import { registerTelemetry } from "./cli/telemetry.js";
+import { registerReport } from "./cli/report.js";
 
 export interface GlobalOpts {
   dryRun: boolean;
@@ -105,7 +106,7 @@ export function buildProgram(): Command {
   program.command("stress").description("duplicate and timeout tests on a small subset (milestone 3/4)").action(notYet("stress", 3));
   registerChain(program, (cmd) => globalOpts(cmd));
   registerTelemetry(program, (cmd) => globalOpts(cmd));
-  program.command("report").description("write reports/YYYY-MM-DD.md and .json (milestone 4)").action(notYet("report", 4));
+  registerReport(program, (cmd) => globalOpts(cmd));
   return program;
 }
 
