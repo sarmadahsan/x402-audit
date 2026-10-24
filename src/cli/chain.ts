@@ -2,6 +2,8 @@ import type { Command } from "commander";
 import { blockAtTimestamp, makeChainClient } from "../chain/client.js";
 import { assignSellerVolumes, topPayTos } from "../chain/rank.js";
 import { scanPayToVolume } from "../chain/volume.js";
+import { verifyAll, verifySample } from "../chain/verify.js";
+import { computeChainProxies, renderChainReport } from "../chain/report.js";
 import { atomicToUsd, loadEnv, loadFileConfigs, MAINNET, type Network } from "../config/index.js";
 import { openDb, type Db } from "../db/index.js";
 import { log } from "../log.js";
@@ -82,6 +84,44 @@ export function registerChain(program: Command, globals: (cmd: Command) => { net
     .action(function (this: Command, o: { n: number }) {
       const g = globals(this);
       console.log(renderTopPayTos(chainCtx(g.network, g.db), o.n));
+    });
+  chain
+    .command("verify-sample")
+    .description("sample N transfers per top pay-to and check for AuthorizationUsed in the same tx (EIP-3009 share with Wilson CI)")
+    .option("--top <n>", "top pay-tos by volume", (v) => parseInt(v, 10), 60)
+    .option("--per-payto <n>", "sample size per pay-to", (v) => parseInt(v, 10), 100)
+    .option("--seed <n>", "PRNG seed", (v) => parseInt(v, 10), 20261023)
+    .action(async function (this: Command, o: { top: number; perPayto: number; seed: number }) {
+      const g = globals(this);
+      const ctx = chainCtx(g.network, g.db);
+      const client = makeChainClient({ rpcUrl: ctx.rpcUrl, network: ctx.network });
+      const payTos = topPayTos(ctx.db, { network: ctx.network, n: o.top }).map((t) => t.payTo);
+      const stats = await verifySample(ctx.db, { client, network: ctx.network, payTos, perPayTo: o.perPayto, seed: o.seed, log });
+      console.log(JSON.stringify(stats));
+    });
+  chain
+    .command("verify-all")
+    .description("verify every non-dust transfer for the given pay-tos (or the top N) via receipts")
+    .option("--top <n>", "top pay-tos by volume", (v) => parseInt(v, 10), 10)
+    .option("--payto <addr...>", "explicit pay-to addresses")
+    .action(async function (this: Command, o: { top: number; payto?: string[] }) {
+      const g = globals(this);
+      const ctx = chainCtx(g.network, g.db);
+      const client = makeChainClient({ rpcUrl: ctx.rpcUrl, network: ctx.network });
+      const payTos = o.payto?.map((p) => p.toLowerCase()) ?? topPayTos(ctx.db, { network: ctx.network, n: o.top }).map((t) => t.payTo);
+      const stats = await verifyAll(ctx.db, { client, network: ctx.network, payTos, log });
+      console.log(JSON.stringify(stats));
+    });
+  chain
+    .command("report")
+    .description("market-wide overcharge and duplicate-loop proxy floors from on-chain data")
+    .option("--top <n>", "top pay-tos by volume", (v) => parseInt(v, 10), 60)
+    .option("--json", "print JSON instead of markdown", false)
+    .action(function (this: Command, o: { top: number; json: boolean }) {
+      const g = globals(this);
+      const ctx = chainCtx(g.network, g.db);
+      const data = computeChainProxies(ctx.db, { network: ctx.network, topN: o.top });
+      console.log(o.json ? JSON.stringify(data, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2) : renderChainReport(data));
     });
   return chain;
 }
