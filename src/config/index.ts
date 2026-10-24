@@ -100,6 +100,7 @@ const SampleSchema = z.object({
   categories: z.array(z.string()).min(1),
   price_floor_usd: z.number().positive(),
   max_share_per_resource: z.number().min(0).max(1),
+  max_resources_per_seller: z.number().int().positive().default(10),
   seed: z.number().int(),
   min_seconds_between_calls_per_resource: z.number().int().positive().default(60),
 });

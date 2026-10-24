@@ -120,8 +120,8 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
        FROM resources r JOIN sellers s ON s.id = r.seller_id
        WHERE r.network = ? AND r.scheme = 'exact' AND COALESCE(r.transfer_method, 'eip3009') != 'permit2'
          AND r.declared_price_atomic IS NOT NULL AND s.excluded = 0
-         ${requireProbe ? "AND EXISTS (SELECT 1 FROM probes p WHERE p.resource_id = r.id AND p.status = 402)" : ""}
-       ORDER BY r.seller_id, r.id`,
+         ${requireProbe ? "AND EXISTS (SELECT 1 FROM probes p JOIN resources pr ON pr.id = p.resource_id WHERE pr.seller_id = r.seller_id AND p.status = 402)" : ""}
+       ORDER BY r.seller_id, CAST(r.declared_price_atomic AS INTEGER) ASC, r.id`,
     )
     .all(network) as EligibleRow[];
 
@@ -141,12 +141,26 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
   if (overCap) notes.push(`${overCap} resource(s) dropped: declared price above the per-call cap (${atomicToUsd(caps.perCallAtomic)} USD) or not an integer.`);
   if (excludedByConfig) notes.push(`${excludedByConfig} resource(s) dropped by config/exclude.yaml.`);
 
+  // Up to max_resources_per_seller resources per seller (cheapest first; a probed resource is always kept),
+  // so a seller with hundreds of listings cannot dominate a stratum and a seller with one listing still counts.
+  const maxPerSeller = sample.max_resources_per_seller;
+  const probedIds = new Set(
+    requireProbe ? (db.prepare("SELECT DISTINCT resource_id FROM probes WHERE status = 402").all() as { resource_id: number }[]).map((r) => r.resource_id) : [],
+  );
   const bySeller = new Map<number, EligibleRow[]>();
   for (const r of eligible) {
     const l = bySeller.get(r.seller_id);
     if (l) l.push(r);
     else bySeller.set(r.seller_id, [r]);
   }
+  let trimmed = 0;
+  for (const [id, list] of bySeller) {
+    if (list.length <= maxPerSeller) continue;
+    const keep = [...list.filter((r) => probedIds.has(r.resource_id)), ...list.filter((r) => !probedIds.has(r.resource_id))].slice(0, maxPerSeller);
+    trimmed += list.length - keep.length;
+    bySeller.set(id, keep.sort((a, b) => a.resource_id - b.resource_id));
+  }
+  if (trimmed) notes.push(`${trimmed} resource(s) trimmed: at most ${maxPerSeller} resources per seller (cheapest first, probed ones kept).`);
   const sellerIds = [...bySeller.keys()].sort((a, b) => a - b);
   const rankOf = (id: number) => bySeller.get(id)![0]!.rank_30d;
   const top = sellerIds.filter((id) => {

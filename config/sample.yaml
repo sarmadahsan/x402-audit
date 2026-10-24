@@ -13,7 +13,10 @@ categories: [inference, data, scraping, compute, other]
 # 1 / max(price_usd, price_floor_usd), capped so one cheap resource cannot
 # dominate a stratum.
 price_floor_usd: 0.001
-max_share_per_resource: 0.05
+# A stratum often has only a handful of resources, so the per-resource share cap is loose;
+# the per-seller resource cap below is what stops one seller from dominating.
+max_share_per_resource: 0.25
+max_resources_per_seller: 10
 seed: 20261023
 # Rate limits
 min_seconds_between_calls_per_resource: 60

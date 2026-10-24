@@ -426,13 +426,14 @@ export function discoverReport(db: Db, opts: { top?: number } = {}): string {
 
   const hasVolume = one<{ n: number }>("SELECT COUNT(*) AS n FROM sellers WHERE volume_30d_atomic IS NOT NULL").n > 0;
   const order = hasVolume
-    ? "s.volume_30d_atomic IS NULL, CAST(s.volume_30d_atomic AS INTEGER) DESC, s.calls_30d_bazaar IS NULL, s.calls_30d_bazaar DESC, s.domain"
+    ? "s.rank_30d IS NULL, s.rank_30d ASC, CAST(s.volume_30d_atomic AS INTEGER) DESC, s.calls_30d_bazaar IS NULL, s.calls_30d_bazaar DESC, s.domain"
     : "s.calls_30d_bazaar IS NULL, s.calls_30d_bazaar DESC, s.domain";
   const rows = all<{
     domain: string; category: string | null; volume_30d_atomic: string | null; volume_30d_calls: number | null;
     calls_30d_bazaar: number | null; base_exact: number; payto: number; excluded: number; excluded_reason: string | null;
   }>(
-    `SELECT s.domain, s.category, s.volume_30d_atomic, s.volume_30d_calls, s.calls_30d_bazaar, s.excluded, s.excluded_reason,
+    `SELECT CASE WHEN s.volume_30d_source LIKE 'chain:shadow_of:%' THEN s.domain || ' (shares pay-to with ' || substr(s.volume_30d_source, 17) || ')' ELSE s.domain END AS domain,
+       s.category, s.volume_30d_atomic, s.volume_30d_calls, s.calls_30d_bazaar, s.excluded, s.excluded_reason,
        (SELECT COUNT(*) FROM resources r WHERE r.seller_id = s.id AND r.scheme = 'exact' AND r.network = @net) AS base_exact,
        (SELECT COUNT(DISTINCT lower(r.pay_to)) FROM resources r WHERE r.seller_id = s.id AND r.scheme = 'exact' AND r.network = @net) AS payto
      FROM sellers s ORDER BY ${order} LIMIT @top`,
