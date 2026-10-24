@@ -1,0 +1,28 @@
+# Category keyword table for `discover` (src/discover/categorize.ts).
+#
+# For each resource the categories below are tried in `order`; the first one with any
+# keyword hit wins, otherwise `fallback`. Within a category the sources are checked in
+# this order and the first hit is recorded as category_reason:
+#   tag:<kw>   item tags (plus extensions.bazaar.category / extensions.bazaar.tags)
+#   name:<kw>  serviceName
+#   desc:<kw>  description
+#   url:/<kw>  URL path (host is ignored)
+# A keyword matches as a whole word (case-insensitive, word = run of [a-z0-9]), with an
+# optional plural "s"/"es". Hyphenated keywords match "-", "_" or " " between parts.
+# Generic verbs such as "run" and "generate" are deliberately left out: they hit most descriptions
+# ("Generate a random UUID" is not inference).
+order: [inference, scraping, compute, data]
+fallback: other
+categories:
+  inference:
+    [llm, llms, chat, completion, completions, inference, model, gpt, claude, gemini, openai,
+     anthropic, embedding, embeddings, generative, text-generation, image-gen, image-generation, text-to-image,
+     text-to-speech, tts, transcribe, transcription, stable-diffusion]
+  scraping:
+    [scrape, scraper, scraping, crawl, crawler, crawling, extract, extraction, browser,
+     fetch-url, html, screenshot, web-data]
+  compute:
+    [compute, gpu, execute, execution, sandbox, transcode, render, convert, code-execution]
+  data:
+    [price, prices, market, market-data, quote, weather, news, search, lookup, token, wallet,
+     analytics, data, feed, verdict, report, balance, enrich, enrichment, crypto, defi, onchain]

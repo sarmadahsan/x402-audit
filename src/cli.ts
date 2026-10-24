@@ -4,6 +4,9 @@ import { openDb } from "./db/index.js";
 import { log } from "./log.js";
 import { sampleSizeForHalfWidth, wilsonInterval } from "./report/wilson.js";
 import { liveGateReason } from "./safety.js";
+import { registerChain } from "./cli/chain.js";
+import { registerDiscover } from "./cli/discover.js";
+import { registerProbe } from "./cli/probe.js";
 
 export interface GlobalOpts {
   dryRun: boolean;
@@ -95,11 +98,11 @@ export function buildProgram(): Command {
       console.log(JSON.stringify({ rate: o.rate, halfWidth: o.halfwidth, callsNeeded: n }));
     });
 
-  program.command("discover").description("build the universe of sellers and resources (milestone 2)").action(notYet("discover", 2));
-  program.command("probe").description("capture 402 quotes without paying (milestone 2)").action(notYet("probe", 2));
+  registerDiscover(program, (cmd) => globalOpts(cmd));
+  registerProbe(program, (cmd) => globalOpts(cmd));
   program.command("buy").description("make real purchases under hard caps (milestone 3/4)").action(notYet("buy", 3));
   program.command("stress").description("duplicate and timeout tests on a small subset (milestone 3/4)").action(notYet("stress", 3));
-  program.command("chain").description("passive on-chain measurement (milestone 5)").action(notYet("chain", 5));
+  registerChain(program, (cmd) => globalOpts(cmd));
   program.command("telemetry").description("opt-in telemetry ingest (milestone 6)").action(notYet("telemetry", 6));
   program.command("report").description("write reports/YYYY-MM-DD.md and .json (milestone 4)").action(notYet("report", 4));
   return program;

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "x402-audit/validators": ["../../src/validators/index.ts"],
+      "x402-audit/*": ["../../src/*.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

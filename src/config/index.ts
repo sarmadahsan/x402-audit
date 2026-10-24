@@ -32,6 +32,8 @@ const EnvSchema = z.object({
   X402_AUDIT_LIVE: z.string().default("0"),
   BASE_RPC_URL: z.string().url().default("https://mainnet.base.org"),
   BASE_SEPOLIA_RPC_URL: z.string().url().default("https://sepolia.base.org"),
+  /** RPC used for eth_getLogs scans; mainnet.base.org rejects them (429), publicnode allows 50k-block spans. */
+  BASE_LOGS_RPC_URL: z.string().url().default("https://base-rpc.publicnode.com"),
   X402_AUDIT_WALLET_KEYS: z.string().default(""),
   MAX_PER_CALL_USD: usd.default(0.5),
   MAX_PER_SELLER_PER_DAY_USD: usd.default(20),

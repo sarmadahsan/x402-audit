@@ -95,7 +95,7 @@ export const TOO_MUCH_PATTERNS = [
   "timeout",
 ];
 /** Rate limiting: back off and retry the same request. mainnet.base.org: -32011 "request limit reached". */
-export const RATE_LIMIT_PATTERNS = ["429", "too many requests", "request limit reached", "rate limit", "-32011", "-32005"];
+export const RATE_LIMIT_PATTERNS = ["status 429", "status: 429", "too many requests", "request limit reached", "rate limit", "code -32011"];
 
 function errorText(err: unknown): string {
   const parts: string[] = [];
@@ -241,7 +241,14 @@ export async function scanPayToVolume(db: Db, opts: ScanOptions): Promise<ScanSt
       splitHappened = true;
       const span = t - f + 1n;
       if (span > BigInt(minBlockSpan)) {
-        const mid = f + span / 2n - 1n;
+        // publicnode suggests a range that fits ("retry with the range A-B"); use B as the split point when
+        // it is inside [f, t), else halve.
+        let mid = f + span / 2n - 1n;
+        const hint = /retry with the range (\d+)-(\d+)/.exec(errorText(err));
+        if (hint?.[2]) {
+          const b = BigInt(hint[2]);
+          if (b >= f + BigInt(minBlockSpan) - 1n && b < t) mid = b;
+        }
         log.debug("chain: too many results, halving range", { from: f.toString(), to: t.toString(), addrs: addrs.length });
         return [...(await fetchLogs(addrs, f, mid)), ...(await fetchLogs(addrs, mid + 1n, t))];
       }

@@ -12,6 +12,14 @@
   "bin": {
     "x402-audit": "./bin/x402-audit.js"
   },
+  "exports": {
+    "./validators": "./src/validators/index.ts",
+    "./validators/types": "./src/validators/types.ts",
+    "./classify": "./src/classify.ts",
+    "./taxonomy": "./src/taxonomy.ts",
+    "./x402/http": "./src/x402/http.ts",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -40,6 +48,7 @@
     "@types/node": "^26.6.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "tsup": "^8.5.0"
   }
 }
