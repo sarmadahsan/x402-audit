@@ -130,7 +130,13 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
 
   let overCap = 0;
   let excludedByConfig = 0;
+  let templated = 0;
   const eligible = rows.filter((r) => {
+    // A path template (/coin/:symbol, /users/{id}) cannot be fetched literally; every call would be not_paid.
+    if (/\/:[A-Za-z_]+|\{[^}]+\}/.test(r.url)) {
+      templated++;
+      return false;
+    }
     if (!/^\d+$/.test(r.price) || BigInt(r.price) > caps.perCallAtomic) {
       overCap++;
       return false;
@@ -143,6 +149,7 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
   });
   if (overCap) notes.push(`${overCap} resource(s) dropped: declared price above the per-call cap (${atomicToUsd(caps.perCallAtomic)} USD) or not an integer.`);
   if (excludedByConfig) notes.push(`${excludedByConfig} resource(s) dropped by config/exclude.yaml.`);
+  if (templated) notes.push(`${templated} resource(s) dropped: URL is a path template (e.g. /:symbol) that cannot be fetched literally.`);
 
   // Up to max_resources_per_seller resources per seller (cheapest first; a probed resource is always kept),
   // so a seller with hundreds of listings cannot dominate a stratum and a seller with one listing still counts.
