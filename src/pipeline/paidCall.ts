@@ -9,6 +9,7 @@ import { classify, type Classification } from "../classify.js";
 import { log } from "../log.js";
 import { CALL_SOURCES, FLAGS, INDETERMINATE_POLL_MAX_MS, type CallSource, type ReferenceSource } from "../taxonomy.js";
 import { runAllValidators } from "../validators/index.js";
+import { malformedRequestReason } from "./badRequest.js";
 import type { ServiceConfig, ValidationContext, ValidatorResult } from "../validators/types.js";
 import type { PaidResult, Payer, SignedAuthorization } from "../x402/pay.js";
 import type { NormalizedRequirements } from "../x402/types.js";
@@ -145,10 +146,10 @@ export async function runPaidCall(i: PaidCallInput): Promise<PaidCallOutput> {
     }
   })();
   const rateLimited = response?.status === 429 || result.quoteResult?.status === 429;
-  // A 400/405/415/422 with no settlement means the seller rejected the request itself, not the payment:
+  // Seller rejected the request itself (4xx, or a 402 wrapping a 4xx validation error) with nothing settled:
   // our malformed request (docs/taxonomy.md #8), excluded from the denominator and counted separately.
-  const badRequest = response && [400, 405, 415, 422].includes(response.status) && settlements.length === 0;
-  const ourErrorFinal = ourError ?? (badRequest ? { reason: `malformed_request:http_${response!.status}` } : undefined);
+  const badReason = response ? malformedRequestReason(response.status, Buffer.from(response.body).toString("utf8").slice(0, 4096), settlements.length) : null;
+  const ourErrorFinal = ourError ?? (badReason ? { reason: badReason } : undefined);
 
   const classification = classify({
     ...(ourErrorFinal ? { ourError: ourErrorFinal } : {}),

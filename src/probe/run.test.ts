@@ -290,6 +290,8 @@ describe("urlWithExampleQuery", () => {
     expect(urlWithExampleQuery("https://api.agentstools.dev/extract", input)).toBe("https://api.agentstools.dev/extract?render=false&url=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FBitcoin");
     expect(urlWithExampleQuery("https://x.test/a?q=1", input)).toBe("https://x.test/a?q=1");
     expect(urlWithExampleQuery("https://x.test/a", JSON.stringify({ queryParams: { symbol: { type: "string", description: "ticker (e.g., BTC)" } } }))).toBe("https://x.test/a?symbol=BTC");
+    // typed-only descriptors with no example are left out rather than guessed
+    expect(urlWithExampleQuery("https://x.test/a", JSON.stringify({ queryParams: { category: { type: "string", description: "optional filter" }, num: 1 } }))).toBe("https://x.test/a?num=1");
     expect(urlWithExampleQuery("https://x.test/a", null)).toBe("https://x.test/a");
   });
 });

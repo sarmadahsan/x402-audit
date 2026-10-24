@@ -9,6 +9,7 @@ import { classify } from "../classify.js";
 import type { Db } from "../db/index.js";
 import { FLAGS, type Flag, type ReferenceSource } from "../taxonomy.js";
 import { runAllValidators } from "../validators/index.js";
+import { malformedRequestReason } from "./badRequest.js";
 import type { ServiceConfig, ValidationContext, ValidatorResult } from "../validators/types.js";
 
 export interface ReclassifyOptions {
@@ -44,7 +45,7 @@ export async function reclassifyCalls(db: Db, o: ReclassifyOptions): Promise<Rec
               c.quote_requirements_json, c.request_json, c.response_status, c.response_headers_json, c.response_body, c.response_truncated_by_us,
               c.response_incomplete, c.latency_ms, c.outcome, c.flags_json
          FROM calls c JOIN resources r ON r.id = c.resource_id JOIN sellers s ON s.id = c.seller_id
-        WHERE c.response_body IS NOT NULL AND c.outcome IS NOT NULL AND c.outcome NOT IN ('our_error') ${where} ORDER BY c.id`,
+        WHERE c.response_body IS NOT NULL AND c.outcome IS NOT NULL ${where} ORDER BY c.id`,
     )
     .all(...(o.callIds ?? [])) as Row[];
 
@@ -82,7 +83,9 @@ export async function reclassifyCalls(db: Db, o: ReclassifyOptions): Promise<Rec
     };
     const validators: Record<string, ValidatorResult> = await runAllValidators(ctx);
     const oldFlags = JSON.parse(row.flags_json) as Flag[];
+    const badReason = malformedRequestReason(row.response_status, Buffer.from(row.response_body!).toString("utf8").slice(0, 4096), row.settlement_count);
     const c = classify({
+      ...(badReason ? { ourError: { reason: badReason } } : {}),
       paymentSent: row.paid === 1,
       settlementCount: row.settlement_count,
       responseReceived: true,

@@ -150,7 +150,11 @@ export function exampleQueryFromInput(inputJson: string | null): Record<string, 
   for (const [k, raw] of Object.entries(qp)) {
     if (raw === null || raw === undefined) continue;
     if (typeof raw !== "object") { out[k] = String(raw); continue; }
-    // Typed descriptor rather than an example value: reuse the body synthesiser rules for one field.
+    // Typed descriptor rather than an example value: only use it when it carries a concrete example
+    // (example/default/enum/"e.g."). Query parameters are usually optional filters, and an invented value
+    // (category=x402-audit) gets the whole request rejected.
+    const d = raw as { example?: unknown; default?: unknown; enum?: unknown[]; description?: string };
+    if (d.example === undefined && d.default === undefined && !(Array.isArray(d.enum) && d.enum.length) && !/e\.g\./i.test(d.description ?? "")) continue;
     const synth = synthesizeBodyFromFields({ [k]: raw });
     const val = synth?.[k];
     if (val !== undefined && typeof val !== "object") out[k] = String(val);
