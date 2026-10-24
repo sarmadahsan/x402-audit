@@ -97,7 +97,11 @@ describe("computeChainProxies", () => {
     expect(a.dupFollowers.count).toBe(2);
     expect(v.market.n).toBe(16);
     expect(v.market.duplicate.count).toMatchObject({ k: 2, n: 16 });
-    expect(d.adjusted).toBe(v.market);
+    // A has an unchecked row and no sample -> partial; B fully verified: share-adjusted = verified rows here
+    expect(d.shareRules.map((r) => r.rule)).toEqual(["partial", "fully-verified"]);
+    expect(d.shareAdjusted.market.n).toBe(16);
+    expect(d.adjusted).toBe(d.shareAdjusted.market);
+    expect(d.adjustedBasis).toBe("share-adjusted");
   });
 
   it("no verified rows -> adjusted is null; dust floor and window are parameters", () => {
@@ -105,7 +109,9 @@ describe("computeChainProxies", () => {
     db.prepare("UPDATE chain_transfers SET via_authorization = NULL").run();
     const d = computeChainProxies(db, { network: NET });
     expect(d.verified.market.n).toBe(0);
+    expect(d.shareAdjusted.market.n).toBe(0);
     expect(d.adjusted).toBeNull();
+    expect(d.adjustedBasis).toBeNull();
     // dust floor 10 -> the 3 dust rows join: 2 more followers
     expect(computeChainProxies(db, { network: NET, dustFloorAtomic: 10n }).all.market.duplicate.count.k).toBe(4);
     // window 600 s -> the 500 s pair also counts
@@ -124,8 +130,15 @@ describe("computeChainProxies", () => {
   });
 
   it("exports the SQL under the names shared with src/report/queries.ts", () => {
-    expect(Object.keys(CHAIN_PROXY_QUERIES).sort()).toEqual(["chain_proxy_duplicate_runs", "chain_proxy_overcharge", "chain_proxy_totals"]);
+    expect(Object.keys(CHAIN_PROXY_QUERIES).sort()).toEqual([
+      "chain_proxy_duplicate_runs",
+      "chain_proxy_isolated_pairs",
+      "chain_proxy_overcharge",
+      "chain_proxy_totals",
+    ]);
     expect(CHAIN_PROXY_QUERIES.chain_proxy_duplicate_runs).toContain("LAG(block_ts) OVER w");
+    expect(CHAIN_PROXY_QUERIES.chain_proxy_isolated_pairs).toContain("PARTITION BY from_addr, to_addr, value_atomic");
+    expect(CHAIN_PROXY_QUERIES.chain_proxy_isolated_pairs).toContain("PARTITION BY from_addr, to_addr ORDER BY");
   });
 });
 
@@ -141,17 +154,133 @@ describe("renderChainReport", () => {
     expect(md).toContain(new Date(T0).toISOString());
     expect(md).toContain("### Count-weighted");
     expect(md).toContain("### Dollar-weighted");
-    expect(md).toContain("| proxy | all non-dust (n = 20) | verified only (n = 16) |");
-    expect(md).toContain("| overcharge proxy: value > mode | 20.00%");
-    expect(md).toContain("## Per pay-to (all non-dust view)");
-    expect(md).toContain(`| 1 | ${A} | a.example | 15 | $0.220000 | $0.010000 | 4 (26.67%) | 2 (13.33%) | 11 | 90.00% [60.00%, 98.00%] (n = 10) |`);
+    expect(md).toContain(
+      "| proxy | verified only (n = 16, 2 pay-tos) | pay-tos | share-adjusted (n = 16, 2 pay-tos) | pay-tos | " +
+        "all non-dust (not x402-filtered; shown for transparency only, not a floor) (n = 20, 2 pay-tos) | pay-tos |",
+    );
+    // verified 0/16 > mode (0 pay-tos), share-adjusted same, all 4/20 (1 pay-to): all non-dust column last
+    expect(md).toMatch(/\| overcharge proxy: value > mode \| 0\.00% \[[^\]]+\] \(0\) \| 0 \| 0\.00% \[[^\]]+\] \(0\) \| 0 \| 20\.00% \[[^\]]+\] \(4\) \| 1 \|/);
+    expect(md).toContain("| isolated duplicate pairs (lone retry) |");
+    expect(md).toContain("## Per pay-to (all non-dust view; not x402-filtered, transparency only)");
+    expect(md).toContain(`| 1 | ${A} | a.example | 15 | $0.220000 | $0.010000 | 4 (26.67%) | 2 (13.33%) | 0 | 11 | 90.00% [60.00%, 98.00%] (n = 10) |`);
     expect(md).toContain("## Per pay-to (verified view)");
-    expect(md).toContain("Adjusted (verified rows only)");
+    expect(md).toContain("## Per pay-to (share-adjusted view)");
+    expect(md).toContain("## Share-adjusted rule per pay-to");
+    expect(md).toContain(`| 1 | ${A} | partially verified: verified rows only | 15 | 1 | 11 | 11 | 60.00% |`);
+    expect(md).toContain("Adjusted (share-adjusted view)");
     expect(md).toContain("### EIP-3009 share (sampled receipts)");
     for (const c of CHAIN_CAVEATS) expect(md).toContain(c);
     expect(md).toMatch(/Delivery is invisible on-chain/);
     expect(md).toMatch(/floors/);
     expect(md).toMatch(/legitimately different product or a dynamic price/);
     expect(md).toMatch(/within 120 s may be a legitimate second purchase/);
+  });
+});
+
+/**
+ * Share-adjusted and isolated-pair fixture (all within block window 1000..2000):
+ *   P1: 4 x 5000 via = 1 + 1 x 5000 via = 0, distinct payers, hours apart -> rule (a), 4 rows used.
+ *   P2: all unverified, sampled share lo 0.963 -> rule (b), all 18 rows used:
+ *       X: isolated pair, 2 x 10000 30 s apart, nothing else from X to P2;
+ *       H: 10 x 2000 20 s apart (high-frequency consumer): 9 followers, 0 isolated pairs;
+ *       Y: 2 x 10000 30 s apart + 1 x 3000 30 min later (not isolated): 1 follower, 0 isolated pairs;
+ *       3 x 10000 singles from distinct payers.
+ *   P3: 2 x 7000 via = 1 + 3 x 7000 unverified, sampled share lo 0.30 -> partial, 2 rows used.
+ */
+const P1 = addr(0xa1);
+const P2 = addr(0xa2);
+const P3 = addr(0xa3);
+function seedShares(): Db {
+  txN = 0;
+  const db = openDb(":memory:");
+  const H = 3_600_000;
+  for (let i = 0; i < 4; i++) ins(db, { from: addr(0x1000 + i), to: P1, value: "5000", ts: T0 + i * 2 * H, via: 1 });
+  ins(db, { from: addr(0x1010), to: P1, value: "5000", ts: T0 + 9 * H, via: 0 });
+  const X = addr(0x2000);
+  ins(db, { from: X, to: P2, value: "10000", ts: T0 + 10 * H });
+  ins(db, { from: X, to: P2, value: "10000", ts: T0 + 10 * H + 30_000 });
+  const HF = addr(0x2001);
+  for (let i = 0; i < 10; i++) ins(db, { from: HF, to: P2, value: "2000", ts: T0 + 12 * H + i * 20_000 });
+  const Y = addr(0x2002);
+  ins(db, { from: Y, to: P2, value: "10000", ts: T0 + 14 * H });
+  ins(db, { from: Y, to: P2, value: "10000", ts: T0 + 14 * H + 30_000 });
+  ins(db, { from: Y, to: P2, value: "3000", ts: T0 + 14 * H + 30 * 60_000 });
+  for (let i = 0; i < 3; i++) ins(db, { from: addr(0x2100 + i), to: P2, value: "10000", ts: T0 + (16 + i) * H });
+  for (let i = 0; i < 5; i++) ins(db, { from: addr(0x3000 + i), to: P3, value: "7000", ts: T0 + i * 2 * H, via: i < 2 ? 1 : null });
+  computePayToVolumes(db, { network: NET, payTos: [P1, P2, P3], fromBlock: 1_000n, toBlock: 2_000n, fromTsMs: BigInt(T0), toTsMs: BigInt(T0 + 100_000_000), dustFloorAtomic: 100n });
+  const meta = (payTo: string, sampled: number, via: number, lo: number, hi: number) =>
+    db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)").run(
+      eip3009ShareMetaKey(NET, payTo),
+      JSON.stringify({ payTo, sampled, viaAuthorization: via, share: via / sampled, lo, hi, population: sampled, errors: 0 }),
+    );
+  meta(P2, 100, 100, 0.963, 1);
+  meta(P3, 10, 4, 0.3, 0.7);
+  return db;
+}
+
+describe("share-adjusted view and isolated duplicate pairs", () => {
+  it("chooses a rule per pay-to", () => {
+    const d = computeChainProxies(seedShares(), { network: NET });
+    expect(d.universePayTos).toBe(3);
+    const rule = (p: string) => d.shareRules.find((r) => r.payTo === p)!;
+    expect(rule(P1)).toMatchObject({ rule: "fully-verified", nonDustRows: 5, uncheckedRows: 0, verifiedRows: 4, includedRows: 4, shareLo: null });
+    expect(rule(P2)).toMatchObject({ rule: "high-share", nonDustRows: 18, uncheckedRows: 18, verifiedRows: 0, includedRows: 18, shareLo: 0.963 });
+    expect(rule(P3)).toMatchObject({ rule: "partial", nonDustRows: 5, uncheckedRows: 3, verifiedRows: 2, includedRows: 2, shareLo: 0.3 });
+  });
+
+  it("three views' counts and pay-to counts", () => {
+    const d = computeChainProxies(seedShares(), { network: NET });
+    expect(d.verified.market).toMatchObject({ n: 6, payTos: 2 });
+    expect(d.shareAdjusted.market).toMatchObject({ n: 24, payTos: 3 });
+    expect(d.all.market).toMatchObject({ n: 28, payTos: 3 });
+    expect(d.shareAdjusted.rows.find((r) => r.payTo === P1)!.transfers).toBe(4);
+    expect(d.shareAdjusted.rows.find((r) => r.payTo === P2)!.transfers).toBe(18);
+    expect(d.shareAdjusted.rows.find((r) => r.payTo === P3)!.transfers).toBe(2);
+    expect(d.adjusted).toBe(d.shareAdjusted.market);
+    expect(d.adjustedBasis).toBe("share-adjusted");
+    // P1 / P3 have no rows in their own (payer-distinct) duplicates; only P2 contributes duplicates
+    expect(d.shareAdjusted.market.duplicate.payTos).toBe(1);
+    expect(d.verified.market.isolatedPairs.count.k).toBe(0);
+  });
+
+  it("isolated pairs: lone retry counts, high-frequency consumer and non-isolated pair do not", () => {
+    const d = computeChainProxies(seedShares(), { network: NET });
+    const p2 = d.shareAdjusted.rows.find((r) => r.payTo === P2)!;
+    expect(p2.dupFollowers.count).toBe(1 + 9 + 1);
+    expect(p2.isolatedPairs).toEqual({ count: 1, atomic: 10_000n });
+    const m = d.shareAdjusted.market.isolatedPairs;
+    expect(m.count).toMatchObject({ k: 1, n: 24 });
+    expect(m.dollar.atomic).toBe(10_000n);
+    expect(m.payTos).toBe(1);
+    expect(d.all.market.isolatedPairs.count.k).toBe(1);
+    // isolation window shrunk below 30 min -> Y's pair also isolated
+    expect(computeChainProxies(seedShares(), { network: NET, isolationS: 600 }).all.market.isolatedPairs.count.k).toBe(2);
+    // window shrunk below 30 s -> no pairs, H's 20 s run still has followers
+    const w = computeChainProxies(seedShares(), { network: NET, windowS: 25 }).all.market;
+    expect(w.isolatedPairs.count.k).toBe(0);
+    expect(w.duplicate.count.k).toBe(9);
+  });
+
+  it("threshold is a parameter; share-adjusted always contains the verified rows", () => {
+    const db = seedShares();
+    // lo 0.963 < 0.99 -> P2 becomes partial and contributes its 0 verified rows
+    const d = computeChainProxies(db, { network: NET, shareAdjustMinLo: 0.99 });
+    expect(Object.fromEntries(d.shareRules.map((r) => [r.payTo, r.rule]))).toEqual({ [P1]: "fully-verified", [P2]: "partial", [P3]: "partial" });
+    expect(d.shareAdjusted.market.n).toBe(d.verified.market.n);
+    expect(d.adjustedBasis).toBe("share-adjusted");
+    db.prepare("DELETE FROM meta").run();
+    db.prepare("UPDATE chain_transfers SET via_authorization = NULL").run();
+    const e = computeChainProxies(db, { network: NET });
+    expect(e.shareRules.map((r) => r.rule)).toEqual(["partial", "partial", "partial"]);
+    expect(e.adjusted).toBeNull();
+  });
+
+  it("renders the rule labels", () => {
+    const md = renderChainReport(computeChainProxies(seedShares(), { network: NET }));
+    expect(md).toContain(`| ${P1} | (a) fully verified: via_authorization = 1 rows | 5 | 0 | 4 | 4 | not sampled |`);
+    expect(md).toContain(`| ${P2} | (b) sampled share lo >= 95%: all non-dust rows, assumed x402 | 18 | 18 | 0 | 18 | 96.30% |`);
+    expect(md).toContain(`| ${P3} | partially verified: verified rows only | 5 | 3 | 2 | 2 | 30.00% |`);
+    expect(md).toContain("isolated duplicate pairs 4.17%");
+    expect(md).toContain("(1 pairs, $0.010000)");
   });
 });

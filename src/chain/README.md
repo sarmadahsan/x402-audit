@@ -41,21 +41,47 @@ receipts, so:
 ## Proxy report (report.ts)
 
 Universe: `topPayTos(db, { network, n: topN = 60 })`, each pay-to restricted to its own latest
-`payto_volume` block window and to `value >= dustFloorAtomic` (default 100 atomic units). Two views:
-**all non-dust** (verified or not) and **verified** (`via_authorization = 1` only). The "adjusted" rate is the
-verified view's rate whenever it has any rows.
+`payto_volume` block window and to `value >= dustFloorAtomic` (default 100 atomic units). Three views,
+printed in this order:
+
+1. **verified**: `via_authorization = 1` rows only (EIP-3009 settlements). Small while only samples are verified.
+2. **share-adjusted** (`shareAdjusted`): one rule per pay-to, chosen in JS from the all-view totals and the
+   `eip3009_share_<network>_<payTo>` meta row, and listed per pay-to in the report (`shareRules`):
+   - (a) `fully-verified`: every non-dust row in the window is checked (no `via_authorization IS NULL`) ->
+     its `via_authorization = 1` rows;
+   - (b) `high-share`: otherwise, if the sampled EIP-3009 share's Wilson 95% lower bound is
+     `>= SHARE_ADJUST_MIN_LO` (0.95; option `shareAdjustMinLo`) -> **all** its non-dust rows, under the
+     stated assumption that they are x402 settlements (at most a few percent may be unrelated USDC flows);
+   - `partial`: otherwise -> only its verified rows, and the pay-to is flagged "partially verified";
+   - `empty`: no non-dust rows.
+   The rule is passed to SQL as a per-entry `verified_only` (0 for `high-share`, 1 otherwise) in `@universe`,
+   which overrides `@verified_only` for that pay-to. This removes pay-tos that mostly receive non-x402 USDC
+   (for example a 15% sampled share) from the full-volume numbers while keeping high-share pay-tos at full
+   volume instead of only their sampled rows. It always contains at least the verified rows.
+3. **all non-dust** (verified or not): not x402-filtered; shown last for transparency only, never a floor.
+
+The "adjusted" line uses the share-adjusted view when it has rows, else the verified view
+(`adjustedBasis`), else it is not available.
 
 SQL (exported in `CHAIN_PROXY_QUERIES`, shared CTE `CHAIN_PROXY_UNIVERSE_CTE`; parameters `@network`,
-`@universe` JSON array of `{pay_to, from_block, to_block}`, `@dust_floor`, `@verified_only`, `@window_ms`):
+`@universe` JSON array of `{pay_to, from_block, to_block, verified_only?}`, `@dust_floor`, `@verified_only`,
+`@window_ms`, `@isolation_ms`):
 
 | name | returns | used for |
 |---|---|---|
 | `chain_proxy_totals` | per pay-to: n, distinct payers, verified / plain / unchecked rows, block and ts range | transfers, unique payers, verification coverage |
 | `chain_proxy_overcharge` | per (pay-to, value): n | sum, mode (most frequent value, ties -> lower; bigint in JS), > mode and > 2 x mode counts and dollars |
 | `chain_proxy_duplicate_runs` | per (pay-to, value): followers, runs | duplicate-loop proxy: `LAG(block_ts)` over `PARTITION BY from_addr, to_addr, value_atomic ORDER BY block_ts, block_number, log_index, id`; follower = predecessor at most `@window_ms` earlier (`DUPLICATE_RUN_WINDOW_S` = 120 s); run = follower whose own predecessor is not a follower |
+| `chain_proxy_isolated_pairs` | per (pay-to, value): pairs | stricter duplicate proxy (lone retry): a (from, to, value) run of exactly 2 transfers at most `@window_ms` apart (`LAG`/`LEAD` over `PARTITION BY from_addr, to_addr, value_atomic`) where the payer made no other transfer of any value to that payee within `@isolation_ms` (`ISOLATION_S` = 1 h) before the first or after the second (`LAG(block_ts, 2)` / `LEAD(block_ts)` over `PARTITION BY from_addr, to_addr`, and the pair must be adjacent there). One row per pair, so pairs = followers in pairs; dollars = value of the second transfer |
+
+Followers vs isolated pairs: a high-frequency consumer (one payer paying the same price every few seconds)
+makes almost every transfer a "follower" but produces no isolated pair, so followers measure repeat
+traffic and isolated pairs approximate lone retries (a duplicate charge pattern).
 
 Market-wide: count-weighted rates with `wilsonInterval`, dollar-weighted with `dollarWeightedWilson`
-(Kish effective n, approximate), for > mode, > 2 x mode and duplicate followers, in both views.
+(Kish effective n, approximate), for > mode, > 2 x mode, duplicate followers and isolated pairs, in all three
+views. Each view's column is followed by the number of pay-tos contributing (pay-tos with at least one
+flagged transfer; the header gives the pay-tos with any row in that view).
 
 `src/report/queries.ts` already has `chain_proxy_overcharge` and `chain_proxy_duplicate_runs`, over the
 time window only (no top-N universe, no dust floor in SQL, no verified restriction, row-level followers).
@@ -63,5 +89,6 @@ They do not match this report, so these keep the same names for a later merge ra
 
 Caveats (printed verbatim in every report, `CHAIN_CAVEATS`): delivery is invisible on-chain; these are
 floors; a payment above the mode may be a legitimately different product or a dynamic price; a repeated
-identical transfer within 120 s may be a legitimate second purchase; dust and unrelated transfers are
-excluded by the floor and (where verified) by the AuthorizationUsed join.
+identical transfer within 120 s may be a legitimate second purchase; isolated pairs can still be deliberate
+repeat purchases; dust and unrelated transfers are excluded by the floor and (where verified) by the
+AuthorizationUsed join; the share-adjusted view's rule (b) assumes high-share pay-tos' unverified rows are x402.
