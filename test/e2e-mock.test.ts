@@ -204,3 +204,21 @@ describe("e2e against the mock seller", () => {
     expect(db.prepare("SELECT source FROM calls WHERE id = ?").get(o.callId)).toEqual({ source: "stress_timeout" });
   });
 });
+
+describe("reclassify from stored rows", () => {
+  it("restores the right outcome after a validator fix (simulated by corrupting a row)", async () => {
+    const { reclassifyCalls } = await import("../src/pipeline/reclassify.js");
+    const o = await call("/ok?symbol=ETH");
+    expect(o.classification.outcome).toBe("ok");
+    db.prepare("UPDATE calls SET outcome = 'non_delivery', flags_json = '[\"slow\"]' WHERE id = ?").run(o.callId);
+    const dry = await reclassifyCalls(db, { reason: "test", apply: false, callIds: [o.callId], services: () => service });
+    expect(dry.changed.map((c) => [c.oldOutcome, c.newOutcome])).toEqual([["non_delivery", "ok"]]);
+    expect(db.prepare("SELECT outcome FROM calls WHERE id = ?").get(o.callId)).toEqual({ outcome: "non_delivery" });
+    const applied = await reclassifyCalls(db, { reason: "test", apply: true, callIds: [o.callId], services: () => service });
+    expect(applied.changed).toHaveLength(1);
+    expect(db.prepare("SELECT outcome, flags_json FROM calls WHERE id = ?").get(o.callId)).toEqual({ outcome: "ok", flags_json: "[]" });
+    expect(db.prepare("SELECT reason, old_outcome, new_outcome FROM reclassifications WHERE call_id = ?").get(o.callId)).toEqual({ reason: "test", old_outcome: "non_delivery", new_outcome: "ok" });
+    const again = await reclassifyCalls(db, { reason: "test", apply: false, callIds: [o.callId], services: () => service });
+    expect(again.changed).toHaveLength(0);
+  });
+});

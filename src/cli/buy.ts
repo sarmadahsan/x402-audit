@@ -12,6 +12,7 @@ import { log } from "../log.js";
 import { runStressDuplicate, runStressTimeout, stressReport, selectStressResources } from "../stress/index.js";
 import { createPayer, type Payer } from "../x402/pay.js";
 import { finishRun, startRun } from "./runs.js";
+import { reclassifyCalls } from "../pipeline/reclassify.js";
 import { assertGate } from "../gate.js";
 
 export interface MoneyGlobals { network: Network; db: string; live: boolean; dryRun: boolean }
@@ -148,6 +149,19 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         finishRun(db, runId, "error", { error: (e as Error).message });
         throw e;
       }
+    });
+
+  b.command("reclassify")
+    .description("re-run validators and classification on stored rows (after a validator fix); shows changes, writes only with --apply")
+    .requiredOption("--reason <text>", "why (recorded in the reclassifications audit table)")
+    .option("--apply", "write the changes", false)
+    .option("--ids <n...>", "restrict to call ids", (v, acc: number[] = []) => [...acc, parseInt(v, 10)])
+    .action(async function (this: Command, o: { reason: string; apply: boolean; ids?: number[] }) {
+      const g = globals(this);
+      const db = openDb(g.db);
+      const r = await reclassifyCalls(db, { reason: o.reason, apply: o.apply, ...(o.ids ? { callIds: o.ids } : {}), services: serviceLookup(loadServiceConfigs()) });
+      for (const c of r.changed) console.log(`${c.callId}\t${c.oldOutcome} -> ${c.newOutcome}\t[${c.oldFlags}] -> [${c.newFlags}]\t${c.url}`);
+      console.log(JSON.stringify({ examined: r.examined, changed: r.changed.length, applied: r.applied }));
     });
 
   b.command("resolve")

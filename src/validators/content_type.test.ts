@@ -28,4 +28,10 @@ describe("content_type", () => {
     expect(r.reason).toBe("body_not_json");
     expect(r.evidence.parse_error).toBeTypeOf("string");
   });
+  it("treats an empty declared mimeType as undeclared and falls back to application/json", async () => {
+    const r = await contentType.run(makeCtx({ requirements: { mimeType: "" }, response: { headers: { "content-type": "application/json" }, body: "{}" } }));
+    expect(r.status).toBe("pass");
+    expect(r.evidence.expected_source).toBe("default");
+    expect(r.evidence.expected).toBe("application/json");
+  });
 });

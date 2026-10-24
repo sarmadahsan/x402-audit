@@ -11,7 +11,8 @@ function matches(expected: string, actual: string): boolean {
 export const contentType: Validator = {
   name: VALIDATORS.CONTENT_TYPE,
   run(ctx) {
-    const declared = ctx.requirements.mimeType;
+    // Sellers may send mimeType "" (or whitespace); that is "undeclared", not an empty expectation.
+    const declared = ctx.requirements.mimeType?.trim() || undefined;
     const expected_source = declared ? "requirements" : "default";
     const expectedRaw = declared ?? "application/json";
     const expected = mediaType(expectedRaw);

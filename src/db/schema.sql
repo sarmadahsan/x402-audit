@@ -308,3 +308,16 @@ CREATE TABLE IF NOT EXISTS telemetry_calls (
   raw_json        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS telemetry_calls_source ON telemetry_calls(source_id, received_at);
+
+-- Audit trail for re-running validators/classification on stored rows (buy reclassify).
+CREATE TABLE IF NOT EXISTS reclassifications (
+  id            INTEGER PRIMARY KEY,
+  call_id       INTEGER NOT NULL REFERENCES calls(id),
+  ts            INTEGER NOT NULL,
+  reason        TEXT NOT NULL,
+  old_outcome   TEXT,
+  new_outcome   TEXT,
+  old_flags_json TEXT,
+  new_flags_json TEXT,
+  code_commit   TEXT
+);
