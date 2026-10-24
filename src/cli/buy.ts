@@ -12,6 +12,7 @@ import { log } from "../log.js";
 import { runStressDuplicate, runStressTimeout, stressReport, selectStressResources } from "../stress/index.js";
 import { createPayer, type Payer } from "../x402/pay.js";
 import { finishRun, startRun } from "./runs.js";
+import { assertGate } from "../gate.js";
 
 export interface MoneyGlobals { network: Network; db: string; live: boolean; dryRun: boolean }
 
@@ -38,7 +39,10 @@ export function ephemeralPayers(network: Network, perCallCapAtomic: bigint, n = 
 export function moneyGate(g: MoneyGlobals, requireLive: (g: MoneyGlobals) => { live: boolean; reason: string | null }): { live: boolean } {
   const gate = requireLive(g);
   if (!g.dryRun && !gate.live) throw new Error(`refusing to move money: ${gate.reason}`);
-  if (gate.live && g.network === MAINNET) log.warn("LIVE MAINNET RUN: real USDC will be spent under the caps in .env");
+  if (gate.live && g.network === MAINNET) {
+    assertGate(); // a passing integration suite recorded by `pnpm gate` for this exact commit
+    log.warn("LIVE MAINNET RUN: real USDC will be spent under the caps in .env");
+  }
   return { live: gate.live };
 }
 

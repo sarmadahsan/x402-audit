@@ -95,5 +95,8 @@ give it, and only under the caps in `.env`.
    no sweep command on purpose.
 
 Mainnet spending additionally requires `--live`, `X402_AUDIT_LIVE=1`, and
-`--network eip155:8453` on every invocation, and a passing integration suite
-(`pnpm test`).
+`--network eip155:8453` on every invocation, and a passing integration suite:
+`pnpm gate` runs every test (including the anvil integration suite) and writes
+`data/.gate.json` for the current commit; a live mainnet `buy run` or `stress`
+refuses unless that marker matches HEAD, the tree is clean, and the pass is
+less than 24 hours old.

@@ -208,6 +208,15 @@ pnpm cli --db data/audit.sqlite --network eip155:8453 probe report
 pnpm cli --db data/audit.sqlite --network eip155:8453 buy plan
 ```
 
+## Approval record
+
+- 2026-10-24: operator approved the mainnet buy plan as printed by `buy plan`
+  (about 2,904 calls, about $42 USDC, seed 20261023, caps as in `.env.example`:
+  per call 0.50, per seller per day 20, per day 100, total 300). Wallet funding
+  is manual by the operator. The live run starts only on the operator's
+  explicit go, with `--live`, `X402_AUDIT_LIVE=1`, `--network eip155:8453`,
+  and a passing integration suite recorded by `pnpm gate` for the current commit.
+
 ## Open decisions for the operator
 
 - Precedence of `overcharge` versus delivery failures (currently severity order; see taxonomy).

@@ -5,6 +5,7 @@
 
 # runtime data
 data/
+.gate.json
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
