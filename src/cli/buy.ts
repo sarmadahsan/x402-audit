@@ -86,7 +86,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .option("--seed <n>", "PRNG seed (default: config/sample.yaml)", (v) => parseInt(v, 10))
     .option("--max-calls <n>", "stop after N calls this run", (v) => parseInt(v, 10))
     .option("--confirm-minutes <n>", "settlement confirmation window", (v) => parseInt(v, 10), 10)
-    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number }) {
+    .option("--confirm-interval-seconds <n>", "how often to re-check the chain while waiting for a settlement", (v) => parseInt(v, 10), 3)
+    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number }) {
       const g = globals(this);
       const { live } = moneyGate(g, requireLive);
       const env = loadEnv();
@@ -138,6 +139,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
           services: serviceLookup(loadServiceConfigs()),
           minSecondsBetweenCallsPerResource: files.sample.min_seconds_between_calls_per_resource,
           confirmTimeoutMs: o.confirmMinutes * 60_000,
+          confirmIntervalMs: o.confirmIntervalSeconds * 1_000,
           runId,
           configHash: files.configHash,
           log,
