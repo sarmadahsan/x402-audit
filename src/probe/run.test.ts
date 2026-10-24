@@ -7,7 +7,7 @@ import { openDb, type Db } from "../db/index.js";
 import type { FetchImpl } from "../x402/http.js";
 import { IDENTITY_A, type ClientIdentity } from "./identities.js";
 import { buildProbeSet } from "./set.js";
-import { buildRequest, exampleBodyFromInput, modalAmount, runProbeRound } from "./run.js";
+import { buildRequest, exampleBodyFromInput, modalAmount, runProbeRound, synthesizeBodyFromFields } from "./run.js";
 import { probeLoop } from "./schedule.js";
 import { probeReport } from "./report.js";
 import { insertResource, insertSeller, silentLog } from "./test-helpers.js";
@@ -261,5 +261,23 @@ describe("helpers", () => {
     expect(r.headers["content-type"]).toBe("application/json");
     expect(buildRequest({ method: "post", inputJson: null }, IDENTITY_A).body).toBe("{}");
     expect(buildRequest({ method: "GET", inputJson: input }, IDENTITY_A).body).toBeUndefined();
+  });
+});
+
+describe("synthesizeBodyFromFields", () => {
+  it("builds a minimal chat-completions body from a blockrun-style descriptor", () => {
+    const input = JSON.stringify({
+      bodyFields: {
+        max_tokens: { description: "Maximum tokens to generate", type: "integer" },
+        messages: { description: "Array of chat messages with role and content", type: "array" },
+        model: { description: "AI model ID (e.g., gpt-4o-mini, claude-haiku-4.5)", type: "string" },
+        stream: { description: "Enable streaming responses", type: "boolean" },
+        temperature: { description: "Sampling temperature (0-2)", type: "number" },
+      },
+      method: "POST",
+      type: "http",
+    });
+    expect(exampleBodyFromInput(input)).toEqual({ max_tokens: 1, messages: [{ role: "user", content: "ping" }], model: "gpt-4o-mini", stream: false, temperature: 1 });
+    expect(synthesizeBodyFromFields({ q: { type: "string" }, n: { enum: [5, 6] }, flag: { type: "boolean", default: true } })).toEqual({ q: "x402-audit", n: 5, flag: true });
   });
 });

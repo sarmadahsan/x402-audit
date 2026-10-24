@@ -125,7 +125,52 @@ export function exampleBodyFromInput(inputJson: string | null): unknown {
       }
     }
   }
+  // No example: synthesise a minimal body from a `bodyFields` descriptor ({ name: { type, description } }),
+  // which is how many Bazaar entries describe POST inputs.
+  for (const input of roots) {
+    if (!input || typeof input !== "object") continue;
+    const fields = (input as Record<string, unknown>)["bodyFields"];
+    if (fields && typeof fields === "object" && !Array.isArray(fields)) {
+      const body = synthesizeBodyFromFields(fields as Record<string, unknown>);
+      if (body && Object.keys(body).length > 0) return body;
+    }
+  }
   return undefined;
+}
+
+/**
+ * Minimal, auditable body from typed field descriptors. Rules, in order:
+ *  - an example in the description ("e.g., gpt-4o-mini, claude-haiku") -> its first item;
+ *  - a field named `messages` -> one user message "ping" (chat-completions shape);
+ *  - `stream` -> false; `max_tokens`/`maxTokens` -> 1 (keeps inference cheap);
+ *  - otherwise by type: string "x402-audit", integer/number 1, boolean false, array [], object {}.
+ * The exact body sent is stored on every row (calls.request_json / probes.request_headers_json),
+ * so a seller's 400 on a synthesised body is auditable and lands in our_error, never on the seller.
+ */
+export function synthesizeBodyFromFields(fields: Record<string, unknown>): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  for (const [name, spec] of Object.entries(fields)) {
+    const f = (spec && typeof spec === "object" ? spec : {}) as { type?: string; description?: string; example?: unknown; enum?: unknown[]; default?: unknown };
+    if (f.example !== undefined) { out[name] = f.example; continue; }
+    if (f.default !== undefined) { out[name] = f.default; continue; }
+    if (Array.isArray(f.enum) && f.enum.length > 0) { out[name] = f.enum[0]; continue; }
+    const eg = /e\.g\.,?\s*([^)\]\n]+)/i.exec(f.description ?? "");
+    if (eg && (f.type === undefined || f.type === "string")) {
+      const first = eg[1]!.split(/,|;| or /)[0]!.trim().replace(/^['"`]|['"`.]+$/g, "");
+      if (first) { out[name] = first; continue; }
+    }
+    if (name === "messages") { out[name] = [{ role: "user", content: "ping" }]; continue; }
+    if (name === "stream") { out[name] = false; continue; }
+    if (name === "max_tokens" || name === "maxTokens") { out[name] = 1; continue; }
+    switch (f.type) {
+      case "integer": case "number": out[name] = 1; break;
+      case "boolean": out[name] = false; break;
+      case "array": out[name] = []; break;
+      case "object": out[name] = {}; break;
+      case "string": default: out[name] = "x402-audit"; break;
+    }
+  }
+  return out;
 }
 
 export function buildRequest(row: Pick<ProbeSetRow, "method" | "inputJson">, identity: ClientIdentity): PreparedRequest {

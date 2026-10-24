@@ -115,7 +115,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       // so a halted or crashed run can be restarted without resampling the first resources.
       if (live) {
         const done = new Map(
-          (db.prepare("SELECT resource_id, COUNT(*) n FROM calls WHERE source = 'buy' GROUP BY resource_id").all() as { resource_id: number; n: number }[]).map((r) => [r.resource_id, r.n]),
+          // our_error rows are excluded from the denominator, so they do not consume the resource's allocation.
+          (db.prepare("SELECT resource_id, COUNT(*) n FROM calls WHERE source = 'buy' AND outcome != 'our_error' GROUP BY resource_id").all() as { resource_id: number; n: number }[]).map((r) => [r.resource_id, r.n]),
         );
         const before = plan.totalCalls;
         plan.allocations = plan.allocations.map((a) => ({ ...a, calls: Math.max(0, a.calls - (done.get(a.resourceId) ?? 0)) })).filter((a) => a.calls > 0);
