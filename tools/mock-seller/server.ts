@@ -20,7 +20,13 @@ import { getAddress } from "viem";
 import type { AddressInfo } from "node:net";
 import type { ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
-import { createMockFacilitator, mountFacilitatorRoutes, type MockFacilitator, type Settlement } from "./facilitator.js";
+import {
+  createMockFacilitator,
+  mountFacilitatorRoutes,
+  type ChainFacilitatorOptions,
+  type MockFacilitator,
+  type Settlement,
+} from "./facilitator.js";
 
 export type { Settlement } from "./facilitator.js";
 export { signExactPayment } from "./sign.js";
@@ -45,6 +51,12 @@ export interface MockSellerOptions {
   /** Listed (catalog) price in atomic units. Default "10000" ($0.01 with 6 decimals). */
   listedPriceAtomic?: string;
   facilitatorMode?: "inprocess";
+  /**
+   * Chain mode: the in-process facilitator settles with a real transferWithAuthorization on this
+   * chain (local anvil + TestUSDC). Set `asset` to the same token address. /fail/double-settle
+   * answers 501 in this mode.
+   */
+  chain?: ChainFacilitatorOptions;
   /** Host used to build URLs. Default "127.0.0.1". */
   host?: string;
 }
@@ -113,7 +125,8 @@ export async function startMockSeller(opts: MockSellerOptions = {}): Promise<Moc
   const listed = BigInt(opts.listedPriceAtomic ?? "10000");
   const host = opts.host ?? "127.0.0.1";
 
-  const facilitator = createMockFacilitator({ network });
+  const facilitator = createMockFacilitator({ network, ...(opts.chain ? { chain: opts.chain } : {}) });
+  const chainMode = facilitator.mode === "chain";
 
   // Per-route quote state.
   let paytoCounter = 0;
@@ -302,6 +315,17 @@ export async function startMockSeller(opts: MockSellerOptions = {}): Promise<Moc
 
   for (const route of routes) {
     app.get(route.path, async (c) => {
+      if (chainMode && route.settleMode === "duplicate") {
+        return c.json(
+          {
+            error: "not_implemented_in_chain_mode",
+            note:
+              "An on-chain exact-scheme duplicate of ONE authorization is impossible: the token burns the EIP-3009 nonce on first use. " +
+              "Duplicates come from multiple signatures for one purchase intent, which `stress duplicate` tests.",
+          },
+          501,
+        );
+      }
       const header = c.req.header("payment-signature");
       if (!header) {
         const req = buildRequirements(route, c, true);

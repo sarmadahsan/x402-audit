@@ -5,6 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicToUsd } from "../config/index.js";
+import { HEADLINE_FAILURE_OUTCOMES, PAID_DENOMINATOR_OUTCOMES } from "../taxonomy.js";
 import type { CountRate, DollarRate, GroupRow, ReportData } from "./compute.js";
 
 export const SECTION_HEADERS = {
@@ -72,7 +73,7 @@ export function renderMarkdown(data: ReportData): string {
       ["dollar-weighted", usdc(d.total_atomic), usdc(d.failed_atomic), `${rateCi(d)} (effective n ${d.effective_n.toFixed(1)}; ${d.note})`],
     ],
   ));
-  out.push(`Denominator: \`buy\` rows whose outcome counts in the paid denominator (ok, overcharge, non_delivery, wrong_goods, injection, duplicate), excluding unpaid overcharges. Failures: overcharge, non_delivery, wrong_goods, duplicate. Of the denominator, ${h.delivered_without_settlement} row(s) were delivered without a visible settlement (dollar weight from the settlement header, else 0) and ${h.resolved_late_in_denominator} were resolved late.\n`);
+  out.push(`Denominator: \`buy\` rows whose outcome counts in the paid denominator (${[...PAID_DENOMINATOR_OUTCOMES].join(", ")}), excluding unpaid overcharges. Failures: ${[...HEADLINE_FAILURE_OUTCOMES].join(", ")}. Of the denominator, ${h.delivered_without_settlement} row(s) were delivered without a visible settlement (dollar weight from the settlement header, else 0) and ${h.resolved_late_in_denominator} were resolved late.\n`);
   out.push("Reported separately (not in the denominator):\n");
   out.push(table(["line", "count", "note"], [
     ["our_error", h.excluded.our_error, "our fault; excluded"],

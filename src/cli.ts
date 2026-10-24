@@ -7,6 +7,7 @@ import { liveGateReason } from "./safety.js";
 import { registerChain } from "./cli/chain.js";
 import { registerDiscover } from "./cli/discover.js";
 import { registerProbe } from "./cli/probe.js";
+import { registerTelemetry } from "./cli/telemetry.js";
 
 export interface GlobalOpts {
   dryRun: boolean;
@@ -103,7 +104,7 @@ export function buildProgram(): Command {
   program.command("buy").description("make real purchases under hard caps (milestone 3/4)").action(notYet("buy", 3));
   program.command("stress").description("duplicate and timeout tests on a small subset (milestone 3/4)").action(notYet("stress", 3));
   registerChain(program, (cmd) => globalOpts(cmd));
-  program.command("telemetry").description("opt-in telemetry ingest (milestone 6)").action(notYet("telemetry", 6));
+  registerTelemetry(program, (cmd) => globalOpts(cmd));
   program.command("report").description("write reports/YYYY-MM-DD.md and .json (milestone 4)").action(notYet("report", 4));
   return program;
 }

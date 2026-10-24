@@ -1,7 +1,13 @@
 /**
- * In-memory x402 v2 facilitator for the mock seller. It verifies exact/EVM/EIP-3009
- * payloads off-chain (viem verifyTypedData) and "settles" by recording the authorization
- * in memory. No chain, no balances: any valid signature is treated as funded.
+ * x402 v2 facilitator for the mock seller. It verifies exact/EVM/EIP-3009 payloads off-chain
+ * (viem verifyTypedData). Two modes:
+ *
+ * - in-memory (default): "settles" by recording the authorization in memory. No chain, no
+ *   balances: any valid signature is treated as funded.
+ * - chain (`chain: { rpcUrl, tokenAddress, facilitatorPrivateKey }`): settle() submits
+ *   `transferWithAuthorization` to the token from the facilitator account (local anvil +
+ *   TestUSDC, see anvil.ts) and returns the real tx hash. Reused nonces surface as
+ *   `invalid_exact_evm_nonce_already_used`, as with the SDK facilitator.
  *
  * Shapes follow docs/protocol-notes.md §5 (EIP-712 types/domain, verify checks) and §6
  * (VerifyRequest / VerifyResponse / SettleResponse / SupportedResponse).
@@ -15,7 +21,23 @@ import type {
   SupportedResponse,
   VerifyResponse,
 } from "@x402/core/types";
-import { encodePacked, getAddress, isAddress, isHex, keccak256, verifyTypedData } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  encodePacked,
+  getAddress,
+  http,
+  isAddress,
+  isHex,
+  keccak256,
+  parseAbi,
+  parseSignature,
+  verifyTypedData,
+  type Hex,
+  type PublicClient,
+} from "viem";
+import { nonceManager, privateKeyToAccount } from "viem/accounts";
 
 /** EIP-712 types for EIP-3009 TransferWithAuthorization (protocol-notes §5). */
 export const authorizationTypes = {
@@ -61,7 +83,40 @@ export interface SettleOptions {
   route?: string;
 }
 
+/** Chain mode: settle on a real (local) chain through the token's EIP-3009 entry point. */
+export interface ChainFacilitatorOptions {
+  rpcUrl: string;
+  /** EIP-3009 token (TestUSDC on anvil). Requirements with another asset are rejected. */
+  tokenAddress: string;
+  /** Account that submits (and pays gas for) transferWithAuthorization. Anvil test keys only. */
+  facilitatorPrivateKey: Hex;
+}
+
+export interface MockFacilitatorOptions {
+  network: Network;
+  now?: () => number;
+  chain?: ChainFacilitatorOptions;
+}
+
+/** The subset of the token ABI the chain-mode facilitator calls. */
+export const EIP3009_ABI = parseAbi([
+  "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
+  "function authorizationState(address authorizer, bytes32 nonce) view returns (bool)",
+]);
+
+/** Maps a FiatTokenV2-style revert message to the SDK's error code. */
+export function settleErrorFromRevert(message: string): string {
+  if (/authorization is used or canceled/i.test(message)) return "invalid_exact_evm_nonce_already_used";
+  if (/authorization is expired/i.test(message)) return "invalid_exact_evm_payload_authorization_valid_before";
+  if (/authorization is not yet valid/i.test(message)) return "invalid_exact_evm_payload_authorization_valid_after";
+  if (/exceeds balance/i.test(message)) return "insufficient_funds";
+  if (/invalid signature/i.test(message)) return "invalid_exact_evm_signature";
+  return "unexpected_settle_error";
+}
+
 export interface MockFacilitator {
+  /** "memory" (default) or "chain". */
+  mode: "memory" | "chain";
   verify(payload: PaymentPayload, requirements: PaymentRequirements, opts?: { allowUsedNonce?: boolean }): Promise<VerifyResponse>;
   settle(payload: PaymentPayload, requirements: PaymentRequirements, opts?: SettleOptions): Promise<SettleResponse>;
   supported(): SupportedResponse;
@@ -101,11 +156,51 @@ export function extractAuthorization(payload: PaymentPayload): { authorization: 
   };
 }
 
-export function createMockFacilitator(opts: { network: Network; now?: () => number }): MockFacilitator {
+export function createMockFacilitator(opts: MockFacilitatorOptions): MockFacilitator {
   const nowSec = () => Math.floor((opts.now ? opts.now() : Date.now()) / 1000);
   let records: Settlement[] = [];
   let counter = 0n;
   const usedNonces = new Set<string>();
+
+  // ---- chain mode ----
+  const chainCfg = opts.chain;
+  const chainId = parseChainId(opts.network);
+  let pub: PublicClient | undefined;
+  let submit: ((a: ExactAuthorization, signature: Hex) => Promise<Hex>) | undefined;
+  let token: `0x${string}` | undefined;
+  if (chainCfg) {
+    if (chainId === undefined) throw new Error(`chain mode needs an eip155 network, got ${opts.network}`);
+    token = getAddress(chainCfg.tokenAddress);
+    const chain = defineChain({
+      id: chainId,
+      name: `mock-${chainId}`,
+      nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [chainCfg.rpcUrl] } },
+    });
+    const account = privateKeyToAccount(chainCfg.facilitatorPrivateKey, { nonceManager });
+    pub = createPublicClient({ chain, transport: http(chainCfg.rpcUrl) }) as PublicClient;
+    const wallet = createWalletClient({ account, chain, transport: http(chainCfg.rpcUrl) });
+    // Serialise submissions so the facilitator's own tx nonces never race.
+    let queue: Promise<unknown> = Promise.resolve();
+    submit = (a, signature) => {
+      const run = async (): Promise<Hex> => {
+        const sig = parseSignature(signature);
+        const v = sig.v !== undefined ? Number(sig.v) : sig.yParity + 27;
+        const hash = await wallet.writeContract({
+          address: token!,
+          abi: EIP3009_ABI,
+          functionName: "transferWithAuthorization",
+          args: [getAddress(a.from), getAddress(a.to), BigInt(a.value), BigInt(a.validAfter), BigInt(a.validBefore), a.nonce, v, sig.r, sig.s],
+        });
+        const receipt = await pub!.waitForTransactionReceipt({ hash, pollingInterval: 50, timeout: 30_000 });
+        if (receipt.status !== "success") throw new Error(`transferWithAuthorization reverted in ${hash}`);
+        return hash;
+      };
+      const p = queue.then(run, run);
+      queue = p.catch(() => undefined);
+      return p;
+    };
+  }
 
   const invalid = (invalidReason: string, payer?: string, invalidMessage?: string): VerifyResponse => {
     const r: VerifyResponse = { isValid: false, invalidReason };
@@ -186,13 +281,18 @@ export function createMockFacilitator(opts: { network: Network; now?: () => numb
     if (!vopts.allowUsedNonce && usedNonces.has(a.nonce.toLowerCase())) {
       return invalid("invalid_exact_evm_nonce_already_used", payer);
     }
+    if (pub && token) {
+      if (getAddress(requirements.asset) !== token) return invalid("invalid_payment_requirements", payer, "asset is not the chain-mode token");
+      const used = await pub.readContract({ address: token, abi: EIP3009_ABI, functionName: "authorizationState", args: [payer, a.nonce] });
+      if (used && !vopts.allowUsedNonce) return invalid("invalid_exact_evm_nonce_already_used", payer);
+    }
 
     return { isValid: true, payer };
   }
 
-  function record(a: ExactAuthorization, requirements: PaymentRequirements, route?: string): Settlement {
+  function record(a: ExactAuthorization, requirements: PaymentRequirements, route?: string, realTxHash?: `0x${string}`): Settlement {
     counter += 1n;
-    const txHash = keccak256(encodePacked(["bytes32", "uint256"], [a.nonce, counter]));
+    const txHash = realTxHash ?? keccak256(encodePacked(["bytes32", "uint256"], [a.nonce, counter]));
     const s: Settlement = {
       nonce: a.nonce,
       from: getAddress(a.from),
@@ -230,12 +330,26 @@ export function createMockFacilitator(opts: { network: Network; now?: () => numb
     if (!sopts.duplicate && usedNonces.has(a.nonce.toLowerCase())) {
       return fail("invalid_exact_evm_nonce_already_used", getAddress(a.from));
     }
+    if (submit) {
+      // An exact-scheme authorization can move funds on chain only once (the token burns the nonce),
+      // so the duplicate fault cannot exist in chain mode.
+      if (sopts.duplicate) return fail("unsupported_in_chain_mode", getAddress(a.from));
+      let hash: Hex;
+      try {
+        hash = await submit(a, parsed.signature);
+      } catch (e) {
+        return fail(settleErrorFromRevert(e instanceof Error ? e.message : String(e)), getAddress(a.from));
+      }
+      const rec = record(a, requirements, sopts.route, hash);
+      return { success: true, transaction: rec.txHash, network: requirements.network, payer: rec.from };
+    }
     let s = record(a, requirements, sopts.route);
     if (sopts.duplicate) s = record(a, requirements, sopts.route);
     return { success: true, transaction: s.txHash, network: requirements.network, payer: s.from };
   }
 
   return {
+    mode: submit ? "chain" : "memory",
     verify,
     settle,
     supported: () => ({
