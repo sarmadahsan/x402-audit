@@ -10,9 +10,18 @@ export function redact(s: string): string {
   return s.replace(SECRET_KEYS, "$1$2[REDACTED]").replace(HEX64, (m) => `${m.slice(0, 6)}…[64hex]`);
 }
 
+/** JSON with bigint (as decimal string) and Error (message) support; never throws. */
+export function safeJson(v: unknown): string {
+  try {
+    return JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? x.toString() : x instanceof Error ? { error: x.message } : x));
+  } catch (e) {
+    return `[unserializable: ${(e as Error).message}]`;
+  }
+}
+
 function emit(level: Level, msg: string, data?: unknown): void {
   if (LEVELS[level] > LEVELS[current]) return;
-  const line = data === undefined ? msg : `${msg} ${redact(typeof data === "string" ? data : JSON.stringify(data))}`;
+  const line = data === undefined ? msg : `${msg} ${redact(typeof data === "string" ? data : safeJson(data))}`;
   const out = level === "error" || level === "warn" ? process.stderr : process.stdout;
   out.write(`${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} ${line}\n`);
 }
