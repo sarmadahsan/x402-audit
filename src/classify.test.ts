@@ -211,6 +211,10 @@ describe("classify: one test per flag", () => {
     expect(c.flags).toContain("charged_then_rejected");
     const paidOk = classify(base({ settlementCount: 1, responseStatus: 200 }));
     expect(paidOk.flags).not.toContain("charged_then_rejected");
+    const notFound = classify(base({ settlementCount: 1, responseStatus: 404, validators: { http_status: { status: "fail", evidence: { status: 404 }, reason: "non_2xx_status" } } }));
+    expect(notFound.flags).toContain("charged_then_rejected");
+    const serverErr = classify(base({ settlementCount: 1, responseStatus: 500, validators: { http_status: { status: "fail", evidence: { status: 500 }, reason: "non_2xx_status" } } }));
+    expect(serverErr.flags).not.toContain("charged_then_rejected");
     const unsettled = classify(base({ settlementCount: 0, paymentSent: true, responseStatus: 400, responseReceived: true }));
     expect(unsettled.flags).not.toContain("charged_then_rejected");
   });

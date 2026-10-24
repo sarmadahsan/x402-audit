@@ -107,7 +107,7 @@ rate. The stress report counts "second settlement observed" directly.
 | `resolved_late` | The row was `indeterminate` and was re-classified by the background poller. |
 | `truncated_by_us` | We stopped reading the body at 2 MB; `not_truncated` was evaluated on declared length and framing, not on the full body. |
 | `rate_limited` | Seller returned 429 at some point during this intent (the row itself is `our_error`). |
-| `charged_then_rejected` | A settlement exists and the response was a 400/405/415/422: the seller took payment before validating the request. The row is `non_delivery` (money gone, nothing delivered); this flag lets the report show how much of `non_delivery` is sellers that charge before validating, including requests we built from an empty or absent listing example. |
+| `charged_then_rejected` | A settlement exists and the response was a 4xx client error (other than 402 or 429): the seller took payment before validating or looking up the request. The row is `non_delivery` (money gone, nothing delivered); this flag lets the report show how much of `non_delivery` is sellers that charge before validating, including requests we built from an empty or absent listing example. |
 
 ## Validators
 
