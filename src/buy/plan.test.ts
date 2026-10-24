@@ -87,14 +87,15 @@ describe("buildBuyPlan", () => {
     expect(() => assertPlanWithinCaps({ ...plan, sampleMaxTotalAtomic: 1n }, caps)).toThrow(/max_total_usd/);
   });
 
-  it("requires a 402 probe once any probes exist", () => {
+  it("requires the seller to have a 402 probe once any probes exist (every eligible resource of that seller is then usable)", () => {
     const db = seed();
     db.prepare("INSERT INTO probes (resource_id, client_identity, ts, status) VALUES (11, 'A', 0, 402)").run();
     db.prepare("INSERT INTO probes (resource_id, client_identity, ts, status) VALUES (21, 'A', 0, 200)").run();
     const plan = buildBuyPlan(db, { sample, caps, network: NET, now: 0 });
-    expect(plan.allocations.map((a) => a.resourceId)).toEqual([11]);
+    expect(plan.allocations.map((a) => a.resourceId).sort((a, b) => a - b)).toEqual([11, 12]);
     expect(plan.notes.join("\n")).toMatch(/Tier tail has no eligible sellers/);
-    expect(plan.totalCalls).toBe(Math.floor(sample.max_share_per_resource * 200));
+    // Two resources, each capped at max_share_per_resource of the stratum, together cover the whole target.
+    expect(plan.totalCalls).toBe(Math.min(200, 2 * Math.floor(sample.max_share_per_resource * 200)));
   });
 
   it("apportion and the PRNG are stable", () => {
