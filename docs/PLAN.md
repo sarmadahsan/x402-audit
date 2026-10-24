@@ -18,6 +18,11 @@ make that number correct and auditable.
 Each milestone ends in a commit whose message names it, and a short summary
 here: what runs, numbers so far, exact commands to reproduce.
 
+2026-10-23: the operator approved the plan and the taxonomy decisions as
+written, and then asked for all milestones to be built without waiting for
+per-milestone approval. The hard stops below are unchanged: no mainnet wallet
+is funded or used, and nothing is published to npm, without an explicit yes.
+
 ## Hard stops (ask before)
 
 - Creating the repo under an org (it is under `sarmadahsan`).
