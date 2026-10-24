@@ -113,6 +113,14 @@ export const QUERIES = {
     WHERE in_denom = 1 GROUP BY 1 ORDER BY 1`,
 
   /** Rows outside the paid denominator, and flagged rows, for the separate lines. */
+  /** Secondary flags among denominator rows: how many rows carry each flag and their dollar weight. */
+  buy_flag_counts: `${BUY_CTE}
+    SELECT j.value AS flag, COUNT(*) AS n, CAST(COALESCE(SUM(w), 0) AS TEXT) AS dollars_atomic,
+           COALESCE(SUM(failed), 0) AS failed
+    FROM b, json_each(b.flags) j
+    WHERE in_denom = 1
+    GROUP BY j.value ORDER BY n DESC, j.value`,
+
   buy_excluded_counts: `${BUY_CTE}
     SELECT
       COALESCE(SUM(outcome = '${OUTCOMES.OUR_ERROR}'), 0) AS our_error,

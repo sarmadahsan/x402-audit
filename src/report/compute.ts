@@ -68,6 +68,8 @@ export interface ReportData {
     resolved_late_in_denominator: number;
     excluded: { our_error: number; indeterminate: number; not_paid: number; unclassified: number; unpaid_overcharge: number; exposure_atomic: string };
     flagged: { injection: number; injection_hit_total: number; note: string };
+    /** Secondary flags among denominator rows (a row can carry several). */
+    flag_counts: { flag: string; n: number; failed: number; dollars_atomic: string }[];
     sensitivity: SensitivityRow[];
   };
   by_failure_type: { outcome: string; n: number; share_of_calls: number; share_of_failures: number; dollars_atomic: string; resolved_late: number }[];
@@ -323,6 +325,7 @@ export function computeReport(db: Db, opts: ComputeOptions): ReportData {
       exposure_atomic: exposure.toString(),
     },
     flagged: { injection: num(ex.injection), injection_hit_total: num(ex.injection_hit_total), note: "flagged for human review" },
+    flag_counts: q<{ flag: string; n: number; failed: number; dollars_atomic: string }>("headline", "buy_flag_counts").map((r) => ({ flag: r.flag, n: num(r.n), failed: num(r.failed), dollars_atomic: big(r.dollars_atomic).toString() })),
     sensitivity,
   };
 

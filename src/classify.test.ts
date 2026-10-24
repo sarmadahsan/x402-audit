@@ -205,6 +205,15 @@ describe("classify: one test per flag", () => {
     expect(c.outcome).toBe("our_error");
     expect(c.flags).toEqual(["overcharged"]);
   });
+  it("charged_then_rejected", () => {
+    const c = classify(base({ settlementCount: 1, responseStatus: 400, validators: { http_status: { status: "fail", evidence: { status: 400 }, reason: "non_2xx_status" } } }));
+    expect(c.outcome).toBe("non_delivery");
+    expect(c.flags).toContain("charged_then_rejected");
+    const paidOk = classify(base({ settlementCount: 1, responseStatus: 200 }));
+    expect(paidOk.flags).not.toContain("charged_then_rejected");
+    const unsettled = classify(base({ settlementCount: 0, paymentSent: true, responseStatus: 400, responseReceived: true }));
+    expect(unsettled.flags).not.toContain("charged_then_rejected");
+  });
   it("injection_hit", () => {
     expect(classify(base(withValidators({ injection_scan: fail }))).flags).toEqual(["injection_hit"]);
   });
@@ -221,9 +230,11 @@ describe("classify: one test per flag", () => {
     expect(c.outcome).toBe("our_error");
     expect(c.flags).toEqual(["rate_limited"]);
   });
-  it("all ten flags can be produced together, in canonical order", () => {
+  it("every flag can be produced together, in canonical order", () => {
     const c = classify(
       base({
+        settlementCount: 1,
+        responseStatus: 400,
         payToChanged: true,
         priceDiscrimination: true,
         latencyMs: 999_999,

@@ -121,6 +121,11 @@ export function classify(input: ClassificationInput): Classification {
   if (input.truncatedByUs) flags.add(FLAGS.TRUNCATED_BY_US);
   if (input.resolvedLate) flags.add(FLAGS.RESOLVED_LATE);
   if (input.rateLimited) flags.add(FLAGS.RATE_LIMITED);
+  // Seller settled, then rejected the request as malformed: money gone for nothing (docs/taxonomy.md flags).
+  if (input.settlementCount >= 1 && input.responseStatus !== undefined && [400, 405, 415, 422].includes(input.responseStatus)) {
+    flags.add(FLAGS.CHARGED_THEN_REJECTED);
+    reasons.push(`charged_then_rejected:status=${input.responseStatus}`);
+  }
 
   if (failed(input, VALIDATORS.INJECTION_SCAN)) {
     flags.add(FLAGS.INJECTION_HIT);
