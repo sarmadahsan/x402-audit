@@ -34,7 +34,7 @@ export const INJECTION_PATTERNS: readonly RegExp[] = [
   /\byou (are|must|should) (now )?(act|behave|respond|pretend) as\b/i,
   // Address form only ("To the AI agent:", "Dear assistant,"), at the start of the text or a sentence/line/quote.
   // Plain prose such as "changes to AI model prices" must not match (it did, and cost a human review).
-  /(?:^|[.!?\n"'\]\}]\s*)(?:note |important |attention |hey |hello )?(to|dear) (the )?(ai|assistant|agent|model|llm)s?\s*[:,]/i,
+  /(?:^|[.!?\n"'\]\}]\s*)(?:note |important |attention |hey |hello )?(to|dear) (the )?(ai|assistant|agent|model|llm)(?: (ai|assistant|agent|model|llm))?s?\s*[:,]/i,
   /<\/?(system|assistant|user|instructions?)>/i,
   /\bIMPORTANT( NOTE)?( TO| FOR)? (AI|AGENTS?|ASSISTANTS?)\b/,
 ];
