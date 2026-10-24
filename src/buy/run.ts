@@ -16,7 +16,7 @@
 import type { Db } from "../db/index.js";
 import type { Caps } from "../config/index.js";
 import { log as defaultLog } from "../log.js";
-import { exampleBodyFromInput } from "../probe/run.js";
+import { exampleBodyFromInput, urlWithExampleQuery } from "../probe/run.js";
 import { runPaidCall, type SettlementLookup } from "../pipeline/paidCall.js";
 import { haltRequested } from "../safety.js";
 import type { Payer } from "../x402/pay.js";
@@ -228,7 +228,7 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         payer: guarded.payer,
         runId,
         source: "buy",
-        resource: { id: a.resourceId, sellerId: a.sellerId, url: a.url, method: a.method, ...requestBodyFor(a.method, a.inputJson ?? null) },
+        resource: { id: a.resourceId, sellerId: a.sellerId, url: urlWithExampleQuery(a.url, a.inputJson ?? null), method: a.method, ...requestBodyFor(a.method, a.inputJson ?? null) },
         ...(reference ? { reference } : {}),
         perCallCapAtomic: o.caps.perCallAtomic,
         ...(service ? { service } : {}),

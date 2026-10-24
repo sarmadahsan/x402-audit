@@ -138,6 +138,40 @@ export function exampleBodyFromInput(inputJson: string | null): unknown {
   return undefined;
 }
 
+/** Example query parameters from the Bazaar input info (`queryParams: { name: exampleValue | {type,description} }`). */
+export function exampleQueryFromInput(inputJson: string | null): Record<string, string> | undefined {
+  if (!inputJson) return undefined;
+  let v: unknown;
+  try { v = JSON.parse(inputJson); } catch { return undefined; }
+  const get = (o: unknown, path: string[]): unknown => path.reduce<unknown>((cur, k) => (cur && typeof cur === "object" ? (cur as Record<string, unknown>)[k] : undefined), o);
+  const qp = [get(v, ["extensions", "bazaar", "info", "input", "queryParams"]), get(v, ["info", "input", "queryParams"]), get(v, ["input", "queryParams"]), get(v, ["queryParams"])].find((x) => x && typeof x === "object" && !Array.isArray(x)) as Record<string, unknown> | undefined;
+  if (!qp) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, raw] of Object.entries(qp)) {
+    if (raw === null || raw === undefined) continue;
+    if (typeof raw !== "object") { out[k] = String(raw); continue; }
+    // Typed descriptor rather than an example value: reuse the body synthesiser rules for one field.
+    const synth = synthesizeBodyFromFields({ [k]: raw });
+    const val = synth?.[k];
+    if (val !== undefined && typeof val !== "object") out[k] = String(val);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Append example query parameters to a URL that has none of its own. The URL actually sent is stored on every row. */
+export function urlWithExampleQuery(url: string, inputJson: string | null): string {
+  try {
+    const u = new URL(url);
+    if (u.search) return url;
+    const q = exampleQueryFromInput(inputJson);
+    if (!q) return url;
+    for (const [k, v] of Object.entries(q)) u.searchParams.set(k, v);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 /**
  * Minimal, auditable body from typed field descriptors. Rules, in order:
  *  - an example in the description ("e.g., gpt-4o-mini, claude-haiku") -> its first item;

@@ -7,7 +7,7 @@ import { openDb, type Db } from "../db/index.js";
 import type { FetchImpl } from "../x402/http.js";
 import { IDENTITY_A, type ClientIdentity } from "./identities.js";
 import { buildProbeSet } from "./set.js";
-import { buildRequest, exampleBodyFromInput, modalAmount, runProbeRound, synthesizeBodyFromFields } from "./run.js";
+import { buildRequest, exampleBodyFromInput, modalAmount, runProbeRound, synthesizeBodyFromFields, urlWithExampleQuery } from "./run.js";
 import { probeLoop } from "./schedule.js";
 import { probeReport } from "./report.js";
 import { insertResource, insertSeller, silentLog } from "./test-helpers.js";
@@ -281,5 +281,15 @@ describe("synthesizeBodyFromFields", () => {
     });
     expect(exampleBodyFromInput(input)).toEqual({ max_tokens: 1, messages: [{ role: "user", content: "ping" }], model: "gpt-4o-mini", stream: false, temperature: 1 });
     expect(synthesizeBodyFromFields({ q: { type: "string" }, n: { enum: [5, 6] }, flag: { type: "boolean", default: true } })).toEqual({ q: "x402-audit", n: 5, flag: true });
+  });
+});
+
+describe("urlWithExampleQuery", () => {
+  it("appends Bazaar example query params to a bare URL and leaves an existing query alone", () => {
+    const input = JSON.stringify({ method: "GET", queryParams: { render: false, url: "https://en.wikipedia.org/wiki/Bitcoin" }, type: "http" });
+    expect(urlWithExampleQuery("https://api.agentstools.dev/extract", input)).toBe("https://api.agentstools.dev/extract?render=false&url=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FBitcoin");
+    expect(urlWithExampleQuery("https://x.test/a?q=1", input)).toBe("https://x.test/a?q=1");
+    expect(urlWithExampleQuery("https://x.test/a", JSON.stringify({ queryParams: { symbol: { type: "string", description: "ticker (e.g., BTC)" } } }))).toBe("https://x.test/a?symbol=BTC");
+    expect(urlWithExampleQuery("https://x.test/a", null)).toBe("https://x.test/a");
   });
 });
