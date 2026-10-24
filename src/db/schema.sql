@@ -272,6 +272,8 @@ CREATE TABLE IF NOT EXISTS payto_volume (
 );
 CREATE INDEX IF NOT EXISTS chain_transfers_to_ts ON chain_transfers(to_addr, block_ts);
 CREATE INDEX IF NOT EXISTS chain_transfers_from_to ON chain_transfers(from_addr, to_addr, block_ts);
+-- Covering index for the proxy report's window functions (partition by to/from/value, order by block_ts).
+CREATE INDEX IF NOT EXISTS chain_transfers_proxy ON chain_transfers(network, to_addr, from_addr, value_atomic, block_ts, via_authorization);
 
 CREATE TABLE IF NOT EXISTS chain_scan_progress (
   network     TEXT NOT NULL,
