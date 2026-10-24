@@ -22,6 +22,28 @@ deliberately left out.
 - Keys come from `.env` only. `.env` is gitignored; `.env.example` documents every variable.
 - Wallets are never funded by the harness. Funding is manual (see "Wallets" below once milestone 3 lands).
 
+## Commands
+
+Every subcommand is dry-run by default and writes to the one SQLite file in `X402_AUDIT_DB`.
+
+| Command | Moves money? | What it does |
+|---|---|---|
+| `pnpm cli status` | no | effective config, caps, live gate, row counts |
+| `pnpm cli discover run` / `discover report` | no | pull the CDP Bazaar index and `config/manual-sellers.yaml`; top sellers by 30-day volume |
+| `pnpm cli chain scan-volume --days 30` | no | USDC transfers to every known pay-to over 30 days; ranks sellers (`chain top`) |
+| `pnpm cli chain verify-sample` / `verify-all` / `report` | no | EIP-3009 verification by receipt sampling; market-wide overcharge and duplicate-loop floors |
+| `pnpm cli probe plan` / `probe run --once` / `probe run` / `probe report` | no | select the probe set; one round or an hourly loop from two client identities; quote drift and pay-to changes |
+| `pnpm cli buy plan` | no | stratified plan with planned spend per stratum; refuses above `MAX_TOTAL_USD` |
+| `pnpm cli buy balances` | no | pool wallet USDC balances |
+| `pnpm cli buy run` | **only with `--live`, `X402_AUDIT_LIVE=1`, `--network eip155:8453`** | execute the plan under the caps; writes the `attempts` ledger before every signature |
+| `pnpm cli buy resolve` | no | re-check `indeterminate` calls against the chain (run periodically for 24 h) |
+| `pnpm cli stress duplicate` / `stress timeout` / `stress report` | same gate as buy | the two deliberate tests on about 10 sellers, own caps |
+| `pnpm cli telemetry serve` / `telemetry report` | no | ingest for `@x402-audit/client` records |
+| `pnpm cli report` | no | `reports/YYYY-MM-DD.md` + `.json`, every number from a named query |
+| `pnpm cli samplesize --rate 0.1 --halfwidth 0.01` | no | calls needed for a Wilson half-width |
+
+Stopping: create a file named `halt` in the repo root; every loop checks it.
+
 ## Running locally (milestone 1)
 
 Requirements: Node 22+ (developed on 23.11), pnpm 10.

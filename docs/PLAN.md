@@ -158,6 +158,22 @@ Done. Everything runs locally against the mock seller; no network, no keys, no m
   - Permit2 and non-`exact` requirements are excluded from buying; the client
     wrapper signs only EIP-3009 authorizations.
 
+## Milestone 2 to 6 build status (2026-10-24)
+
+All module code exists and is tested locally (306 tests, including an anvil
+integration suite for `buy`, `stress`, settlement confirmation and the
+indeterminate resolver). Live status per milestone:
+
+- M2 `discover`: run live against CDP Bazaar (37,903 resources, 2,649 sellers).
+  `chain scan-volume` over 30 days ranks sellers by real USDC volume; `probe`
+  runs hourly once the ranking exists.
+- M3 `buy`/`stress`: integration-tested on anvil with a real EIP-3009 token and
+  real settlement confirmation; **no mainnet wallet has been funded or used**.
+- M4: waits for the operator's approval of `buy plan` output and wallet funding.
+- M5 `chain`: volume scan live; verification sampling and proxy report wired.
+- M6 `@x402-audit/client` + `telemetry serve`: built and tested; **unpublished**
+  (a `prepublishOnly` guard refuses without `X402_AUDIT_PUBLISH_APPROVED=1`).
+
 ## Open decisions for the operator
 
 - Precedence of `overcharge` versus delivery failures (currently severity order; see taxonomy).
