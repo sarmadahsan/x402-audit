@@ -13,6 +13,8 @@ export interface PlanAllocation {
   sellerDomain: string;
   url: string;
   method: string;
+  /** resources.input_json (Bazaar input info) so POST bodies can be built from the seller's own example. */
+  inputJson: string | null;
   tier: Tier;
   category: string;
   priceAtomic: bigint;
@@ -99,6 +101,7 @@ interface EligibleRow {
   domain: string;
   url: string;
   method: string;
+  input_json: string | null;
   price: string;
   seller_category: string | null;
   rank_30d: number | null;
@@ -116,7 +119,7 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
 
   const rows = db
     .prepare(
-      `SELECT r.id resource_id, r.seller_id, s.domain, r.url, r.method, r.declared_price_atomic price, s.category seller_category, s.rank_30d
+      `SELECT r.id resource_id, r.seller_id, s.domain, r.url, r.method, r.input_json, r.declared_price_atomic price, s.category seller_category, s.rank_30d
        FROM resources r JOIN sellers s ON s.id = r.seller_id
        WHERE r.network = ? AND r.scheme = 'exact' AND COALESCE(r.transfer_method, 'eip3009') != 'permit2'
          AND r.declared_price_atomic IS NOT NULL AND s.excluded = 0
@@ -238,6 +241,7 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
           sellerDomain: r.domain,
           url: r.url,
           method: r.method,
+          inputJson: r.input_json ?? null,
           tier: t.tier,
           category: cat,
           priceAtomic: price,

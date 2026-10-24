@@ -16,6 +16,7 @@
 import type { Db } from "../db/index.js";
 import type { Caps } from "../config/index.js";
 import { log as defaultLog } from "../log.js";
+import { exampleBodyFromInput } from "../probe/run.js";
 import { runPaidCall, type SettlementLookup } from "../pipeline/paidCall.js";
 import { haltRequested } from "../safety.js";
 import type { Payer } from "../x402/pay.js";
@@ -60,6 +61,14 @@ export interface RunBuyOptions extends ConfirmPolicy {
   /** Directory checked for the `halt` file (default process.cwd()). */
   haltRoot?: string;
   dryRun: boolean;
+}
+
+const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
+/** Same request shape the probe module uses: JSON body from the seller's Bazaar input example, else `{}`. */
+export function requestBodyFor(method: string, inputJson: string | null): { headers?: Record<string, string>; body?: string } {
+  if (!BODY_METHODS.has((method || "GET").toUpperCase())) return {};
+  const ex = exampleBodyFromInput(inputJson);
+  return { headers: { "content-type": "application/json" }, body: ex !== undefined ? JSON.stringify(ex) : "{}" };
 }
 
 export interface ScheduledCall {
@@ -219,7 +228,7 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         payer: guarded.payer,
         runId,
         source: "buy",
-        resource: { id: a.resourceId, sellerId: a.sellerId, url: a.url, method: a.method },
+        resource: { id: a.resourceId, sellerId: a.sellerId, url: a.url, method: a.method, ...requestBodyFor(a.method, a.inputJson ?? null) },
         ...(reference ? { reference } : {}),
         perCallCapAtomic: o.caps.perCallAtomic,
         ...(service ? { service } : {}),

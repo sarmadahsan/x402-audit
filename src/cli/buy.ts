@@ -111,6 +111,17 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         plan.allocations = plan.allocations.map((a) => ({ ...a, calls: counts.get(a.resourceId)! })).filter((a) => a.calls > 0);
         plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
       }
+      // Resume: calls already made for a resource (any earlier live run, any outcome) count against its allocation,
+      // so a halted or crashed run can be restarted without resampling the first resources.
+      if (live) {
+        const done = new Map(
+          (db.prepare("SELECT resource_id, COUNT(*) n FROM calls WHERE source = 'buy' GROUP BY resource_id").all() as { resource_id: number; n: number }[]).map((r) => [r.resource_id, r.n]),
+        );
+        const before = plan.totalCalls;
+        plan.allocations = plan.allocations.map((a) => ({ ...a, calls: Math.max(0, a.calls - (done.get(a.resourceId) ?? 0)) })).filter((a) => a.calls > 0);
+        plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
+        if (plan.totalCalls !== before) log.info(`resume: ${before - plan.totalCalls} call(s) already made in earlier runs are subtracted from the plan`);
+      }
       console.log(renderPlan(plan));
       const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, live }, g.network, !live);
       const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : ephemeralPayers(g.network, caps.perCallAtomic);

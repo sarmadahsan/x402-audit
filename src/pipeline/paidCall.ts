@@ -145,9 +145,13 @@ export async function runPaidCall(i: PaidCallInput): Promise<PaidCallOutput> {
     }
   })();
   const rateLimited = response?.status === 429 || result.quoteResult?.status === 429;
+  // A 400/405/415/422 with no settlement means the seller rejected the request itself, not the payment:
+  // our malformed request (docs/taxonomy.md #8), excluded from the denominator and counted separately.
+  const badRequest = response && [400, 405, 415, 422].includes(response.status) && settlements.length === 0;
+  const ourErrorFinal = ourError ?? (badRequest ? { reason: `malformed_request:http_${response!.status}` } : undefined);
 
   const classification = classify({
-    ...(ourError ? { ourError } : {}),
+    ...(ourErrorFinal ? { ourError: ourErrorFinal } : {}),
     paymentSent,
     settlementCount: new Set(settlements.map((s) => s.txHash)).size,
     responseReceived: Boolean(response),
