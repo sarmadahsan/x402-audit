@@ -93,7 +93,12 @@ export interface BuyStats {
   /** Every call made (live) or that would be made (dry run), in order. */
   schedule: ScheduledCall[];
   backoffs: { sellerId: number; until: number; reason: string }[];
+  /** Calls dropped because a resource produced UNFORMABLE_AFTER consecutive malformed-request our_errors. */
+  skippedUnformable: { resourceId: number; url: string; dropped: number }[];
 }
+
+/** After this many consecutive malformed-request our_errors on one resource, its remaining calls are dropped. */
+export const UNFORMABLE_AFTER = 2;
 
 interface Slot {
   alloc: PlanAllocation;
@@ -152,7 +157,8 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       now: t0,
     });
 
-  const stats: BuyStats = { runId, dryRun: o.dryRun, calls: 0, byOutcome: {}, spentAtomic: 0n, halted: false, durationMs: 0, callIds: [], schedule: [], backoffs: [] };
+  const stats: BuyStats = { runId, dryRun: o.dryRun, calls: 0, byOutcome: {}, spentAtomic: 0n, halted: false, durationMs: 0, callIds: [], schedule: [], backoffs: [], skippedUnformable: [] };
+  const malformedStreak = new Map<number, number>();
   const { slots, sellerOrder } = interleave(o.plan.allocations);
   const sellerIdx = new Map(sellerOrder.map((s, i) => [s, i]));
   const sellerK = new Map<number, number>();
@@ -243,6 +249,16 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       stats.callIds.push(out.callId);
       stats.byOutcome[out.classification.outcome] = (stats.byOutcome[out.classification.outcome] ?? 0) + 1;
       if (out.result.signed) stats.spentAtomic += BigInt(out.result.signed.value);
+
+      // A listing we cannot form a valid request from fails identically every time; stop spending slots on it.
+      const malformed = out.classification.outcome === "our_error" && out.classification.reasons.some((r) => r.includes("malformed_request"));
+      const streak = malformed ? (malformedStreak.get(a.resourceId) ?? 0) + 1 : 0;
+      malformedStreak.set(a.resourceId, streak);
+      if (streak >= UNFORMABLE_AFTER && pick.remaining > 0) {
+        stats.skippedUnformable.push({ resourceId: a.resourceId, url: a.url, dropped: pick.remaining });
+        L.warn(`unformable: ${a.url} rejected ${streak} requests in a row as malformed; dropping its remaining ${pick.remaining} call(s)`);
+        pick.remaining = 0;
+      }
 
       if (breach) {
         const b = breach as CapBreach;

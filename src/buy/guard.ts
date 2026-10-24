@@ -165,13 +165,26 @@ export interface ConfirmPolicy {
   confirmIntervalMs?: number;
   /** Max wait when the seller visibly rejected the payment (default 60 s, capped at confirmTimeoutMs). */
   rejectGraceMs?: number;
+  /** Max wait when the seller rejected the request itself (400/404/405/415/422, no settlement header): it never tried to settle (default 10 s). */
+  badRequestGraceMs?: number;
+}
+
+/** Seller rejected the request body/params, not the payment: a 4xx client error other than 402/429 with no success header. */
+export function looksBadRequest(r: PaidResult | undefined): boolean {
+  if (!r?.response) return false;
+  const st = r.response.status;
+  return st >= 400 && st < 500 && st !== 402 && st !== 429 && r.settlement?.success !== true;
 }
 
 /** A lookup for runPaidCall that polls `base` per the policy, waiting less after a visible reject. */
 export function confirmingLookup(base: SettlementLookup, last: () => PaidResult | undefined, p: ConfirmPolicy = {}): SettlementLookup {
   const full = p.confirmTimeoutMs ?? 10 * 60_000;
   const grace = Math.min(p.rejectGraceMs ?? 60_000, full);
+  const badGrace = Math.min(p.badRequestGraceMs ?? 10_000, grace);
   const intervalMs = p.confirmIntervalMs ?? 15_000;
-  return (signed): Promise<SettlementFact[]> =>
-    confirmWithTimeout(base, signed, { timeoutMs: looksRejected(last()) ? grace : full, intervalMs });
+  return (signed): Promise<SettlementFact[]> => {
+    const r = last();
+    const timeoutMs = looksBadRequest(r) ? badGrace : looksRejected(r) ? grace : full;
+    return confirmWithTimeout(base, signed, { timeoutMs, intervalMs });
+  };
 }

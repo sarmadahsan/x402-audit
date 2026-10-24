@@ -144,7 +144,7 @@ describe("mock seller", () => {
 
   it("catalog and control endpoints", async () => {
     const cat = (await (await fetch(`${seller.url}/__mock/catalog`)).json()) as unknown[];
-    expect(cat).toHaveLength(16);
+    expect(cat).toHaveLength(17);
     expect(cat).toEqual(seller.catalog());
     await pay("/ok");
     expect(await (await fetch(`${seller.url}/__mock/settlements`)).json()).toHaveLength(1);

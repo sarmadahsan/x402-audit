@@ -97,8 +97,8 @@ interface RouteDef {
   description: string;
   /** Example query string appended to the catalog URL. */
   exampleQuery?: string;
-  /** "normal": settle once; "duplicate": settle twice; "reject": never settle, always 402. */
-  settleMode?: "normal" | "duplicate" | "reject";
+  /** "normal": settle once; "duplicate": settle twice; "reject": never settle, always 402; "bad_request": 400 before settling (unformable request). */
+  settleMode?: "normal" | "duplicate" | "reject" | "bad_request";
   maxTimeoutSeconds?: number;
   /** Quote amount for this request (default listed price). */
   quoteAmount?: (listed: bigint, c: Ctx) => bigint;
@@ -268,6 +268,12 @@ export async function startMockSeller(opts: MockSellerOptions = {}): Promise<Moc
       deliver: ({ c }) => c.json({ error: "unreachable" }, 500),
     },
     {
+      path: "/fail/bad-request",
+      description: "Rejects the request body with 400 before verifying or settling (our_error: malformed_request)",
+      settleMode: "bad_request",
+      deliver: ({ c }) => c.json({ error: "unreachable" }, 500),
+    },
+    {
       path: "/fail/not-json",
       description: "Settles, Content-Type application/json with an unterminated JSON body",
       deliver: ({ c, paidHeaders }) =>
@@ -358,6 +364,10 @@ export async function startMockSeller(opts: MockSellerOptions = {}): Promise<Moc
           transaction: "",
           network,
         });
+      }
+
+      if (route.settleMode === "bad_request") {
+        return c.json({ error: "text required" }, 400);
       }
 
       if (route.settleMode === "reject") {

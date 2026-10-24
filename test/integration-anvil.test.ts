@@ -42,6 +42,7 @@ const ROUTES = [
   { path: "/fail/overcharge", domain: "overcharge.mock", rank: 3, category: "inference" },
   { path: "/fail/slow", domain: "slow.mock", rank: 4, category: "other" },
   { path: "/fail/reject", domain: "reject.mock", rank: 5, category: "inference" },
+  { path: "/fail/bad-request", domain: "bad-request.mock", rank: 6, category: "other" },
 ] as const;
 
 const caps: Caps = {
@@ -132,10 +133,10 @@ describe.skipIf(!HAVE_ANVIL)("integration on anvil: buy + stress + resolver", ()
     const md = renderPlan(plan);
     console.log(md);
     expect(plan.totalCalls).toBe(12);
-    expect(plan.strata.map((s) => `${s.tier}/${s.category}:${s.calls}`).sort()).toEqual(["top/data:4", "top/inference:4", "top/other:4"]);
+    expect(plan.strata.map((s) => `${s.tier}/${s.category}:${s.calls}`).sort()).toEqual(["tail/other:0", "top/data:4", "top/inference:4", "top/other:4"]);
     expect(plan.totalSpendAtomic).toBe(12n * 10000n);
     expect(md).toContain("$0.12");
-    expect(plan.notes.join("\n")).toMatch(/Tier tail has no eligible sellers/);
+    expect(plan.notes.join("\n")).toMatch(/Tier tail: no eligible sellers in inference, data/);
     expect((db.prepare("SELECT COUNT(*) n FROM sellers WHERE tier = 'top'").get() as { n: number }).n).toBe(5);
     assertPlanWithinCaps(plan, caps);
     expect(() => assertPlanWithinCaps(plan, { ...caps, totalAtomic: usdToAtomic(0.05) })).toThrow(/MAX_TOTAL_USD/);
@@ -282,4 +283,15 @@ describe.skipIf(!HAVE_ANVIL)("integration on anvil: buy + stress + resolver", ()
     expect(row.settlement_count).toBe(1);
     expect((await client.getTransactionReceipt({ hash: row.settlement_tx_hash })).status).toBe("success");
   }, 30_000);
+
+  it("8. unformable resources stop consuming allocation after two malformed-request our_errors", async () => {
+    const { runBuy, UNFORMABLE_AFTER } = await import("../src/buy/run.js");
+    const bad = ref("/fail/bad-request");
+    const alloc = { resourceId: bad.resourceId, sellerId: bad.sellerId, sellerDomain: bad.sellerDomain, url: bad.url, method: "GET", inputJson: null, tier: "tail" as const, category: "other", priceAtomic: BigInt(LISTED), calls: 5 };
+    const plan = { ...buildBuyPlan(db, { sample, caps, network: NETWORK, now: Date.now() }), allocations: [alloc], totalCalls: 5, totalSpendAtomic: BigInt(LISTED) * 5n };
+    const stats = await runBuy(db, { ...common(), plan, dryRun: false, minSecondsBetweenCallsPerResource: 1 });
+    expect(stats.byOutcome["our_error"]).toBe(UNFORMABLE_AFTER);
+    expect(stats.skippedUnformable).toEqual([expect.objectContaining({ resourceId: bad.resourceId, dropped: 5 - UNFORMABLE_AFTER })]);
+    expect(stats.calls).toBe(UNFORMABLE_AFTER);
+  });
 });
