@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS sellers (
   volume_30d_atomic TEXT,                  -- USDC atomic units, from x402scan or chain
   volume_30d_source TEXT,                  -- x402scan|chain
   volume_30d_calls INTEGER,
+  volume_30d_computed_at INTEGER,
+  calls_30d_bazaar INTEGER,                -- sum of quality.l30DaysTotalCalls over the seller's resources
+  rank_30d         INTEGER,                -- 1 = highest 30-day USDC volume on Base
   excluded         INTEGER NOT NULL DEFAULT 0,
   excluded_reason  TEXT,
   first_seen_at    INTEGER NOT NULL,
@@ -54,7 +57,17 @@ CREATE TABLE IF NOT EXISTS resources (
   mime_type             TEXT,
   max_timeout_seconds   INTEGER,
   output_schema_json    TEXT,
+  input_json            TEXT,                    -- bazaar extension input info (method, query/body schema), if any
+  transfer_method       TEXT,                    -- eip3009 (default) | permit2 (from accepts[].extra.assetTransferMethod)
+  service_name          TEXT,
+  tags_json             TEXT,
+  curated               INTEGER,
+  bazaar_calls_30d      INTEGER,                 -- quality.l30DaysTotalCalls at last discover
+  bazaar_unique_payers_30d INTEGER,
+  last_called_at        INTEGER,
+  accepts_json          TEXT,                    -- every accepts[] entry, not only the selected one
   category              TEXT,
+  category_reason       TEXT,                    -- which keyword/tag rule assigned the category
   raw_json              TEXT NOT NULL,
   first_seen_at         INTEGER NOT NULL,
   last_seen_at          INTEGER NOT NULL,
@@ -64,12 +77,26 @@ CREATE INDEX IF NOT EXISTS resources_seller ON resources(seller_id);
 CREATE INDEX IF NOT EXISTS resources_payto ON resources(pay_to);
 
 -- ------------------------------------------------------------------- probe
+-- The fixed set of resources `probe` visits each round. Rebuilt only by `probe plan`.
+CREATE TABLE IF NOT EXISTS probe_set (
+  id           INTEGER PRIMARY KEY,
+  resource_id  INTEGER NOT NULL UNIQUE REFERENCES resources(id),
+  stratum      TEXT NOT NULL,                  -- top|tail
+  seed         INTEGER NOT NULL,
+  selected_at  INTEGER NOT NULL,
+  active       INTEGER NOT NULL DEFAULT 1,
+  note         TEXT
+);
+
 CREATE TABLE IF NOT EXISTS probes (
   id                 INTEGER PRIMARY KEY,
   run_id             INTEGER REFERENCES runs(id),
   resource_id        INTEGER NOT NULL REFERENCES resources(id),
   client_identity    TEXT NOT NULL,            -- A|B
+  round_id           TEXT,                     -- same for both identities in one round
   ts                 INTEGER NOT NULL,
+  method             TEXT,
+  request_headers_json TEXT,
   status             INTEGER,
   headers_json       TEXT,
   body_text          TEXT,                     -- first 64 KB
@@ -222,8 +249,26 @@ CREATE TABLE IF NOT EXISTS chain_transfers (
   to_addr       TEXT NOT NULL,
   value_atomic  TEXT NOT NULL,
   nonce         TEXT,                          -- from AuthorizationUsed in the same tx, if any
-  via_authorization INTEGER NOT NULL DEFAULT 0,
+  via_authorization INTEGER,                   -- NULL = not checked yet; 1 = AuthorizationUsed in same tx; 0 = plain transfer
   UNIQUE (network, tx_hash, log_index)
+);
+
+-- Per pay-to aggregates over a scanned window (what ranks sellers). Raw rows are in chain_transfers.
+CREATE TABLE IF NOT EXISTS payto_volume (
+  id              INTEGER PRIMARY KEY,
+  network         TEXT NOT NULL,
+  pay_to          TEXT NOT NULL,
+  from_block      INTEGER NOT NULL,
+  to_block        INTEGER NOT NULL,
+  from_ts         INTEGER NOT NULL,
+  to_ts           INTEGER NOT NULL,
+  transfer_count  INTEGER NOT NULL,
+  sum_atomic      TEXT NOT NULL,
+  dust_count      INTEGER NOT NULL,            -- transfers below the dust floor, excluded from sum/count
+  dust_floor_atomic TEXT NOT NULL,
+  unique_payers   INTEGER NOT NULL,
+  computed_at     INTEGER NOT NULL,
+  UNIQUE (network, pay_to, from_block, to_block)
 );
 CREATE INDEX IF NOT EXISTS chain_transfers_to_ts ON chain_transfers(to_addr, block_ts);
 CREATE INDEX IF NOT EXISTS chain_transfers_from_to ON chain_transfers(from_addr, to_addr, block_ts);
