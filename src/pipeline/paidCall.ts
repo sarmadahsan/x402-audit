@@ -27,7 +27,9 @@ export interface SettlementFact {
 }
 
 /** Finds settlements for a signed authorization. Milestone 1: the mock's ledger. Milestone 3+: viem over Base. */
-export type SettlementLookup = (signed: SignedAuthorization) => Promise<SettlementFact[]>;
+/** What the call itself saw, so a lookup can decide how long to wait without relying on shared payer state. */
+export interface SettlementLookupHint { response?: { status: number } | undefined; settlementSuccess?: boolean | undefined }
+export type SettlementLookup = (signed: SignedAuthorization, hint?: SettlementLookupHint) => Promise<SettlementFact[]>;
 
 export interface PaidCallInput {
   db: Db;
@@ -128,7 +130,9 @@ export async function runPaidCall(i: PaidCallInput): Promise<PaidCallOutput> {
     validators = await runAllValidators(ctx);
   }
 
-  const settlements = result.signed ? await i.settlementLookup(result.signed) : [];
+  const settlements = result.signed
+    ? await i.settlementLookup(result.signed, { response: response ? { status: response.status } : undefined, settlementSuccess: result.settlement?.success })
+    : [];
   // The seller's own settlement header is evidence too, but it is not a settlement fact: only the chain is.
 
   const ourError = (() => {

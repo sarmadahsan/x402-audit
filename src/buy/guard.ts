@@ -182,9 +182,20 @@ export function confirmingLookup(base: SettlementLookup, last: () => PaidResult 
   const grace = Math.min(p.rejectGraceMs ?? 60_000, full);
   const badGrace = Math.min(p.badRequestGraceMs ?? 10_000, grace);
   const intervalMs = p.confirmIntervalMs ?? 15_000;
-  return (signed): Promise<SettlementFact[]> => {
-    const r = last();
-    const timeoutMs = looksBadRequest(r) ? badGrace : looksRejected(r) ? grace : full;
+  return (signed, hint): Promise<SettlementFact[]> => {
+    // Prefer the call's own response (passed by runPaidCall); fall back to the payer's last result only when absent.
+    // With concurrent workers sharing a payer, `last()` can belong to another call, so the hint is authoritative.
+    let timeoutMs: number;
+    if (hint?.response) {
+      const st = hint.response.status;
+      const ok2xx = st >= 200 && st < 300;
+      const success = hint.settlementSuccess === true;
+      const badReq = st >= 400 && st < 500 && st !== 402 && st !== 429 && !success;
+      timeoutMs = badReq ? badGrace : !ok2xx && !success ? grace : full;
+    } else {
+      const r = last();
+      timeoutMs = looksBadRequest(r) ? badGrace : looksRejected(r) ? grace : full;
+    }
     return confirmWithTimeout(base, signed, { timeoutMs, intervalMs });
   };
 }
