@@ -23,4 +23,12 @@ describe("halt file", () => {
     expect(haltRequested(d)).toBe(true);
     rmSync(d, { recursive: true });
   });
+  it("job-specific halt files stop only their job", () => {
+    const d = mkdtempSync(join(tmpdir(), "x402-halt-"));
+    writeFileSync(join(d, "halt-buy"), "");
+    expect(haltRequested(d, "buy")).toBe(true);
+    expect(haltRequested(d, "probe")).toBe(false);
+    expect(haltRequested(d)).toBe(false);
+    rmSync(d, { recursive: true });
+  });
 });

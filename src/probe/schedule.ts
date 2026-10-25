@@ -45,7 +45,7 @@ export async function probeLoop(db: Db, opts: ProbeLoopOptions): Promise<number>
 
   for (;;) {
     if (signal?.aborted) break;
-    if (haltRequested(opts.haltRoot)) {
+    if (haltRequested(opts.haltRoot, "probe")) {
       log.warn("probe loop: halt file present, stopping");
       break;
     }
@@ -62,7 +62,7 @@ export async function probeLoop(db: Db, opts: ProbeLoopOptions): Promise<number>
       const remaining = until - clock();
       if (remaining <= 0) break;
       await wait(Math.min(remaining, haltCheckMs), signal);
-      if (haltRequested(opts.haltRoot)) {
+      if (haltRequested(opts.haltRoot, "probe")) {
         halted = true;
         break;
       }

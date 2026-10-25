@@ -237,3 +237,31 @@ describe("seller that never offers a payable 402", () => {
     expect(db.prepare("SELECT outcome FROM calls WHERE id = ?").get(o.callId)).toEqual({ outcome: "not_paid" });
   });
 });
+
+describe("reconcile orphaned signed attempts", () => {
+  it("creates a non_delivery call row when the chain shows a settlement for a signed attempt with no call row", async () => {
+    const { reconcileOrphans, listOrphanAttempts } = await import("../src/pipeline/reconcile.js");
+    const o = await call("/ok?symbol=SOL");
+    expect(o.classification.outcome).toBe("ok");
+    // Simulate a crash after signing: the calls row (and its children) never got written.
+    db.prepare("DELETE FROM settlements WHERE call_id = ?").run(o.callId);
+    db.prepare("DELETE FROM validator_results WHERE call_id = ?").run(o.callId);
+    db.prepare("DELETE FROM calls WHERE id = ?").run(o.callId);
+    expect(listOrphanAttempts(db)).toHaveLength(0); // too young: could still be in flight
+    expect(listOrphanAttempts(db, Date.now(), 0).map((a) => a.intent_id)).toEqual([o.intentId]);
+    const dry = await reconcileOrphans(db, { lookup: lookupFromMock, apply: false, minAgeMs: 0 });
+    expect(dry.created).toEqual([{ attemptId: expect.any(Number), outcome: "non_delivery", settlements: 1 }]);
+    expect(db.prepare("SELECT COUNT(*) n FROM calls WHERE intent_id = ?").get(o.intentId)).toEqual({ n: 0 });
+    await reconcileOrphans(db, { lookup: lookupFromMock, apply: true, minAgeMs: 0 });
+    const row = db.prepare("SELECT outcome, paid, settlement_count, error FROM calls WHERE intent_id = ?").get(o.intentId) as any;
+    expect(row.outcome).toBe("non_delivery");
+    expect(row.paid).toBe(1);
+    expect(row.settlement_count).toBe(1);
+    expect(row.error).toMatch(/reconciled_orphan_attempt/);
+    expect(listOrphanAttempts(db, Date.now(), 0)).toHaveLength(0);
+    // An unsettled orphan inside the 24 h window is indeterminate.
+    db.prepare("INSERT INTO attempts (intent_id, source, ts, resource_id, wallet, pay_to, network, asset, amount_atomic, nonce, phase) VALUES ('orphan-2','buy',?,?,?,?,?,?,'1000','0xdeadbeef','signed')").run(Date.now(), resourceId, "0x1", "0x2", NETWORK, "0x3");
+    const r2 = await reconcileOrphans(db, { lookup: async () => [], apply: true, minAgeMs: 0 });
+    expect(r2.created.map((c) => c.outcome)).toEqual(["indeterminate"]);
+  });
+});

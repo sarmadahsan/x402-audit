@@ -21,9 +21,16 @@ export function liveGateReason(i: LiveGateInput): string | null {
   return null;
 }
 
-/** True when a file named `halt` exists in the repo root. Checked once per loop iteration by every job. */
-export function haltRequested(root = process.cwd()): boolean {
-  return existsSync(resolve(root, "halt"));
+export type HaltJob = "buy" | "probe" | "stress" | "telemetry";
+
+/**
+ * True when a file named `halt` exists in the repo root (stops EVERY job, as the brief requires), or when a
+ * job-specific `halt-<job>` file exists (stops only that job: use `halt-buy` to restart a buy run without
+ * taking the hourly probe loop down with it).
+ */
+export function haltRequested(root = process.cwd(), job?: HaltJob): boolean {
+  if (existsSync(resolve(root, "halt"))) return true;
+  return job !== undefined && existsSync(resolve(root, `halt-${job}`));
 }
 
 export class HaltError extends Error {

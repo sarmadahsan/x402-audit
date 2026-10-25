@@ -165,7 +165,7 @@ async function stressCall(
   extra: { abortAfterMs?: number } = {},
 ): Promise<PaidCallOutput | undefined> {
   const { db, o } = c;
-  if (haltRequested(o.haltRoot)) {
+  if (haltRequested(o.haltRoot, "stress")) {
     c.halt("halt_file", { root: o.haltRoot ?? process.cwd() });
     return undefined;
   }

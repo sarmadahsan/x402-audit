@@ -42,7 +42,10 @@ Every subcommand is dry-run by default and writes to the one SQLite file in `X40
 | `pnpm cli report` | no | `reports/YYYY-MM-DD.md` + `.json`, every number from a named query |
 | `pnpm cli samplesize --rate 0.1 --halfwidth 0.01` | no | calls needed for a Wilson half-width |
 
-Stopping: create a file named `halt` in the repo root; every loop checks it.
+Stopping: create a file named `halt` in the repo root; every loop checks it. To stop
+one job without the others, use `halt-buy`, `halt-stress` or `halt-probe`. The probe
+loop runs under launchd (`scripts/install-probe-agent.sh`) and restarts itself after a
+crash, logout or reboot; it stays stopped only while `halt` or `halt-probe` exists.
 
 ## Running locally (milestone 1)
 

@@ -593,7 +593,7 @@ export async function runProbeRound(db: Db, opts: ProbeRoundOptions): Promise<Ro
   };
 
   for (const row of set) {
-    if (haltRequested(opts.haltRoot)) {
+    if (haltRequested(opts.haltRoot, "probe")) {
       log.warn(`probe round ${roundId}: halt file present, stopping`);
       stats.halted = true;
       break;

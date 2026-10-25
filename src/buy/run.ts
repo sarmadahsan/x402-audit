@@ -174,7 +174,7 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
 
   try {
     for (;;) {
-      if (haltRequested(o.haltRoot)) {
+      if (haltRequested(o.haltRoot, "buy")) {
         halt("halt_file", { root: o.haltRoot ?? process.cwd() });
         break;
       }

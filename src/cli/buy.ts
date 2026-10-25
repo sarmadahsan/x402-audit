@@ -13,6 +13,7 @@ import { runStressDuplicate, runStressTimeout, stressReport, selectStressResourc
 import { createPayer, type Payer } from "../x402/pay.js";
 import { finishRun, startRun } from "./runs.js";
 import { reclassifyCalls } from "../pipeline/reclassify.js";
+import { reconcileOrphans } from "../pipeline/reconcile.js";
 import { assertGate } from "../gate.js";
 
 export interface MoneyGlobals { network: Network; db: string; live: boolean; dryRun: boolean }
@@ -164,6 +165,21 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       const r = await reclassifyCalls(db, { reason: o.reason, apply: o.apply, ...(o.ids ? { callIds: o.ids } : {}), services: serviceLookup(loadServiceConfigs()) });
       for (const c of r.changed) console.log(`${c.callId}\t${c.oldOutcome} -> ${c.newOutcome}\t[${c.oldFlags}] -> [${c.newFlags}]\t${c.url}`);
       console.log(JSON.stringify({ examined: r.examined, changed: r.changed.length, applied: r.applied }));
+    });
+
+  b.command("reconcile")
+    .description("turn signed ledger rows with no call row (crash/halt after signing) into call rows after checking the chain; writes only with --apply")
+    .option("--apply", "write the rows", false)
+    .action(async function (this: Command, o: { apply: boolean }) {
+      const g = globals(this);
+      const env = loadEnv();
+      const db = openDb(g.db);
+      const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
+      const oldest = db.prepare("SELECT MIN(ts) t FROM attempts a WHERE a.phase='signed' AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.nonce = a.nonce)").get() as { t: number | null };
+      if (!oldest.t) { console.log(JSON.stringify({ orphans: 0 })); return; }
+      const fromBlock = await blockAtTimestamp(client, Math.floor(oldest.t / 1000) - 600);
+      const lookup = makeChainSettlementLookup({ client, network: g.network, fromBlock, maxBlockRange: 50_000n });
+      console.log(JSON.stringify(await reconcileOrphans(db, { lookup, apply: o.apply })));
     });
 
   b.command("resolve")
