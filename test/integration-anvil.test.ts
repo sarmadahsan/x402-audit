@@ -294,4 +294,17 @@ describe.skipIf(!HAVE_ANVIL)("integration on anvil: buy + stress + resolver", ()
     expect(stats.skippedUnformable).toEqual([expect.objectContaining({ resourceId: bad.resourceId, dropped: 5 - UNFORMABLE_AFTER })]);
     expect(stats.calls).toBe(UNFORMABLE_AFTER);
   });
+
+  it("9. concurrency 3 completes the same plan with no seller called concurrently", async () => {
+    const { runBuy } = await import("../src/buy/run.js");
+    const plan = buildBuyPlan(db, { sample, caps, network: NETWORK, now: Date.now() });
+    const before = (db.prepare("SELECT COUNT(*) n FROM calls WHERE source='buy'").get() as { n: number }).n;
+    const stats = await runBuy(db, { ...common(), plan, dryRun: false, minSecondsBetweenCallsPerResource: 1, concurrency: 3 });
+    expect(stats.halted).toBe(false);
+    expect(stats.calls).toBe(plan.totalCalls);
+    const rows = db.prepare("SELECT id, seller_id, ts, COALESCE(latency_ms,0) lat FROM calls WHERE source='buy' AND id > (SELECT MAX(id) FROM calls WHERE source='buy' AND rowid <= ?) ORDER BY seller_id, ts").all(before) as { seller_id: number; ts: number; lat: number }[];
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i]!.seller_id === rows[i - 1]!.seller_id) expect(rows[i]!.ts).toBeGreaterThanOrEqual(rows[i - 1]!.ts + rows[i - 1]!.lat);
+    }
+  });
 });

@@ -89,7 +89,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .option("--confirm-minutes <n>", "settlement confirmation window", (v) => parseInt(v, 10), 10)
     .option("--confirm-interval-seconds <n>", "how often to re-check the chain while waiting for a settlement", (v) => parseInt(v, 10), 3)
     .option("--resume-since <iso>", "only subtract calls made at or after this time from the plan (start of this phase); default: all earlier calls")
-    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string }) {
+    .option("--concurrency <n>", "concurrent calls, each to a different seller (default 1)", (v) => parseInt(v, 10), 1)
+    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number }) {
       const g = globals(this);
       const { live } = moneyGate(g, requireLive);
       const env = loadEnv();
@@ -144,6 +145,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
           minSecondsBetweenCallsPerResource: files.sample.min_seconds_between_calls_per_resource,
           confirmTimeoutMs: o.confirmMinutes * 60_000,
           confirmIntervalMs: o.confirmIntervalSeconds * 1_000,
+          concurrency: o.concurrency,
           runId,
           configHash: files.configHash,
           log,

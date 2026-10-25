@@ -61,6 +61,9 @@ export interface RunBuyOptions extends ConfirmPolicy {
   /** Directory checked for the `halt` file (default process.cwd()). */
   haltRoot?: string;
   dryRun: boolean;
+  /** Concurrent calls, each to a different seller (default 1 = sequential). Caps are read from the DB before every
+   * signature, so N workers can overshoot a cap by at most N-1 calls; per-resource spacing is unchanged. */
+  concurrency?: number;
 }
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
@@ -178,18 +181,21 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
     L.warn(`buy halted: ${reason}`, details);
   };
 
-  try {
+  const inflight = new Set<number>(); // seller ids with a call in progress: never two concurrent calls to one seller
+  const worker = async (): Promise<void> => {
     for (;;) {
+      if (stats.halted) return;
       if (haltRequested(o.haltRoot, "buy")) {
         halt("halt_file", { root: o.haltRoot ?? process.cwd() });
-        break;
+        return;
       }
-      if (!slots.some((s) => s.remaining > 0)) break;
+      if (!slots.some((s) => s.remaining > 0)) return;
       const t = now();
       let pick: Slot | undefined;
       for (let j = 0; j < slots.length; j++) {
         const s = slots[(cursor + j) % slots.length]!;
         if (s.remaining <= 0) continue;
+        if (inflight.has(s.alloc.sellerId)) continue;
         if ((backoffUntil.get(s.alloc.sellerId) ?? 0) > t) continue;
         if (t - s.lastAt < gapMs) continue;
         pick = s;
@@ -197,6 +203,10 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         break;
       }
       if (!pick) {
+        if (inflight.size > 0) {
+          await sleep(500); // everything eligible is busy in another worker; re-check soon
+          continue;
+        }
         const next = Math.min(
           ...slots.filter((s) => s.remaining > 0).map((s) => Math.max(s.lastAt + gapMs, backoffUntil.get(s.alloc.sellerId) ?? 0)),
         );
@@ -205,6 +215,8 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       }
 
       const a = pick.alloc;
+      inflight.add(a.sellerId);
+      try {
       const k = sellerK.get(a.sellerId) ?? 0;
       const payer = o.payers[((sellerIdx.get(a.sellerId) ?? 0) + k) % o.payers.length]!;
       const reference = referencePriceFor(db, a.resourceId, t);
@@ -224,7 +236,7 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       const pre = checkCaps(db, { caps: o.caps, sellerId: a.sellerId, amountAtomic: expected, now: realNow(), scope: "buy" });
       if (pre && pre.reason !== "cap_per_call") {
         halt(pre.reason, { ...pre.details, resourceId: a.resourceId, stage: "before_quote" });
-        break;
+        return;
       }
 
       let breach: CapBreach | null = null;
@@ -271,7 +283,7 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       if (breach) {
         const b = breach as CapBreach;
         halt(b.reason, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" });
-        break;
+        return;
       }
       if (out.result.response?.status === 429 || out.result.quoteResult?.status === 429) {
         const until = realNow() + RATE_LIMIT_BACKOFF_MS;
@@ -279,7 +291,16 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         stats.backoffs.push({ sellerId: a.sellerId, until, reason: `429 from ${a.url}` });
         L.warn(`seller ${a.sellerDomain} returned 429; backing off until ${new Date(until).toISOString()}`);
       }
+      } finally {
+        inflight.delete(a.sellerId);
+      }
     }
+  };
+
+  try {
+    const n = Math.max(1, Math.floor(o.concurrency ?? 1));
+    if (n > 1) L.info(`buy: ${n} concurrent workers (one call per seller at a time)`);
+    await Promise.all(Array.from({ length: n }, () => worker()));
   } catch (e) {
     stats.durationMs = realNow() - t0;
     finishRun(db, runId, "error", e instanceof Error ? e.message : String(e), realNow());
