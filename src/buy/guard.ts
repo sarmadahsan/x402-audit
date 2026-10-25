@@ -167,6 +167,10 @@ export interface ConfirmPolicy {
   rejectGraceMs?: number;
   /** Max wait when the seller rejected the request itself (400/404/405/415/422, no settlement header): it never tried to settle (default 10 s). */
   badRequestGraceMs?: number;
+  /** Max INLINE wait when no response arrived at all (timeout/abort after signing). The row becomes `indeterminate`
+   * and `buy resolve` keeps checking the chain for 24 h (the 10-minute rule in docs/taxonomy.md is honoured by the
+   * resolver, not by blocking a worker). Default 120 s. */
+  noResponseGraceMs?: number;
 }
 
 /** Seller rejected the request body/params, not the payment: a 4xx client error other than 402/429 with no success header. */
@@ -181,12 +185,15 @@ export function confirmingLookup(base: SettlementLookup, last: () => PaidResult 
   const full = p.confirmTimeoutMs ?? 10 * 60_000;
   const grace = Math.min(p.rejectGraceMs ?? 60_000, full);
   const badGrace = Math.min(p.badRequestGraceMs ?? 10_000, grace);
+  const noResponseGrace = Math.min(p.noResponseGraceMs ?? 120_000, full);
   const intervalMs = p.confirmIntervalMs ?? 15_000;
   return (signed, hint): Promise<SettlementFact[]> => {
     // Prefer the call's own response (passed by runPaidCall); fall back to the payer's last result only when absent.
     // With concurrent workers sharing a payer, `last()` can belong to another call, so the hint is authoritative.
     let timeoutMs: number;
-    if (hint?.response) {
+    if (hint && !hint.response) {
+      timeoutMs = noResponseGrace; // nothing came back: do not pin a worker for 10 min; the resolver takes over
+    } else if (hint?.response) {
       const st = hint.response.status;
       const ok2xx = st >= 200 && st < 300;
       const success = hint.settlementSuccess === true;
