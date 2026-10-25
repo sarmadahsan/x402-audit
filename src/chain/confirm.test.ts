@@ -44,12 +44,12 @@ function fakeClient(transfers: FakeTransfer[], latest = 100n) {
       calls.receipts++;
       const ts = transfers.filter((t) => t.tx === hash);
       const logs = ts.flatMap((t) => [
-        { address: TOKEN, topics: [TRANSFER_TOPIC0, pad(t.from), pad(t.to)] as Hex[], logIndex: t.logIndex },
+        { address: TOKEN, topics: [TRANSFER_TOPIC0, pad(t.from), pad(t.to)] as Hex[], logIndex: t.logIndex, data: pad(("0x" + t.value.toString(16)) as Hex, { size: 32 }) },
         ...(t.authNonce
           ? [{ address: t.authFromOtherContract ? FROM : TOKEN, topics: [AUTHORIZATION_USED_TOPIC0, pad(t.authorizer ?? t.from), t.authNonce] as Hex[], logIndex: t.logIndex - 1 }]
           : []),
       ]);
-      return { status: ts.some((t) => t.reverted) ? ("reverted" as const) : ("success" as const), logs };
+      return { status: ts.some((t) => t.reverted) ? ("reverted" as const) : ("success" as const), logs, blockNumber: ts[0]?.block, transactionHash: hash };
     },
     async getBlock({ blockNumber }) {
       calls.blocks++;
@@ -108,6 +108,25 @@ describe("makeChainSettlementLookup", () => {
     const { client } = fakeClient([{ tx: tx(1), logIndex: 1, block: 5n, from: FROM, to: TO, value: 10000n, authNonce: NONCE }]);
     // Receipt logs come from TOKEN, so an override to another address must not match.
     expect(await makeChainSettlementLookup({ client, network: "eip155:84532", fromBlock: 0n, asset: other })(signed)).toEqual([]);
+  });
+});
+
+describe("receipt-first verification from the seller-reported tx hash", () => {
+  it("verifies the hinted receipt without scanning logs, and falls back to the scan when the hash does not match", async () => {
+    const good = { tx: tx(7), block: 50n, logIndex: 3, from: FROM, to: TO, value: 1000n, authNonce: NONCE };
+    const { client, calls } = fakeClient([good]);
+    const lookup = makeChainSettlementLookup({ client, network: "eip155:84532", fromBlock: 40n });
+    const signed = { nonce: NONCE, validAfter: "0", validBefore: "0", value: "1000", to: TO, from: FROM };
+    const facts = await lookup(signed, { response: { status: 200 }, settlementSuccess: true, settlementTx: tx(7) });
+    expect(facts.map((f) => f.txHash)).toEqual([tx(7)]);
+    expect(calls.getLogs).toHaveLength(0);
+    expect(calls.receipts).toBe(1);
+    // A hash whose receipt does not carry our nonce falls through to the log scan and still finds the settlement.
+    const other = fakeClient([good, { tx: tx(8), block: 51n, logIndex: 1, from: FROM, to: TO, value: 1000n }]);
+    const lookup2 = makeChainSettlementLookup({ client: other.client, network: "eip155:84532", fromBlock: 40n });
+    const facts2 = await lookup2(signed, { settlementTx: tx(8) });
+    expect(facts2.map((f) => f.txHash)).toEqual([tx(7)]);
+    expect(other.calls.getLogs.length).toBeGreaterThan(0);
   });
 });
 

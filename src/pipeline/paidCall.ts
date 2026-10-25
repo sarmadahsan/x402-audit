@@ -28,7 +28,12 @@ export interface SettlementFact {
 
 /** Finds settlements for a signed authorization. Milestone 1: the mock's ledger. Milestone 3+: viem over Base. */
 /** What the call itself saw, so a lookup can decide how long to wait without relying on shared payer state. */
-export interface SettlementLookupHint { response?: { status: number } | undefined; settlementSuccess?: boolean | undefined }
+export interface SettlementLookupHint {
+  response?: { status: number } | undefined;
+  settlementSuccess?: boolean | undefined;
+  /** Transaction hash the seller's settlement header reported, if any: lets a lookup verify that receipt directly. */
+  settlementTx?: string | undefined;
+}
 export type SettlementLookup = (signed: SignedAuthorization, hint?: SettlementLookupHint) => Promise<SettlementFact[]>;
 
 export interface PaidCallInput {
@@ -131,7 +136,11 @@ export async function runPaidCall(i: PaidCallInput): Promise<PaidCallOutput> {
   }
 
   const settlements = result.signed
-    ? await i.settlementLookup(result.signed, { response: response ? { status: response.status } : undefined, settlementSuccess: result.settlement?.success })
+    ? await i.settlementLookup(result.signed, {
+        response: response ? { status: response.status } : undefined,
+        settlementSuccess: result.settlement?.success,
+        settlementTx: typeof result.settlement?.transaction === "string" && /^0x[0-9a-fA-F]{64}$/.test(result.settlement.transaction) ? result.settlement.transaction : undefined,
+      })
     : [];
   // The seller's own settlement header is evidence too, but it is not a settlement fact: only the chain is.
 

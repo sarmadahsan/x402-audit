@@ -134,13 +134,15 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, live }, g.network, !live);
       const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : ephemeralPayers(g.network, caps.perCallAtomic);
       const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
+      // Receipts for seller-reported tx hashes come from the canonical-head RPC (BASE_RPC_URL); logs from the logs RPC.
+      const receiptClient = g.network === MAINNET && env.BASE_RPC_URL !== env.BASE_LOGS_RPC_URL ? makeChainClient({ rpcUrl: env.BASE_RPC_URL, network: g.network }) : undefined;
       try {
         const stats = await runBuy(db, {
           plan,
           payers,
           caps,
           network: g.network,
-          settlementLookupFactory: makeChainLookupFactory({ client, network: g.network }),
+          settlementLookupFactory: makeChainLookupFactory({ client, network: g.network, ...(receiptClient ? { receiptClient } : {}) }),
           services: serviceLookup(loadServiceConfigs()),
           minSecondsBetweenCallsPerResource: files.sample.min_seconds_between_calls_per_resource,
           confirmTimeoutMs: o.confirmMinutes * 60_000,

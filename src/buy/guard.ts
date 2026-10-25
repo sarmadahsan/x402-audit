@@ -191,7 +191,11 @@ export function confirmingLookup(base: SettlementLookup, last: () => PaidResult 
       const ok2xx = st >= 200 && st < 300;
       const success = hint.settlementSuccess === true;
       const badReq = st >= 400 && st < 500 && st !== 402 && st !== 429 && !success;
-      timeoutMs = badReq ? badGrace : !ok2xx && !success ? grace : full;
+      // Full window only when the seller claims a settlement (success header) or the response is a non-2xx that
+      // may still settle. A 2xx WITHOUT a settlement claim is either free delivery or a settlement path we cannot
+      // see; waiting 10 min per such call starved the run, so it gets the 60 s grace and `buy resolve` re-checks
+      // these rows for 2 h afterwards.
+      timeoutMs = badReq ? badGrace : success ? full : ok2xx ? grace : grace;
     } else {
       const r = last();
       timeoutMs = looksBadRequest(r) ? badGrace : looksRejected(r) ? grace : full;

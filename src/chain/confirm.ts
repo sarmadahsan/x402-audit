@@ -11,10 +11,10 @@
 import { getAddress, pad, type Address, type Hex } from "viem";
 import type { Db } from "../db/index.js";
 import { log } from "../log.js";
-import { resolveIndeterminate, type SettlementFact, type SettlementLookup } from "../pipeline/paidCall.js";
+import { resolveIndeterminate, type SettlementFact, type SettlementLookup, type SettlementLookupHint } from "../pipeline/paidCall.js";
 import type { Classification } from "../classify.js";
 import type { SignedAuthorization } from "../x402/pay.js";
-import { AUTHORIZATION_USED_TOPIC0, TRANSFER_EVENT, usdcFor } from "./client.js";
+import { AUTHORIZATION_USED_TOPIC0, TRANSFER_EVENT, TRANSFER_TOPIC0, usdcFor } from "./client.js";
 
 /** The subset of a viem PublicClient used here (a real PublicClient satisfies it; tests pass a fake). */
 export interface ConfirmClient {
@@ -35,7 +35,9 @@ export interface ConfirmClient {
   >;
   getTransactionReceipt(args: { hash: Hex }): Promise<{
     status: "success" | "reverted";
-    logs: readonly { address: Address; topics: readonly Hex[] | [] ; logIndex: number | null }[];
+    logs: readonly { address: Address; topics: readonly Hex[] | []; logIndex: number | null; data?: Hex }[];
+    blockNumber?: bigint;
+    transactionHash?: Hex;
   }>;
   getBlock(args: { blockNumber: bigint }): Promise<{ timestamp: bigint }>;
 }
@@ -49,6 +51,9 @@ export interface ChainLookupOptions {
   asset?: string;
   /** Max blocks per eth_getLogs request (publicnode allows 50k; default 10k). */
   maxBlockRange?: bigint;
+  /** Optional second client used only for getTransactionReceipt on the seller-reported hash (a canonical-head RPC
+   * such as mainnet.base.org, which refuses getLogs but serves receipts without the log-index lag seen on pools). */
+  receiptClient?: Pick<ConfirmClient, "getTransactionReceipt" | "getBlock">;
 }
 
 const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -58,11 +63,41 @@ export function makeChainSettlementLookup(o: ChainLookupOptions): SettlementLook
   const step = o.maxBlockRange ?? 10_000n;
   const blockTs = new Map<bigint, number>();
 
-  return async (signed: SignedAuthorization): Promise<SettlementFact[]> => {
+  return async (signed: SignedAuthorization, hint?: SettlementLookupHint): Promise<SettlementFact[]> => {
     const from = getAddress(signed.from);
     const to = getAddress(signed.to);
     const value = BigInt(signed.value);
     const nonce = signed.nonce.toLowerCase();
+    const fromTopic0 = pad(from, { size: 32 }).toLowerCase();
+
+    // Receipt-first: when the seller's settlement header names a transaction, verify that receipt directly
+    // (one RPC call) instead of scanning logs. The receipt must carry OUR AuthorizationUsed (from + nonce) and a
+    // matching Transfer; a hash that does not check out falls through to the scan, so a seller cannot fake it.
+    if (hint?.settlementTx) {
+      try {
+        const rc = o.receiptClient ?? o.client;
+        const receipt = await rc.getTransactionReceipt({ hash: hint.settlementTx as Hex });
+        if (receipt && receipt.status === "success") {
+          const auth = receipt.logs.find(
+            (l) => eq(l.address, token) && l.topics[0]?.toLowerCase() === AUTHORIZATION_USED_TOPIC0.toLowerCase() && l.topics[1]?.toLowerCase() === fromTopic0 && l.topics[2]?.toLowerCase() === nonce,
+          );
+          const transfer = receipt.logs.find(
+            (l) => eq(l.address, token) && l.topics[0]?.toLowerCase() === TRANSFER_TOPIC0.toLowerCase() && l.topics[1]?.toLowerCase() === fromTopic0 && l.topics[2]?.toLowerCase() === pad(to, { size: 32 }).toLowerCase() && l.data !== undefined && BigInt(l.data) === value,
+          );
+          if (auth && transfer && receipt.blockNumber !== undefined && receipt.transactionHash) {
+            let ts = blockTs.get(receipt.blockNumber);
+            if (ts === undefined) {
+              ts = Number((await rc.getBlock({ blockNumber: receipt.blockNumber })).timestamp) * 1000;
+              blockTs.set(receipt.blockNumber, ts);
+            }
+            return [{ txHash: receipt.transactionHash, logIndex: transfer.logIndex ?? 0, blockNumber: Number(receipt.blockNumber), blockTs: ts, from, to, valueAtomic: value.toString(), nonce: signed.nonce, source: "chain" }];
+          }
+        }
+      } catch {
+        /* not mined yet, or RPC hiccup: fall through to the scan */
+      }
+    }
+
     const latest = await o.client.getBlockNumber();
     if (latest < o.fromBlock) return [];
 
