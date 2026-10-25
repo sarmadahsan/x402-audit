@@ -217,6 +217,38 @@ pnpm cli --db data/audit.sqlite --network eip155:8453 buy plan
   explicit go, with `--live`, `X402_AUDIT_LIVE=1`, `--network eip155:8453`,
   and a passing integration suite recorded by `pnpm gate` for the current commit.
 
+## Milestone 4 phase 1 (2026-10-24 20:25 to 2026-10-25 08:19 UTC)
+
+Report: `reports/phase1-2026-10-25.md` (+ `.json`), probes `reports/probe-2026-10-25.md`,
+stress `reports/stress-2026-10-25.md`, chain `reports/chain-proxy-2026-10-24.md`.
+
+- 2,305 buy calls to 48 sellers; 2,018 settlements; 18.31 USDC in the dollar
+  denominator; wallets funded 58 USDC, 39.6 left before phase 2.
+- Headline (buy only): **6.7% of paid calls failed the buyer, 95% CI 5.7% to
+  7.9%, n = 1,997; 3.4% dollar-weighted (CI 2.1% to 5.4%)**. Failures are
+  almost all `non_delivery` (paid, then 4xx or no response within the seller's
+  own declared window); 3 `overcharge`; 0 `wrong_goods` (no per-service schemas
+  yet, so every row is `schema_missing`); 0 `duplicate` in the main sample.
+- Reported separately: 198 `our_error` (listings we could not form a valid
+  request from: empty body examples), 71 `not_paid` (seller never produced a
+  payable 402, or rejected before settling), 0 `indeterminate`.
+- Stress: 5 of 10 sellers settled a second fresh signature for the same intent;
+  2 of 10 settled despite the connection being dropped after 2 s, and the naive
+  retry then double-charged on 5 of 10.
+- Operational fixes applied during the run (all audited in `reclassifications`,
+  30 rows): empty `mimeType` false `non_delivery`, bodiless POSTs, 402-wrapped
+  validation errors, injection pattern false positive, never-paid rows.
+
+## Phase 2 (started 2026-10-25 08:19 UTC)
+
+Operator asked to use the remaining funds for a wider, more diverse sample.
+`config/sample.yaml` now targets 6,000 calls (about 31 USDC) across the top 20
+sellers and 300 random tail sellers (317 sellers, 2,378 resources), with at
+most 150 calls per seller and tier-level redistribution. Phase 1's config is
+kept as `config/sample-phase1.yaml`. The probe set was widened to 60 + 300.
+`buy run --resume-since 2026-10-25T08:19:27Z` keeps phase-1 calls out of the
+phase-2 allocations; the report can be cut at that boundary with `--since`.
+
 ## Open decisions for the operator
 
 - Precedence of `overcharge` versus delivery failures (currently severity order; see taxonomy).
