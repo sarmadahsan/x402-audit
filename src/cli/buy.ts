@@ -199,7 +199,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       const fromBlock = await blockAtTimestamp(client, Math.floor(oldest.t / 1000) - 600);
       const lookup = makeChainSettlementLookup({ client, network: g.network, fromBlock, maxBlockRange: 50_000n });
       const r = await resolvePendingIndeterminate(db, { lookup, defaultMaxTimeoutSeconds: 30 });
-      const u = await resolveUnconfirmedSettlements(db, { lookup });
+      // Late settlements show up within minutes; re-checking only the last 2 h keeps this pass cheap on the RPC.
+      const u = await resolveUnconfirmedSettlements(db, { lookup, maxAgeMs: 2 * 3_600_000 });
       console.log(JSON.stringify({ ...r, unconfirmedChecked: u.checked, unconfirmedFound: u.found }));
       if (u.found.length) log.info(`settlements found late for ${u.found.length} row(s); run \`buy reclassify --apply --reason "late settlement"\` to update outcomes with an audit trail`);
     });
