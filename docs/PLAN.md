@@ -249,6 +249,14 @@ kept as `config/sample-phase1.yaml`. The probe set was widened to 60 + 300.
 `buy run --resume-since 2026-10-25T08:19:27Z` keeps phase-1 calls out of the
 phase-2 allocations; the report can be cut at that boundary with `--since`.
 
+## Phase 3 (operator instruction, 2026-10-25 17:40 UTC)
+
+"Just continue running and gathering data until all the wallets run out."
+After phase 2 exhausts its plan, further plans are sized to the remaining
+pool balance (minus a few cents per wallet so the last calls do not fail on
+balance), with the probe set widened again (top 60 + 600 tail) so each plan
+reaches more sellers. Each phase has its own boundary timestamp and report.
+
 ## Open decisions for the operator
 
 - Precedence of `overcharge` versus delivery failures (currently severity order; see taxonomy).
