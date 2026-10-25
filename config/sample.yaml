@@ -4,7 +4,7 @@
 # Phase 3 (2026-10-25 20:10 UTC): spend the remaining pool (~8 USDC) on the same wide seller set with a new seed;
 # the run ends on its own when no wallet can cover the cheapest remaining call. Phase 2 config kept as
 # config/sample-phase2.yaml.
-target_calls: 3000
+target_calls: 1800
 max_total_usd: 9
 tiers:
   top:
