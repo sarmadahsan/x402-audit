@@ -45,17 +45,18 @@ export async function reclassifyCalls(db: Db, o: ReclassifyOptions): Promise<Rec
               c.quote_requirements_json, c.request_json, c.response_status, c.response_headers_json, c.response_body, c.response_truncated_by_us,
               c.response_incomplete, c.latency_ms, c.outcome, c.flags_json
          FROM calls c JOIN resources r ON r.id = c.resource_id JOIN sellers s ON s.id = c.seller_id
-        WHERE c.response_body IS NOT NULL AND c.outcome IS NOT NULL ${where} ORDER BY c.id`,
+        WHERE c.response_body IS NOT NULL AND c.outcome IS NOT NULL AND c.paid = 1 ${where} ORDER BY c.id`,
     )
     .all(...(o.callIds ?? [])) as Row[];
 
   const changed: ReclassifyChange[] = [];
   const commit = currentCommit();
 
-  // Rows with no response at all whose error says the seller never offered a payable 402: not_paid, not our_error.
+  // Never-paid rows (no signature) whose error says the seller never offered a payable 402 (another status such as
+  // 200/410/503, or unreachable): not_paid. They must never reach the classifier's probe branch, which would say ok.
   const unavailable = db
     .prepare(`SELECT c.id, c.intent_id, r.url, c.outcome, c.flags_json FROM calls c JOIN resources r ON r.id = c.resource_id
-               WHERE c.response_body IS NULL AND c.outcome = 'our_error' AND (c.error LIKE 'no_quote:%' OR c.error LIKE 'network:%') ${where}`)
+               WHERE c.paid = 0 AND c.outcome != 'not_paid' AND (c.error LIKE 'no_quote:%' OR c.error LIKE 'network:%') ${where}`)
     .all(...(o.callIds ?? [])) as { id: number; intent_id: string; url: string; outcome: string; flags_json: string }[];
   for (const u of unavailable) {
     changed.push({ callId: u.id, intentId: u.intent_id, url: u.url, oldOutcome: u.outcome, newOutcome: "not_paid", oldFlags: JSON.parse(u.flags_json), newFlags: JSON.parse(u.flags_json) });

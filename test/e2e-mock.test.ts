@@ -222,3 +222,18 @@ describe("reclassify from stored rows", () => {
     expect(again.changed).toHaveLength(0);
   });
 });
+
+describe("seller that never offers a payable 402", () => {
+  it("is not_paid (never our_error, never ok) live and after reclassify", async () => {
+    const { reclassifyCalls } = await import("../src/pipeline/reclassify.js");
+    const o = await call("/__mock/catalog");
+    expect(o.result.signed).toBeUndefined();
+    expect(o.classification.outcome).toBe("not_paid");
+    expect(db.prepare("SELECT paid, outcome FROM calls WHERE id = ?").get(o.callId)).toEqual({ paid: 0, outcome: "not_paid" });
+    // Simulate the earlier mislabel and prove reclassify repairs it to not_paid, not ok.
+    db.prepare("UPDATE calls SET outcome = 'our_error' WHERE id = ?").run(o.callId);
+    const r = await reclassifyCalls(db, { reason: "test", apply: true, callIds: [o.callId], services: () => service });
+    expect(r.changed.map((c) => c.newOutcome)).toEqual(["not_paid"]);
+    expect(db.prepare("SELECT outcome FROM calls WHERE id = ?").get(o.callId)).toEqual({ outcome: "not_paid" });
+  });
+});
