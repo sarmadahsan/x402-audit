@@ -88,7 +88,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .option("--max-calls <n>", "stop after N calls this run", (v) => parseInt(v, 10))
     .option("--confirm-minutes <n>", "settlement confirmation window", (v) => parseInt(v, 10), 10)
     .option("--confirm-interval-seconds <n>", "how often to re-check the chain while waiting for a settlement", (v) => parseInt(v, 10), 3)
-    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number }) {
+    .option("--resume-since <iso>", "only subtract calls made at or after this time from the plan (start of this phase); default: all earlier calls")
+    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string }) {
       const g = globals(this);
       const { live } = moneyGate(g, requireLive);
       const env = loadEnv();
@@ -117,9 +118,11 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       // Resume: calls already made for a resource (any earlier live run, any outcome) count against its allocation,
       // so a halted or crashed run can be restarted without resampling the first resources.
       if (live) {
+        const sinceMs = o.resumeSince ? Date.parse(o.resumeSince) : 0;
+        if (o.resumeSince && !Number.isFinite(sinceMs)) throw new Error(`--resume-since is not a date: ${o.resumeSince}`);
         const done = new Map(
           // our_error rows are excluded from the denominator, so they do not consume the resource's allocation.
-          (db.prepare("SELECT resource_id, COUNT(*) n FROM calls WHERE source = 'buy' AND outcome != 'our_error' GROUP BY resource_id").all() as { resource_id: number; n: number }[]).map((r) => [r.resource_id, r.n]),
+          (db.prepare("SELECT resource_id, COUNT(*) n FROM calls WHERE source = 'buy' AND outcome != 'our_error' AND ts >= ? GROUP BY resource_id").all(sinceMs) as { resource_id: number; n: number }[]).map((r) => [r.resource_id, r.n]),
         );
         const before = plan.totalCalls;
         plan.allocations = plan.allocations.map((a) => ({ ...a, calls: Math.max(0, a.calls - (done.get(a.resourceId) ?? 0)) })).filter((a) => a.calls > 0);

@@ -207,36 +207,67 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
     const emptyCats = sample.categories.filter((c) => !cats.includes(c));
     if (emptyCats.length) notes.push(`Tier ${t.tier}: no eligible sellers in ${emptyCats.join(", ")}; calls redistributed across ${cats.join(", ")}.`);
     const catTargets = apportion(tierTargets[ti]!, cats.map(() => 1));
-    cats.forEach((cat, ci) => {
-      const sellers = t.sellers.filter((s) => categoryOf(s) === cat);
-      const res = sellers.flatMap((s) => bySeller.get(s)!);
-      const target = catTargets[ci]!;
-      // D'Hondt-style apportionment by weight 1/max(price, floor), each resource capped at max_share of the stratum.
-      const weights = res.map((r) => {
-        const p = BigInt(r.price) > floorAtomic ? BigInt(r.price) : floorAtomic;
-        return 1 / Number(p > 0n ? p : 1n);
-      });
-      const cap = Math.max(1, Math.floor(sample.max_share_per_resource * target));
-      const calls = res.map(() => 0);
-      for (let k = 0; k < target; k++) {
-        let best = -1;
+    // D'Hondt-style apportionment by weight 1/max(price, floor). Caps: each resource at max_share_per_resource of
+    // its stratum target, each seller at max_calls_per_seller across the tier. A category that cannot absorb its
+    // target (few sellers, or one seller hitting its cap) leaves the remainder to the tier's other categories.
+    const tierRes = cats.flatMap((cat) => t.sellers.filter((s) => categoryOf(s) === cat).flatMap((s) => bySeller.get(s)!));
+    const count = new Map<number, number>(tierRes.map((r) => [r.resource_id, 0]));
+    const perSeller = new Map<number, number>();
+    const weightOf = (r: EligibleRow) => {
+      const p = BigInt(r.price) > floorAtomic ? BigInt(r.price) : floorAtomic;
+      return 1 / Number(p > 0n ? p : 1n);
+    };
+    const fill = (res: EligibleRow[], n: number, resCap: number): number => {
+      let placed = 0;
+      for (let k = 0; k < n; k++) {
+        let best: EligibleRow | undefined;
         let bestQ = -1;
-        for (let i = 0; i < res.length; i++) {
-          if (calls[i]! >= cap) continue;
-          const q = weights[i]! / (calls[i]! + 1);
-          if (q > bestQ) {
-            bestQ = q;
-            best = i;
-          }
+        for (const r of res) {
+          const c = count.get(r.resource_id)!;
+          if (c >= resCap) continue;
+          if ((perSeller.get(r.seller_id) ?? 0) >= sample.max_calls_per_seller) continue;
+          const q = weightOf(r) / (c + 1);
+          if (q > bestQ) { bestQ = q; best = r; }
         }
-        if (best < 0) break;
-        calls[best]!++;
+        if (!best) break;
+        count.set(best.resource_id, count.get(best.resource_id)! + 1);
+        perSeller.set(best.seller_id, (perSeller.get(best.seller_id) ?? 0) + 1);
+        placed++;
       }
+      return placed;
+    };
+    const catRes = new Map<string, EligibleRow[]>();
+    const catCap = new Map<string, number>();
+    let leftover = 0;
+    cats.forEach((cat, ci) => {
+      const res = t.sellers.filter((s) => categoryOf(s) === cat).flatMap((s) => bySeller.get(s)!);
+      const target = catTargets[ci]!;
+      const cap = Math.max(1, Math.floor(sample.max_share_per_resource * target));
+      catRes.set(cat, res);
+      catCap.set(cat, cap);
+      const got = fill(res, target, cap);
+      if (got < target) {
+        leftover += target - got;
+        notes.push(`Stratum ${t.tier}/${cat}: ${res.length} resource(s) from ${new Set(res.map((r) => r.seller_id)).size} seller(s) absorb ${got} of ${target} target calls (caps: ${cap} per resource, ${sample.max_calls_per_seller} per seller); remainder offered to the tier's other categories.`);
+      }
+    });
+    if (leftover > 0) {
+      // Second pass: the tier's remainder goes to categories with headroom, same caps (per-resource cap re-derived
+      // from each category's own target so a flood cannot land on one resource).
+      let moved = 0;
+      for (const cat of cats) {
+        if (leftover - moved <= 0) break;
+        const res = catRes.get(cat)!;
+        moved += fill(res, leftover - moved, catCap.get(cat)!);
+      }
+      notes.push(`Tier ${t.tier}: ${moved} of ${leftover} unabsorbed call(s) redistributed across categories with headroom.`);
+    }
+    cats.forEach((cat, ci) => {
+      const res = catRes.get(cat)!;
+      const sellers = [...new Set(res.map((r) => r.seller_id))];
+      const target = catTargets[ci]!;
+      const calls = res.map((r) => count.get(r.resource_id)!);
       const got = calls.reduce((s, x) => s + x, 0);
-      if (got < target)
-        notes.push(
-          `Stratum ${t.tier}/${cat}: ${res.length} resource(s) x cap ${cap} (max_share_per_resource ${sample.max_share_per_resource}) absorbs ${got} of ${target} target calls.`,
-        );
       let spend = 0n;
       res.forEach((r, i) => {
         if (calls[i]! === 0) return;

@@ -1,13 +1,15 @@
 # Stratified sampling plan for `buy`. Weights are relative within a tier.
-target_calls: 3000
-max_total_usd: 300
+# Phase 2 (2026-10-25): operator asked to use the remaining funds for a wider, more diverse sample.
+# Phase 1 used config/sample-phase1.yaml (3,000 target calls, top 20 + tail 40 sellers).
+target_calls: 6000
+max_total_usd: 35
 tiers:
   top:
     size: 20            # top N sellers by 30-day settlement volume
-    share: 0.5          # share of target_calls
+    share: 0.3          # share of target_calls
   tail:
-    size: 40            # random N from the rest (seeded; seed recorded in runs)
-    share: 0.5
+    size: 300           # random N from the rest (seeded; seed recorded in runs)
+    share: 0.7
 categories: [inference, data, scraping, compute, other]
 # Price weighting: a resource's selection weight is proportional to
 # 1 / max(price_usd, price_floor_usd), capped so one cheap resource cannot
@@ -17,6 +19,9 @@ price_floor_usd: 0.001
 # the per-seller resource cap below is what stops one seller from dominating.
 max_share_per_resource: 0.25
 max_resources_per_seller: 10
-seed: 20261023
+# No single seller takes more than this many calls per plan (keeps one $0.05 seller from eating the budget);
+# a stratum that cannot absorb its target passes the remainder to the tier's other categories.
+max_calls_per_seller: 150
+seed: 20261025
 # Rate limits
 min_seconds_between_calls_per_resource: 60
