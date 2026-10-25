@@ -83,6 +83,10 @@ export function renderMarkdown(data: ReportData): string {
     ["unclassified", h.excluded.unclassified, "no outcome yet"],
   ]));
   out.push(`Flagged for human review: **${h.flagged.injection}** \`injection\` row(s) (in the denominator, not counted as failures); ${h.flagged.injection_hit_total} row(s) carry the \`injection_hit\` flag under any outcome.\n`);
+  if (h.our_error_reasons.length) {
+    out.push("`our_error` by reason (our fault, or a listing we could not form a valid request from; never the seller's):\n");
+    out.push(table(["reason", "rows"], h.our_error_reasons.map((r) => [r.reason, r.n])));
+  }
   out.push("Secondary flags among denominator rows (a row can carry several):\n");
   out.push(table(["flag", "rows", "of which headline failures", "dollars"], h.flag_counts.map((r) => [r.flag, r.n, r.failed, usdc(r.dollars_atomic)])));
   out.push("Overcharge sensitivity (overcharge only counted when quote / reference >= ratio):\n");

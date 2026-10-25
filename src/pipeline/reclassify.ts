@@ -51,6 +51,22 @@ export async function reclassifyCalls(db: Db, o: ReclassifyOptions): Promise<Rec
 
   const changed: ReclassifyChange[] = [];
   const commit = currentCommit();
+
+  // Rows with no response at all whose error says the seller never offered a payable 402: not_paid, not our_error.
+  const unavailable = db
+    .prepare(`SELECT c.id, c.intent_id, r.url, c.outcome, c.flags_json FROM calls c JOIN resources r ON r.id = c.resource_id
+               WHERE c.response_body IS NULL AND c.outcome = 'our_error' AND (c.error LIKE 'no_quote:%' OR c.error LIKE 'network:%') ${where}`)
+    .all(...(o.callIds ?? [])) as { id: number; intent_id: string; url: string; outcome: string; flags_json: string }[];
+  for (const u of unavailable) {
+    changed.push({ callId: u.id, intentId: u.intent_id, url: u.url, oldOutcome: u.outcome, newOutcome: "not_paid", oldFlags: JSON.parse(u.flags_json), newFlags: JSON.parse(u.flags_json) });
+    if (o.apply) {
+      db.transaction(() => {
+        db.prepare("UPDATE calls SET outcome = 'not_paid', our_error_reason = NULL, classified_at = ? WHERE id = ?").run(now(), u.id);
+        db.prepare("INSERT INTO reclassifications (call_id, ts, reason, old_outcome, new_outcome, old_flags_json, new_flags_json, code_commit) VALUES (?,?,?,?,?,?,?,?)")
+          .run(u.id, now(), o.reason, u.outcome, "not_paid", u.flags_json, u.flags_json, commit);
+      })();
+    }
+  }
   const upd = db.prepare("UPDATE calls SET outcome = ?, flags_json = ?, classified_at = ? WHERE id = ?");
   const delV = db.prepare("DELETE FROM validator_results WHERE call_id = ?");
   const insV = db.prepare("INSERT INTO validator_results (call_id, validator, status, reason, evidence_json) VALUES (?,?,?,?,?)");

@@ -121,6 +121,15 @@ export const QUERIES = {
     WHERE in_denom = 1
     GROUP BY j.value ORDER BY n DESC, j.value`,
 
+  /** our_error rows by reason (the text after "our_error:" in calls.our_error_reason, else the whole reason). */
+  buy_our_error_reasons: `SELECT
+      CASE WHEN instr(COALESCE(c.our_error_reason, ''), 'our_error:') > 0
+           THEN substr(c.our_error_reason, instr(c.our_error_reason, 'our_error:') + 10)
+           ELSE COALESCE(NULLIF(c.our_error_reason, ''), c.error, '(no reason recorded)') END AS reason,
+      COUNT(*) AS n
+    FROM calls c WHERE c.source = 'buy' AND c.outcome = 'our_error' AND ${CALL_WINDOW}
+    GROUP BY reason ORDER BY n DESC`,
+
   buy_excluded_counts: `${BUY_CTE}
     SELECT
       COALESCE(SUM(outcome = '${OUTCOMES.OUR_ERROR}'), 0) AS our_error,

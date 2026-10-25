@@ -7,7 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Db } from "../db/index.js";
 import { classify, type Classification } from "../classify.js";
 import { log } from "../log.js";
-import { CALL_SOURCES, FLAGS, INDETERMINATE_POLL_MAX_MS, type CallSource, type ReferenceSource } from "../taxonomy.js";
+import { CALL_SOURCES, FLAGS, INDETERMINATE_POLL_MAX_MS, OUTCOMES, type CallSource, type Flag, type ReferenceSource } from "../taxonomy.js";
 import { runAllValidators } from "../validators/index.js";
 import { malformedRequestReason } from "./badRequest.js";
 import type { ServiceConfig, ValidationContext, ValidatorResult } from "../validators/types.js";
@@ -139,6 +139,11 @@ export async function runPaidCall(i: PaidCallInput): Promise<PaidCallOutput> {
         return overCap ? undefined : { reason: `${result.error.kind}: ${result.error.message}` };
       case "no_quote":
       case "network":
+        // The seller never produced a payable 402 (other status, unreachable): nothing was paid and nothing
+        // delivered, and it is the seller's availability, not our request. classify() lands these in not_paid
+        // (paymentSent=false, responseReceived=false) via the probe-row branch below is wrong, so we route
+        // them explicitly: see notPaidReason.
+        return undefined;
       case "sdk":
         return paymentSent ? undefined : { reason: `${result.error.kind}: ${result.error.message}` };
       default:
@@ -151,7 +156,10 @@ export async function runPaidCall(i: PaidCallInput): Promise<PaidCallOutput> {
   const badReason = response ? malformedRequestReason(response.status, Buffer.from(response.body).toString("utf8").slice(0, 4096), settlements.length) : null;
   const ourErrorFinal = ourError ?? (badReason ? { reason: badReason } : undefined);
 
-  const classification = classify({
+  const sellerUnavailable = !paymentSent && result.error && (result.error.kind === "no_quote" || result.error.kind === "network");
+  const classification = sellerUnavailable
+    ? { outcome: OUTCOMES.NOT_PAID, flags: [] as Flag[], reasons: [`not_paid:${result.error!.kind}: ${result.error!.message}`] }
+    : classify({
     ...(ourErrorFinal ? { ourError: ourErrorFinal } : {}),
     paymentSent,
     settlementCount: new Set(settlements.map((s) => s.txHash)).size,
@@ -171,7 +179,7 @@ export async function runPaidCall(i: PaidCallInput): Promise<PaidCallOutput> {
     ...(i.priceDiscrimination !== undefined ? { priceDiscrimination: i.priceDiscrimination } : {}),
     ...(response?.truncatedByUs ? { truncatedByUs: true } : {}),
     ...(rateLimited ? { rateLimited: true } : {}),
-  });
+      });
 
   const callId = persistCall(i, intentId, result, quote, classification, validators, settlements, signedAt, startedAt);
   log.info(`call ${intentId.slice(0, 8)} ${i.resource.url} -> ${classification.outcome} [${classification.flags.join(",")}]`);
