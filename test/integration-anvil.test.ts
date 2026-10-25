@@ -309,4 +309,19 @@ describe.skipIf(!HAVE_ANVIL)("integration on anvil: buy + stress + resolver", ()
       if (rows[i]!.seller_id === rows[i - 1]!.seller_id) expect(rows[i]!.ts).toBeGreaterThanOrEqual(rows[i - 1]!.ts + rows[i - 1]!.lat);
     }
   });
+
+  it("10. balance-aware rotation skips an empty wallet and ends the run when the pool cannot cover the cheapest call", async () => {
+    const { runBuy } = await import("../src/buy/run.js");
+    const ok = ref("/ok");
+    const alloc = { resourceId: ok.resourceId, sellerId: ok.sellerId, sellerDomain: ok.sellerDomain, url: ok.url, method: "GET", inputJson: null, tier: "top" as const, category: "data", priceAtomic: BigInt(LISTED), calls: 4 };
+    const plan2 = { ...buildBuyPlan(db, { sample, caps, network: NETWORK, now: Date.now() }), allocations: [alloc], totalCalls: 4, totalSpendAtomic: BigInt(LISTED) * 4n };
+    const balances = new Map<string, bigint>(payers.map((p, i) => [p.address, i === 0 ? 0n : 10_000_000n]));
+    const stats = await runBuy(db, { ...common(), plan: plan2, dryRun: false, minSecondsBetweenCallsPerResource: 1, walletBalance: async (a) => balances.get(a) ?? 0n, balanceTtlMs: 0 });
+    expect(stats.calls).toBe(4);
+    expect(stats.schedule.every((c) => c.wallet !== payers[0]!.address)).toBe(true); // the empty wallet was never used
+    const plan3 = { ...plan2, allocations: [{ ...alloc, calls: 2 }], totalCalls: 2 };
+    const stats2 = await runBuy(db, { ...common(), plan: plan3, dryRun: false, minSecondsBetweenCallsPerResource: 1, walletBalance: async () => 0n, balanceTtlMs: 0 });
+    expect(stats2.poolExhausted).toBe(true);
+    expect(stats2.calls).toBe(0);
+  });
 });

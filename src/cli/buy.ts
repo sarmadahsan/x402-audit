@@ -143,6 +143,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
           caps,
           network: g.network,
           settlementLookupFactory: makeChainLookupFactory({ client, network: g.network, ...(receiptClient ? { receiptClient } : {}) }),
+          // Balance-aware rotation: skip wallets that cannot cover the next call; end cleanly when the pool is empty.
+          walletBalance: async (address) => (receiptClient ?? client).readContract({ address: usdcFor(g.network), abi: erc20Abi, functionName: "balanceOf", args: [address as `0x${string}`] }),
           services: serviceLookup(loadServiceConfigs()),
           minSecondsBetweenCallsPerResource: files.sample.min_seconds_between_calls_per_resource,
           confirmTimeoutMs: o.confirmMinutes * 60_000,

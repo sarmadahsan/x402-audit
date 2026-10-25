@@ -48,6 +48,12 @@ export interface RunBuyOptions extends ConfirmPolicy {
   settlementLookupFactory?: () => Promise<SettlementLookup>;
   /** Service config by seller domain. Default: config/schemas/*.json under process.cwd(). */
   services?: ServiceLookup;
+  /** On-chain USDC balance of a pool wallet (atomic). When given, a wallet that cannot cover the next price plus
+   * `balanceMarginAtomic` is skipped in rotation, and the run ends (status completed, poolExhausted) when no wallet
+   * can cover the cheapest remaining call. Balances are cached for `balanceTtlMs`. */
+  walletBalance?: (address: string) => Promise<bigint>;
+  balanceMarginAtomic?: bigint;
+  balanceTtlMs?: number;
   defaultMaxTimeoutSeconds?: number;
   minSecondsBetweenCallsPerResource?: number;
   /** Per HTTP request timeout passed to the payer (quote and paid request separately). */
@@ -103,6 +109,8 @@ export interface BuyStats {
   backoffs: { sellerId: number; until: number; reason: string }[];
   /** Calls dropped because a resource produced UNFORMABLE_AFTER consecutive malformed-request our_errors. */
   skippedUnformable: { resourceId: number; url: string; dropped: number }[];
+  /** True when the run ended because no pool wallet could cover the cheapest remaining call. */
+  poolExhausted?: boolean;
 }
 
 /** After this many consecutive malformed-request our_errors on one resource, its remaining calls are dropped. */
@@ -175,6 +183,19 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
 
   // A seller's daily cap is a per-seller limit, not a reason to stop every other seller: record it in `halts`
   // (so the breach is auditable) and park that seller until the next UTC day. Per-day and total caps still halt.
+  const balCache = new Map<string, { v: bigint; at: number }>();
+  const balanceOf = async (address: string): Promise<bigint> => {
+    const ttl = o.balanceTtlMs ?? 120_000;
+    const c = balCache.get(address);
+    if (c && realNow() - c.at < ttl) return c.v;
+    try {
+      const v = await o.walletBalance!(address);
+      balCache.set(address, { v, at: realNow() });
+      return v;
+    } catch {
+      return c?.v ?? 0n; // unreadable balance: be conservative
+    }
+  };
   const parkedSellers = new Set<number>();
   const parkSeller = (sellerId: number, details: unknown) => {
     const until = utcDayStart(realNow()) + 24 * 3_600_000;
@@ -234,7 +255,29 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       inflight.add(a.sellerId);
       try {
       const k = sellerK.get(a.sellerId) ?? 0;
-      const payer = o.payers[((sellerIdx.get(a.sellerId) ?? 0) + k) % o.payers.length]!;
+      let payer = o.payers[((sellerIdx.get(a.sellerId) ?? 0) + k) % o.payers.length]!;
+      if (o.walletBalance && !o.dryRun) {
+        // Balance-aware rotation: start at the round-robin wallet, take the first one that can cover this price.
+        const margin = o.balanceMarginAtomic ?? 50_000n;
+        let chosen: Payer | undefined;
+        for (let w = 0; w < o.payers.length; w++) {
+          const cand = o.payers[((sellerIdx.get(a.sellerId) ?? 0) + k + w) % o.payers.length]!;
+          if ((await balanceOf(cand.address)) >= a.priceAtomic + margin) { chosen = cand; break; }
+        }
+        if (!chosen) {
+          const cheapest = slots.filter((s) => s.remaining > 0).reduce((m, s) => (s.alloc.priceAtomic < m ? s.alloc.priceAtomic : m), a.priceAtomic);
+          let anyCanPayCheapest = false;
+          for (const cand of o.payers) if ((await balanceOf(cand.address)) >= cheapest + margin) { anyCanPayCheapest = true; break; }
+          if (!anyCanPayCheapest) {
+            stats.poolExhausted = true;
+            L.warn(`pool exhausted: no wallet can cover the cheapest remaining call (${cheapest} atomic); ending the run`);
+            return;
+          }
+          pick.lastAt = t; // too expensive for what is left in the pool; try other slots
+          continue;
+        }
+        payer = chosen;
+      }
       const reference = referencePriceFor(db, a.resourceId, t);
       const seq = stats.schedule.length + 1;
       stats.schedule.push({ seq, at: t, resourceId: a.resourceId, sellerId: a.sellerId, url: a.url, wallet: payer.address });
