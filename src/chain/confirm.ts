@@ -244,3 +244,39 @@ export async function resolvePendingIndeterminate(db: Db, o: ResolvePendingOptio
   }
   return out;
 }
+
+
+/**
+ * Paid rows (any outcome) whose settlement was never found, still inside the 24 h window: look again and, when a
+ * settlement now appears, record it. The outcome is NOT changed here; run `buy reclassify` afterwards so the
+ * change is audited (settlement_count is a classifier input).
+ */
+export async function resolveUnconfirmedSettlements(
+  db: Db,
+  o: { lookup: SettlementLookup; now?: () => number; maxAgeMs?: number },
+): Promise<{ checked: number; found: number[] }> {
+  const now = (o.now ?? Date.now)();
+  const rows = db
+    .prepare(
+      `SELECT id, intent_id, ts, wallet, quote_pay_to, amount_paid_atomic, nonce, valid_after, valid_before
+         FROM calls WHERE paid = 1 AND settlement_count = 0 AND nonce IS NOT NULL AND outcome != 'indeterminate' AND ts >= ? ORDER BY id`,
+    )
+    .all(now - (o.maxAgeMs ?? 24 * 60 * 60 * 1000)) as { id: number; intent_id: string; ts: number; wallet: string; quote_pay_to: string; amount_paid_atomic: string; nonce: string; valid_after: number | null; valid_before: number | null }[];
+  const found: number[] = [];
+  const si = db.prepare(`INSERT OR IGNORE INTO settlements (call_id, intent_id, tx_hash, log_index, block_number, block_ts, from_addr, to_addr, value_atomic, nonce, source, found_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  for (const r of rows) {
+    let s: SettlementFact[] = [];
+    try {
+      s = await o.lookup({ nonce: r.nonce, validAfter: String(r.valid_after ?? 0), validBefore: String(r.valid_before ?? 0), value: r.amount_paid_atomic, to: r.quote_pay_to, from: r.wallet });
+    } catch {
+      continue;
+    }
+    if (s.length === 0) continue;
+    db.transaction(() => {
+      for (const f of s) si.run(r.id, r.intent_id, f.txHash, f.logIndex ?? 0, f.blockNumber ?? null, f.blockTs ?? null, f.from, f.to, f.valueAtomic, f.nonce ?? null, f.source, now);
+      db.prepare("UPDATE calls SET settlement_count = ?, settlement_tx_hash = ?, settlement_block = ?, settlement_confirmed_at = ? WHERE id = ?").run(s.length, s[0]!.txHash, s[0]!.blockNumber ?? null, now, r.id);
+    })();
+    found.push(r.id);
+  }
+  return { checked: rows.length, found };
+}

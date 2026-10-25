@@ -5,7 +5,7 @@ import { buildBuyPlan, renderPlan, assertPlanWithinCaps, planToJSON } from "../b
 import { runBuy } from "../buy/run.js";
 import { loadServiceConfigs, serviceLookup } from "../buy/services.js";
 import { blockAtTimestamp, makeChainClient, usdcFor } from "../chain/client.js";
-import { makeChainLookupFactory, makeChainSettlementLookup, resolvePendingIndeterminate } from "../chain/confirm.js";
+import { makeChainLookupFactory, makeChainSettlementLookup, resolvePendingIndeterminate, resolveUnconfirmedSettlements } from "../chain/confirm.js";
 import { atomicToUsd, capsFromEnv, loadEnv, loadFileConfigs, MAINNET, type Env, type Network } from "../config/index.js";
 import { openDb, type Db } from "../db/index.js";
 import { log } from "../log.js";
@@ -189,12 +189,14 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       const env = loadEnv();
       const db = openDb(g.db);
       const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
-      const oldest = db.prepare("SELECT MIN(ts) t FROM calls WHERE outcome = 'indeterminate'").get() as { t: number | null };
-      if (!oldest.t) { console.log(JSON.stringify({ checked: 0 })); return; }
+      const oldest = db.prepare("SELECT MIN(ts) t FROM calls WHERE outcome = 'indeterminate' OR (paid = 1 AND settlement_count = 0 AND ts >= ?)").get(Date.now() - 24 * 3_600_000) as { t: number | null };
+      if (!oldest.t) { console.log(JSON.stringify({ checked: 0, unconfirmedChecked: 0 })); return; }
       const fromBlock = await blockAtTimestamp(client, Math.floor(oldest.t / 1000) - 600);
       const lookup = makeChainSettlementLookup({ client, network: g.network, fromBlock, maxBlockRange: 50_000n });
       const r = await resolvePendingIndeterminate(db, { lookup, defaultMaxTimeoutSeconds: 30 });
-      console.log(JSON.stringify(r));
+      const u = await resolveUnconfirmedSettlements(db, { lookup });
+      console.log(JSON.stringify({ ...r, unconfirmedChecked: u.checked, unconfirmedFound: u.found }));
+      if (u.found.length) log.info(`settlements found late for ${u.found.length} row(s); run \`buy reclassify --apply --reason "late settlement"\` to update outcomes with an audit trail`);
     });
   return b;
 }

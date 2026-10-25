@@ -71,6 +71,12 @@ export function requestBodyFor(method: string, inputJson: string | null): { head
   return { headers: { "content-type": "application/json" }, body: ex !== undefined ? JSON.stringify(ex) : "{}" };
 }
 
+/** True when this resource has at least one paid 2xx call with no settlement found (seen in any earlier run). */
+export function knownUnsettled(db: Db, resourceId: number): boolean {
+  const r = db.prepare("SELECT 1 FROM calls WHERE resource_id = ? AND paid = 1 AND settlement_count = 0 AND response_status BETWEEN 200 AND 299 LIMIT 1").get(resourceId);
+  return Boolean(r);
+}
+
 export interface ScheduledCall {
   seq: number;
   at: number;
@@ -239,7 +245,9 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         perCallCapAtomic: o.caps.perCallAtomic,
         ...(service ? { service } : {}),
         defaultMaxTimeoutSeconds,
-        settlementLookup: confirmingLookup(base, guarded.last, o),
+        // A resource that already delivered 2xx with no settlement visible to us (free delivery, or a settlement
+        // path we cannot see) gets a short wait instead of the full window; `buy resolve` re-checks later.
+        settlementLookup: confirmingLookup(base, guarded.last, knownUnsettled(db, a.resourceId) ? { ...o, confirmTimeoutMs: Math.min(o.confirmTimeoutMs ?? 600_000, 60_000) } : o),
         ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
         payToChanged: priceEventFlag(db, a.resourceId, "payto_changed", t),
         priceDiscrimination: priceEventFlag(db, a.resourceId, "price_discrimination", t),
