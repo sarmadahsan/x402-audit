@@ -146,6 +146,8 @@ CREATE TABLE IF NOT EXISTS attempts (
   phase          TEXT NOT NULL                 -- planned|signed|sent
 );
 CREATE INDEX IF NOT EXISTS attempts_intent ON attempts(intent_id);
+CREATE INDEX IF NOT EXISTS attempts_nonce ON attempts(nonce);
+CREATE INDEX IF NOT EXISTS attempts_ts ON attempts(ts);
 CREATE TRIGGER IF NOT EXISTS attempts_no_update BEFORE UPDATE ON attempts
   BEGIN SELECT RAISE(ABORT, 'attempts is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS attempts_no_delete BEFORE DELETE ON attempts
@@ -199,6 +201,9 @@ CREATE INDEX IF NOT EXISTS calls_intent ON calls(intent_id);
 CREATE INDEX IF NOT EXISTS calls_source_outcome ON calls(source, outcome);
 CREATE INDEX IF NOT EXISTS calls_seller ON calls(seller_id);
 CREATE INDEX IF NOT EXISTS calls_resource_ts ON calls(resource_id, ts);
+CREATE INDEX IF NOT EXISTS calls_nonce ON calls(nonce);
+CREATE INDEX IF NOT EXISTS calls_ts ON calls(ts);
+CREATE INDEX IF NOT EXISTS calls_seller_ts ON calls(seller_id, ts);
 
 CREATE TABLE IF NOT EXISTS validator_results (
   id             INTEGER PRIMARY KEY,
