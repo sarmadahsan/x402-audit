@@ -207,6 +207,6 @@ export function confirmingLookup(base: SettlementLookup, last: () => PaidResult 
       const r = last();
       timeoutMs = looksBadRequest(r) ? badGrace : looksRejected(r) ? grace : full;
     }
-    return confirmWithTimeout(base, signed, { timeoutMs, intervalMs });
+    return confirmWithTimeout(base, signed, { timeoutMs, intervalMs, ...(hint ? { hint } : {}) });
   };
 }

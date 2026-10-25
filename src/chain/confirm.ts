@@ -166,6 +166,8 @@ export interface ConfirmOptions {
   /** Default 15 s. */
   intervalMs?: number;
   abortSignal?: AbortSignal;
+  /** The call's own response facts (status, settlement header tx), forwarded to the lookup on every poll. */
+  hint?: SettlementLookupHint;
 }
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -190,7 +192,7 @@ export async function confirmWithTimeout(lookup: SettlementLookup, signed: Signe
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      const found = await lookup(signed);
+      const found = await lookup(signed, o.hint); // the hint carries the seller-reported tx hash for receipt-first
       if (found.length > 0) return found;
     } catch (e) {
       log.warn(`settlement lookup failed for nonce ${signed.nonce.slice(0, 10)}…: ${e instanceof Error ? e.message : String(e)}`);

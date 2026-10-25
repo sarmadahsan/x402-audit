@@ -131,6 +131,13 @@ describe("receipt-first verification from the seller-reported tx hash", () => {
 });
 
 describe("confirmWithTimeout", () => {
+  it("forwards the hint to the lookup on every poll", async () => {
+    const seen: unknown[] = [];
+    const lookup = async (_s: SignedAuthorization, hint?: unknown) => { seen.push(hint); return seen.length >= 2 ? [{ txHash: tx(1), from: FROM, to: TO, valueAtomic: "1", source: "chain" as const }] : []; };
+    const r = await confirmWithTimeout(lookup, signed, { timeoutMs: 5_000, intervalMs: 5, hint: { settlementTx: tx(9) } });
+    expect(r).toHaveLength(1);
+    expect(seen).toEqual([{ settlementTx: tx(9) }, { settlementTx: tx(9) }]);
+  });
   it("polls until found", async () => {
     let n = 0;
     const found = await confirmWithTimeout(
