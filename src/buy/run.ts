@@ -32,8 +32,7 @@ import {
   startRun,
   type CapBreach,
   type ConfirmPolicy,
-  type Logger,
-} from "./guard.js";
+  type Logger, utcDayStart } from "./guard.js";
 
 export const RATE_LIMIT_BACKOFF_MS = 5 * 60_000;
 
@@ -174,6 +173,17 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
   const backoffUntil = new Map<number, number>();
   let cursor = 0;
 
+  // A seller's daily cap is a per-seller limit, not a reason to stop every other seller: record it in `halts`
+  // (so the breach is auditable) and park that seller until the next UTC day. Per-day and total caps still halt.
+  const parkedSellers = new Set<number>();
+  const parkSeller = (sellerId: number, details: unknown) => {
+    const until = utcDayStart(realNow()) + 24 * 3_600_000;
+    backoffUntil.set(sellerId, until);
+    parkedSellers.add(sellerId);
+    stats.backoffs.push({ sellerId, until, reason: "cap_per_seller_per_day" });
+    if (!o.dryRun) insertHalt(db, runId, "cap_per_seller_per_day", { ...(details as object), action: "seller parked until next UTC day", until }, realNow());
+    L.warn(`seller ${sellerId} reached its daily cap; parked until ${new Date(until).toISOString()}`, details);
+  };
   const halt = (reason: string, details: unknown) => {
     stats.halted = true;
     stats.haltReason = reason;
@@ -207,6 +217,12 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
           await sleep(500); // everything eligible is busy in another worker; re-check soon
           continue;
         }
+        // Only sellers parked by their daily cap are left: nothing more can be bought today. End the run
+        // (status completed); a later `buy run` resumes the remaining allocations.
+        if (slots.filter((s) => s.remaining > 0).every((s) => parkedSellers.has(s.alloc.sellerId))) {
+          L.warn(`every remaining allocation belongs to a seller parked by its daily cap; ending the run`);
+          return;
+        }
         const next = Math.min(
           ...slots.filter((s) => s.remaining > 0).map((s) => Math.max(s.lastAt + gapMs, backoffUntil.get(s.alloc.sellerId) ?? 0)),
         );
@@ -234,6 +250,10 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       // Cap check before anything is quoted, using the expected price.
       const expected = BigInt(reference?.amountAtomic ?? a.priceAtomic.toString());
       const pre = checkCaps(db, { caps: o.caps, sellerId: a.sellerId, amountAtomic: expected, now: realNow(), scope: "buy" });
+      if (pre && pre.reason === "cap_per_seller_per_day") {
+        parkSeller(a.sellerId, { ...pre.details, resourceId: a.resourceId, stage: "before_quote" });
+        continue;
+      }
       if (pre && pre.reason !== "cap_per_call") {
         halt(pre.reason, { ...pre.details, resourceId: a.resourceId, stage: "before_quote" });
         return;
@@ -282,8 +302,12 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
 
       if (breach) {
         const b = breach as CapBreach;
-        halt(b.reason, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" });
-        return;
+        if (b.reason === "cap_per_seller_per_day") {
+          parkSeller(a.sellerId, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" });
+        } else {
+          halt(b.reason, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" });
+          return;
+        }
       }
       if (out.result.response?.status === 429 || out.result.quoteResult?.status === 429) {
         const until = realNow() + RATE_LIMIT_BACKOFF_MS;

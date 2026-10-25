@@ -198,7 +198,7 @@ describe.skipIf(!HAVE_ANVIL)("integration on anvil: buy + stress + resolver", ()
     expect(db.prepare("SELECT status FROM runs WHERE id = ?").get(stats.runId)).toEqual({ status: "completed" });
   }, 90_000);
 
-  it("4. per-seller-per-day cap breach writes a halts row and stops the run", async () => {
+  it("4. per-seller-per-day cap breach writes a halts row, parks the seller, and the run continues", async () => {
     const d2 = openDb(":memory:");
     seed(d2);
     const ok = ids.get("/ok")!;
@@ -208,14 +208,16 @@ describe.skipIf(!HAVE_ANVIL)("integration on anvil: buy + stress + resolver", ()
       totalCalls: 3,
     };
     const stats = await runBuy(d2, { ...common(), plan: okPlan, caps: { ...caps, perSellerPerDayAtomic: 15000n }, dryRun: false, minSecondsBetweenCallsPerResource: 1 });
-    expect(stats.halted).toBe(true);
-    expect(stats.haltReason).toBe("cap_per_seller_per_day");
+    // The seller's daily cap parks that seller (recorded in halts) but does not stop the run; with one seller in
+    // the plan the run then has nothing left to do and completes.
+    expect(stats.halted).toBe(false);
     expect(stats.calls).toBe(1);
+    expect(stats.backoffs.map((b) => b.reason)).toEqual(["cap_per_seller_per_day"]);
     const h = d2.prepare("SELECT run_id, reason, details_json FROM halts").all() as any[];
     expect(h).toHaveLength(1);
     expect(h[0].run_id).toBe(stats.runId);
     expect(JSON.parse(h[0].details_json)).toMatchObject({ sellerId: ok.sellerId, stage: "before_quote" });
-    expect(d2.prepare("SELECT status FROM runs WHERE id = ?").get(stats.runId)).toEqual({ status: "halted" });
+    expect(d2.prepare("SELECT status FROM runs WHERE id = ?").get(stats.runId)).toEqual({ status: "completed" });
     d2.close();
   }, 30_000);
 
