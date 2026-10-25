@@ -291,6 +291,12 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         stats.backoffs.push({ sellerId: a.sellerId, until, reason: `429 from ${a.url}` });
         L.warn(`seller ${a.sellerDomain} returned 429; backing off until ${new Date(until).toISOString()}`);
       }
+      } catch (e) {
+        // One bad call must not take the whole pool down: record it and keep going (money is tracked by the
+        // attempts ledger and, if a signature happened, by runPaidCall's own exception guard).
+        const msg = e instanceof Error ? e.message : String(e);
+        stats.byOutcome["exception"] = (stats.byOutcome["exception"] ?? 0) + 1;
+        L.error(`worker exception on ${a.url}: ${msg}`);
       } finally {
         inflight.delete(a.sellerId);
       }

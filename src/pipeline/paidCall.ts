@@ -115,88 +115,104 @@ export async function runPaidCall(i: PaidCallInput): Promise<PaidCallOutput> {
     },
   );
 
-  const quote = result.quote ?? quoteSeen;
-  const paymentSent = Boolean(result.signed);
-  const response = result.response;
+  try {
+    const quote = result.quote ?? quoteSeen;
+    const paymentSent = Boolean(result.signed);
+    const response = result.response;
 
-  let validators: Record<string, ValidatorResult> | undefined;
-  if (response) {
-    const ctx: ValidationContext = {
-      request: result.request,
-      response,
-      requirements: {
-        ...(quote?.mimeType !== undefined ? { mimeType: quote.mimeType } : {}),
-        ...(quote?.maxTimeoutSeconds !== undefined ? { maxTimeoutSeconds: quote.maxTimeoutSeconds } : {}),
-        ...(quote?.outputSchema !== undefined ? { outputSchema: quote.outputSchema } : {}),
-      },
-      ...(i.service ? { service: i.service } : {}),
-      now: now(),
-    };
-    validators = await runAllValidators(ctx);
-  }
-
-  const settlements = result.signed
-    ? await i.settlementLookup(result.signed, {
-        response: response ? { status: response.status } : undefined,
-        settlementSuccess: result.settlement?.success,
-        settlementTx: typeof result.settlement?.transaction === "string" && /^0x[0-9a-fA-F]{64}$/.test(result.settlement.transaction) ? result.settlement.transaction : undefined,
-      })
-    : [];
-  // The seller's own settlement header is evidence too, but it is not a settlement fact: only the chain is.
-
-  const ourError = (() => {
-    if (!result.error) return undefined;
-    switch (result.error.kind) {
-      case "cap":
-      case "declined":
-        return overCap ? undefined : { reason: `${result.error.kind}: ${result.error.message}` };
-      case "no_quote":
-      case "network":
-        // The seller never produced a payable 402 (other status, unreachable): nothing was paid and nothing
-        // delivered, and it is the seller's availability, not our request. classify() lands these in not_paid
-        // (paymentSent=false, responseReceived=false) via the probe-row branch below is wrong, so we route
-        // them explicitly: see notPaidReason.
-        return undefined;
-      case "sdk":
-        return paymentSent ? undefined : { reason: `${result.error.kind}: ${result.error.message}` };
-      default:
-        return undefined; // timeout / aborted after signing are not our error
+    let validators: Record<string, ValidatorResult> | undefined;
+    if (response) {
+      const ctx: ValidationContext = {
+        request: result.request,
+        response,
+        requirements: {
+          ...(quote?.mimeType !== undefined ? { mimeType: quote.mimeType } : {}),
+          ...(quote?.maxTimeoutSeconds !== undefined ? { maxTimeoutSeconds: quote.maxTimeoutSeconds } : {}),
+          ...(quote?.outputSchema !== undefined ? { outputSchema: quote.outputSchema } : {}),
+        },
+        ...(i.service ? { service: i.service } : {}),
+        now: now(),
+      };
+      validators = await runAllValidators(ctx);
     }
-  })();
-  const rateLimited = response?.status === 429 || result.quoteResult?.status === 429;
-  // Seller rejected the request itself (4xx, or a 402 wrapping a 4xx validation error) with nothing settled:
-  // our malformed request (docs/taxonomy.md #8), excluded from the denominator and counted separately.
-  const badReason = response ? malformedRequestReason(response.status, Buffer.from(response.body).toString("utf8").slice(0, 4096), settlements.length) : null;
-  const ourErrorFinal = ourError ?? (badReason ? { reason: badReason } : undefined);
 
-  const sellerUnavailable = !paymentSent && result.error && (result.error.kind === "no_quote" || result.error.kind === "network");
-  const classification = sellerUnavailable
-    ? { outcome: OUTCOMES.NOT_PAID, flags: [] as Flag[], reasons: [`not_paid:${result.error!.kind}: ${result.error!.message}`] }
-    : classify({
-    ...(ourErrorFinal ? { ourError: ourErrorFinal } : {}),
-    paymentSent,
-    settlementCount: new Set(settlements.map((s) => s.txHash)).size,
-    responseReceived: Boolean(response),
-    ...(response ? { responseStatus: response.status } : {}),
-    elapsedSinceSignMs: signedAt ? now() - signedAt : 0,
-    quoteAmountAtomic: quote?.amountAtomic ?? "0",
-    ...(i.reference ? { referencePriceAtomic: i.reference.amountAtomic, referenceSource: i.reference.source } : {}),
-    paid: paymentSent,
-    overCap,
-    ...(validators ? { validators } : {}),
-    ...(response ? { latencyMs: response.latencyMs } : {}),
-    ...(quote?.maxTimeoutSeconds !== undefined ? { declaredMaxTimeoutSeconds: i.service?.max_timeout_seconds ?? quote.maxTimeoutSeconds } : {}),
-    defaultMaxTimeoutSeconds: i.defaultMaxTimeoutSeconds,
-    serviceConfigPresent: Boolean(i.service),
-    ...(i.payToChanged !== undefined ? { payToChanged: i.payToChanged } : {}),
-    ...(i.priceDiscrimination !== undefined ? { priceDiscrimination: i.priceDiscrimination } : {}),
-    ...(response?.truncatedByUs ? { truncatedByUs: true } : {}),
-    ...(rateLimited ? { rateLimited: true } : {}),
-      });
+    const settlements = result.signed
+      ? await i.settlementLookup(result.signed, {
+          response: response ? { status: response.status } : undefined,
+          settlementSuccess: result.settlement?.success,
+          settlementTx: typeof result.settlement?.transaction === "string" && /^0x[0-9a-fA-F]{64}$/.test(result.settlement.transaction) ? result.settlement.transaction : undefined,
+        })
+      : [];
+    // The seller's own settlement header is evidence too, but it is not a settlement fact: only the chain is.
 
-  const callId = persistCall(i, intentId, result, quote, classification, validators, settlements, signedAt, startedAt);
-  log.info(`call ${intentId.slice(0, 8)} ${i.resource.url} -> ${classification.outcome} [${classification.flags.join(",")}]`);
-  return { callId, intentId, result, classification, ...(validators ? { validators } : {}), settlements };
+    const ourError = (() => {
+      if (!result.error) return undefined;
+      switch (result.error.kind) {
+        case "cap":
+        case "declined":
+          return overCap ? undefined : { reason: `${result.error.kind}: ${result.error.message}` };
+        case "no_quote":
+        case "network":
+          // The seller never produced a payable 402 (other status, unreachable): nothing was paid and nothing
+          // delivered, and it is the seller's availability, not our request. classify() lands these in not_paid
+          // (paymentSent=false, responseReceived=false) via the probe-row branch below is wrong, so we route
+          // them explicitly: see notPaidReason.
+          return undefined;
+        case "sdk":
+          return paymentSent ? undefined : { reason: `${result.error.kind}: ${result.error.message}` };
+        default:
+          return undefined; // timeout / aborted after signing are not our error
+      }
+    })();
+    const rateLimited = response?.status === 429 || result.quoteResult?.status === 429;
+    // Seller rejected the request itself (4xx, or a 402 wrapping a 4xx validation error) with nothing settled:
+    // our malformed request (docs/taxonomy.md #8), excluded from the denominator and counted separately.
+    const badReason = response ? malformedRequestReason(response.status, Buffer.from(response.body).toString("utf8").slice(0, 4096), settlements.length) : null;
+    const ourErrorFinal = ourError ?? (badReason ? { reason: badReason } : undefined);
+
+    const sellerUnavailable = !paymentSent && result.error && (result.error.kind === "no_quote" || result.error.kind === "network");
+    const classification = sellerUnavailable
+      ? { outcome: OUTCOMES.NOT_PAID, flags: [] as Flag[], reasons: [`not_paid:${result.error!.kind}: ${result.error!.message}`] }
+      : classify({
+      ...(ourErrorFinal ? { ourError: ourErrorFinal } : {}),
+      paymentSent,
+      settlementCount: new Set(settlements.map((s) => s.txHash)).size,
+      responseReceived: Boolean(response),
+      ...(response ? { responseStatus: response.status } : {}),
+      elapsedSinceSignMs: signedAt ? now() - signedAt : 0,
+      quoteAmountAtomic: quote?.amountAtomic ?? "0",
+      ...(i.reference ? { referencePriceAtomic: i.reference.amountAtomic, referenceSource: i.reference.source } : {}),
+      paid: paymentSent,
+      overCap,
+      ...(validators ? { validators } : {}),
+      ...(response ? { latencyMs: response.latencyMs } : {}),
+      ...(quote?.maxTimeoutSeconds !== undefined ? { declaredMaxTimeoutSeconds: i.service?.max_timeout_seconds ?? quote.maxTimeoutSeconds } : {}),
+      defaultMaxTimeoutSeconds: i.defaultMaxTimeoutSeconds,
+      serviceConfigPresent: Boolean(i.service),
+      ...(i.payToChanged !== undefined ? { payToChanged: i.payToChanged } : {}),
+      ...(i.priceDiscrimination !== undefined ? { priceDiscrimination: i.priceDiscrimination } : {}),
+      ...(response?.truncatedByUs ? { truncatedByUs: true } : {}),
+      ...(rateLimited ? { rateLimited: true } : {}),
+        });
+
+    const callId = persistCall(i, intentId, result, quote, classification, validators, settlements, signedAt, startedAt);
+    log.info(`call ${intentId.slice(0, 8)} ${i.resource.url} -> ${classification.outcome} [${classification.flags.join(",")}]`);
+    return { callId, intentId, result, classification, ...(validators ? { validators } : {}), settlements };
+  } catch (e) {
+    // A local bug after the signature must never lose track of money that may have moved: persist an our_error
+    // row with the signed authorization and whatever settlement facts we could fetch, then return it.
+    const reason = `local_exception: ${e instanceof Error ? e.message : String(e)}`;
+    log.error(`call ${intentId.slice(0, 8)} ${i.resource.url}: ${reason}`);
+    let settlements: SettlementFact[] = [];
+    try {
+      settlements = result.signed ? await i.settlementLookup(result.signed, { response: result.response ? { status: result.response.status } : undefined }) : [];
+    } catch {
+      settlements = [];
+    }
+    const classification: Classification = { outcome: OUTCOMES.OUR_ERROR, flags: [], reasons: [reason] };
+    const callId = persistCall(i, intentId, result, result.quote ?? quoteSeen, classification, undefined, settlements, signedAt, startedAt);
+    return { callId, intentId, result, classification, settlements };
+  }
 }
 
 function persistCall(
