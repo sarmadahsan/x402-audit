@@ -249,6 +249,24 @@ kept as `config/sample-phase1.yaml`. The probe set was widened to 60 + 300.
 `buy run --resume-since 2026-10-25T08:19:27Z` keeps phase-1 calls out of the
 phase-2 allocations; the report can be cut at that boundary with `--since`.
 
+## Phase 2 results (2026-10-25 08:19 to 20:33 UTC)
+
+Report: `reports/phase2-2026-10-25.md` (+ `.json`). 7,428 paid calls in the
+denominator across about 300 sellers (the probe set was widened mid-phase to
+660 resources, so the plan absorbed more sellers than the 317 it started with).
+**Headline: 6.3% of paid calls failed the buyer, 95% CI 5.7% to 6.8%; 8.8%
+dollar-weighted (CI 7.4% to 10.3%) on 31.00 USDC.** Reported separately:
+677 `not_paid`, 281 `our_error`, 15 `indeterminate`. The dollar-weighted rate
+is higher than phase 1 because the wider tail quotes above its listing more
+often (`overcharge` rows are paid in full and count as failures).
+
+Operational fixes during phase 2 (all gated and tested): concurrency-safe
+settlement wait, receipt-first confirmation from the seller's tx hash, a
+2-minute inline cap on no-response waits (resolver owns the rest), exception
+guards so a paid call can never be lost, parked sellers on their daily cap,
+balance-aware wallet rotation, and the index fix that took throughput from
+1.5 to 18 calls per minute.
+
 ## Phase 3 (operator instruction, 2026-10-25 17:40 UTC)
 
 "Just continue running and gathering data until all the wallets run out."
