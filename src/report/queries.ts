@@ -130,6 +130,13 @@ export const QUERIES = {
     FROM calls c WHERE c.source = 'buy' AND c.outcome = 'our_error' AND ${CALL_WINDOW}
     GROUP BY reason ORDER BY n DESC`,
 
+  /** non_delivery rows with no response where OUR client timeout was below the seller's declared maxTimeoutSeconds. */
+  buy_timeout_below_declared: `SELECT COUNT(*) AS n FROM calls c
+    WHERE c.source = 'buy' AND c.outcome = 'non_delivery' AND c.response_status IS NULL AND c.error LIKE 'timeout:%'
+      AND CAST(json_extract(c.quote_requirements_json, '$.maxTimeoutSeconds') AS INTEGER) * 1000 >
+          CAST(COALESCE(NULLIF(substr(c.error, instr(c.error, 'after ') + 6, instr(c.error, 'ms') - instr(c.error, 'after ') - 6), ''), '0') AS INTEGER)
+      AND ${CALL_WINDOW}`,
+
   buy_excluded_counts: `${BUY_CTE}
     SELECT
       COALESCE(SUM(outcome = '${OUTCOMES.OUR_ERROR}'), 0) AS our_error,

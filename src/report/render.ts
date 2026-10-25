@@ -83,6 +83,9 @@ export function renderMarkdown(data: ReportData): string {
     ["unclassified", h.excluded.unclassified, "no outcome yet"],
   ]));
   out.push(`Flagged for human review: **${h.flagged.injection}** \`injection\` row(s) (in the denominator, not counted as failures); ${h.flagged.injection_hit_total} row(s) carry the \`injection_hit\` flag under any outcome.\n`);
+  if (h.timeout_below_declared > 0) {
+    out.push(`Note: ${h.timeout_below_declared} \`non_delivery\` row(s) are paid calls that timed out in our client before the seller's declared maxTimeoutSeconds elapsed; the seller may still have delivered later, so treat those as an upper bound on the seller's fault.\n`);
+  }
   if (h.our_error_reasons.length) {
     out.push("`our_error` by reason (our fault, or a listing we could not form a valid request from; never the seller's):\n");
     out.push(table(["reason", "rows"], h.our_error_reasons.map((r) => [r.reason, r.n])));
