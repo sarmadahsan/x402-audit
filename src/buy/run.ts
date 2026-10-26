@@ -240,7 +240,9 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         }
         // Only sellers parked by their daily cap are left: nothing more can be bought today. End the run
         // (status completed); a later `buy run` resumes the remaining allocations.
-        if (slots.filter((s) => s.remaining > 0).every((s) => parkedSellers.has(s.alloc.sellerId))) {
+        // A park expires at the next UTC day: only sellers whose park is still in force count.
+        const stillParked = (id: number) => parkedSellers.has(id) && (backoffUntil.get(id) ?? 0) > realNow();
+        if (slots.filter((s) => s.remaining > 0).every((s) => stillParked(s.alloc.sellerId))) {
           L.warn(`every remaining allocation belongs to a seller parked by its daily cap; ending the run`);
           return;
         }

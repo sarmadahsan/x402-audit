@@ -275,6 +275,34 @@ pool balance (minus a few cents per wallet so the last calls do not fail on
 balance), with the probe set widened again (top 60 + 600 tail) so each plan
 reaches more sellers. Each phase has its own boundary timestamp and report.
 
+## Final results (pool exhausted 2026-10-26 00:19 UTC)
+
+Reports: `reports/combined-2026-10-26.md` (+ `.json`, every number from a
+named query), per-phase reports `phase1-2026-10-25.md`, `phase2-2026-10-25.md`,
+`phases3to6-2026-10-26.md`, plus probe, stress and chain-proxy reports.
+
+- 14,580 paid-call attempts to 362 sellers over 2026-10-24 20:25 to
+  2026-10-26 00:19 UTC; 57.96 USDC of the 58 funded settled on-chain (the rest
+  is dust below the per-wallet safety margin).
+- **Headline (all phases): 6.6% of paid x402 calls on Base failed the buyer,
+  95% CI 6.2% to 7.1%, n = 12,805 calls in the denominator; 7.8%
+  dollar-weighted (CI 6.7% to 9.0%) on 57.65 USDC.** Phase 1 (top-volume
+  heavy sample) 6.7%; phase 2 (wide tail) 6.3%; phases 3 to 6 (same wide set,
+  later in the day) 7.3%, with a higher dollar-weighted rate (13.7%) because
+  overcharges concentrate in a few pricier tail sellers.
+- Reported separately: `not_paid`, `our_error` and 16 `indeterminate` rows
+  (no settlement ever appeared; they become `not_paid` after 24 h).
+- Stress: 5 of 10 sellers double-settled one intent; 2 of 10 settled after a
+  dropped connection, and a naive retry then double-charged on 5 of 10.
+- Chain proxy floors (top 60 pay-tos, 30 days, share-adjusted): overcharge
+  proxy 14.7% of transfers, isolated duplicate pairs 0.15%.
+
+Reproduce the headline:
+
+```bash
+pnpm cli --db data/audit.sqlite --network eip155:8453 report --stdout
+```
+
 ## Open decisions for the operator
 
 - Precedence of `overcharge` versus delivery failures (currently severity order; see taxonomy).
