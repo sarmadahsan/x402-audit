@@ -8,8 +8,10 @@
 # the cheapest remaining call. Phase 3 config kept as config/sample-phase3.yaml.
 # Phase 5 (2026-10-25 23:30 UTC): ~3.6 USDC left; the run ends on its own when no wallet can cover the cheapest
 # remaining call. Phase 4 config kept as config/sample-phase4.yaml.
-target_calls: 780
-max_total_usd: 3.8
+# Phase 6 (2026-10-26 00:03 UTC): the last ~2 USDC; ends on its own when no wallet can cover the cheapest call.
+# Phase 5 config kept as config/sample-phase5.yaml.
+target_calls: 420
+max_total_usd: 2.1
 tiers:
   top:
     size: 20            # top N sellers by 30-day settlement volume
@@ -29,6 +31,6 @@ max_resources_per_seller: 10
 # No single seller takes more than this many calls per plan (keeps one $0.05 seller from eating the budget);
 # a stratum that cannot absorb its target passes the remainder to the tier's other categories.
 max_calls_per_seller: 150
-seed: 20261028
+seed: 20261029
 # Rate limits
 min_seconds_between_calls_per_resource: 60
