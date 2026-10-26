@@ -1,0 +1,1178 @@
+{
+  "meta": {
+    "generated_at": "2026-10-26T00:29:00.141Z",
+    "network": "eip155:8453",
+    "params": {
+      "since_ms": 1792960381000,
+      "until_ms": 1792974540141,
+      "dust_floor_atomic": "100",
+      "duplicate_run_window_s": 120,
+      "top_sellers_min_calls": 30
+    },
+    "date_range": {
+      "first_call_ts": 1792960503700,
+      "last_call_ts": 1792973954173,
+      "first_call": "2026-10-25T20:35:03.700Z",
+      "last_call": "2026-10-26T00:19:14.173Z"
+    },
+    "config_hashes": [
+      "130ee670cf880d56ef069fe8a94a4556bea9e7284905790af1de38dbdac19c8e",
+      "56062fb7db0cf2348fddac4cd186046989e4ddfef8eb54304ca6587a8cdece82",
+      "ace23ecad71cd2d33a839a7c42a8097fa73cada674c5bb8918574d034c00f1d8",
+      "ceae4d41006933cd5f51a4a2bad1eedb6240c99a82c1a0698a3e190e5d73c229",
+      "e96c923ad468b51a63141b8ee61248d9367a83d3703f732ecc17d6b058a34c0c",
+      "f7c6814048dee4c7937ccd3a96f0b79b51b5b88548726597db18e50a8c608891"
+    ],
+    "wallet_count": 4,
+    "spend_atomic": "9089928",
+    "spend_usdc": "9.089928",
+    "spend_by_source": [
+      {
+        "source": "buy",
+        "paid_calls": 3666,
+        "spent_atomic": "9089928",
+        "spent_usdc": "9.089928",
+        "settled_atomic": "8375192",
+        "settled_usdc": "8.375192"
+      }
+    ],
+    "calls_by_source": {
+      "buy": 3725,
+      "stress_duplicate": 0,
+      "stress_timeout": 0,
+      "chain_proxy": 0,
+      "telemetry": 0
+    },
+    "calls_by_source_outcome": [
+      {
+        "source": "buy",
+        "outcome": "non_delivery",
+        "n": 199
+      },
+      {
+        "source": "buy",
+        "outcome": "not_paid",
+        "n": 228
+      },
+      {
+        "source": "buy",
+        "outcome": "ok",
+        "n": 3132
+      },
+      {
+        "source": "buy",
+        "outcome": "our_error",
+        "n": 117
+      },
+      {
+        "source": "buy",
+        "outcome": "overcharge",
+        "n": 49
+      }
+    ]
+  },
+  "headline": {
+    "count": {
+      "n": 3380,
+      "failures": 248,
+      "rate": 0.07337278106508875,
+      "lo": 0.0650583322314675,
+      "hi": 0.08265587511397486
+    },
+    "dollar": {
+      "total_atomic": "8339757",
+      "failed_atomic": "1138740",
+      "note": "Kish effective-n approximation",
+      "rate": 0.136543546772405,
+      "lo": 0.11116132030328102,
+      "hi": 0.16663492330911206,
+      "effective_n": 589.1330695061886,
+      "exposure_atomic": "0"
+    },
+    "delivered_without_settlement": 19,
+    "resolved_late_in_denominator": 0,
+    "excluded": {
+      "our_error": 117,
+      "indeterminate": 0,
+      "not_paid": 228,
+      "unclassified": 0,
+      "unpaid_overcharge": 0,
+      "exposure_atomic": "0"
+    },
+    "flagged": {
+      "injection": 0,
+      "injection_hit_total": 0,
+      "note": "flagged for human review"
+    },
+    "timeout_below_declared": 0,
+    "our_error_reasons": [
+      {
+        "reason": "malformed_request:http_400",
+        "n": 105
+      },
+      {
+        "reason": "malformed_request:http_422",
+        "n": 12
+      }
+    ],
+    "flag_counts": [
+      {
+        "flag": "schema_missing",
+        "n": 3380,
+        "failed": 248,
+        "dollars_atomic": "8339757"
+      },
+      {
+        "flag": "charged_then_rejected",
+        "n": 31,
+        "failed": 31,
+        "dollars_atomic": "43000"
+      }
+    ],
+    "sensitivity": [
+      {
+        "min_ratio": "1.1",
+        "overcharge_kept": 46,
+        "overcharge_dropped": 3,
+        "overcharge_unknown_ratio": 0,
+        "count": {
+          "n": 3380,
+          "failures": 245,
+          "rate": 0.07248520710059171,
+          "lo": 0.06422075347089305,
+          "hi": 0.08172032115751486
+        },
+        "dollar_rate": 0.132174354720407
+      },
+      {
+        "min_ratio": "2.0",
+        "overcharge_kept": 45,
+        "overcharge_dropped": 4,
+        "overcharge_unknown_ratio": 0,
+        "count": {
+          "n": 3380,
+          "failures": 244,
+          "rate": 0.07218934911242604,
+          "lo": 0.06394164434368815,
+          "hi": 0.0814083860457083
+        },
+        "dollar_rate": 0.129383026387939
+      }
+    ]
+  },
+  "by_failure_type": [
+    {
+      "outcome": "overcharge",
+      "n": 49,
+      "share_of_calls": 0.014497041420118343,
+      "share_of_failures": 0.1975806451612903,
+      "dollars_atomic": "267717",
+      "resolved_late": 0
+    },
+    {
+      "outcome": "non_delivery",
+      "n": 199,
+      "share_of_calls": 0.058875739644970414,
+      "share_of_failures": 0.8024193548387096,
+      "dollars_atomic": "871023",
+      "resolved_late": 0
+    },
+    {
+      "outcome": "wrong_goods",
+      "n": 0,
+      "share_of_calls": 0,
+      "share_of_failures": 0,
+      "dollars_atomic": "0",
+      "resolved_late": 0
+    },
+    {
+      "outcome": "duplicate",
+      "n": 0,
+      "share_of_calls": 0,
+      "share_of_failures": 0,
+      "dollars_atomic": "0",
+      "resolved_late": 0
+    }
+  ],
+  "by_tier": [
+    {
+      "key": "tail",
+      "n": 1166,
+      "failures": 50,
+      "count": {
+        "n": 1166,
+        "failures": 50,
+        "rate": 0.04288164665523156,
+        "lo": 0.03267684291517001,
+        "hi": 0.056088568921574294
+      },
+      "dollar": {
+        "total_atomic": "1947252",
+        "failed_atomic": "97000",
+        "note": "Kish effective-n approximation",
+        "rate": 0.049813788867593,
+        "lo": 0.036586873045261245,
+        "hi": 0.06748754224948765,
+        "effective_n": 773.957053354698
+      }
+    },
+    {
+      "key": "top",
+      "n": 948,
+      "failures": 169,
+      "count": {
+        "n": 948,
+        "failures": 169,
+        "rate": 0.17827004219409281,
+        "lo": 0.15521910662042973,
+        "hi": 0.20391786486961647
+      },
+      "dollar": {
+        "total_atomic": "4488135",
+        "failed_atomic": "866717",
+        "note": "Kish effective-n approximation",
+        "rate": 0.193112952261908,
+        "lo": 0.14319824358582467,
+        "hi": 0.25524331892368574,
+        "effective_n": 189.17212687377182
+      }
+    },
+    {
+      "key": "unassigned",
+      "n": 1266,
+      "failures": 29,
+      "count": {
+        "n": 1266,
+        "failures": 29,
+        "rate": 0.022906793048973143,
+        "lo": 0.015995901787304638,
+        "hi": 0.03270423983177358
+      },
+      "dollar": {
+        "total_atomic": "1904370",
+        "failed_atomic": "175023",
+        "note": "Kish effective-n approximation",
+        "rate": 0.091905984656343,
+        "lo": 0.07039351793595892,
+        "hi": 0.1191500829392587,
+        "effective_n": 543.1847630739748
+      }
+    }
+  ],
+  "by_category": [
+    {
+      "key": "compute",
+      "n": 386,
+      "failures": 0,
+      "count": {
+        "n": 386,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.009853900332508497
+      },
+      "dollar": {
+        "total_atomic": "2407000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.05843287105990699,
+        "effective_n": 61.899943374253446
+      }
+    },
+    {
+      "key": "data",
+      "n": 777,
+      "failures": 36,
+      "count": {
+        "n": 777,
+        "failures": 36,
+        "rate": 0.04633204633204633,
+        "lo": 0.03365227271670292,
+        "hi": 0.06347558597813804
+      },
+      "dollar": {
+        "total_atomic": "1008552",
+        "failed_atomic": "181000",
+        "note": "Kish effective-n approximation",
+        "rate": 0.179465213494197,
+        "lo": 0.13758041849150687,
+        "hi": 0.23069047231698447,
+        "effective_n": 259.81165858759573
+      }
+    },
+    {
+      "key": "inference",
+      "n": 878,
+      "failures": 36,
+      "count": {
+        "n": 878,
+        "failures": 36,
+        "rate": 0.04100227790432802,
+        "lo": 0.029762131616192303,
+        "hi": 0.056241376290442596
+      },
+      "dollar": {
+        "total_atomic": "1678005",
+        "failed_atomic": "128740",
+        "note": "Kish effective-n approximation",
+        "rate": 0.076722059826996,
+        "lo": 0.05726823204486493,
+        "hi": 0.1020688019928606,
+        "effective_n": 548.0093560643954
+      }
+    },
+    {
+      "key": "other",
+      "n": 802,
+      "failures": 174,
+      "count": {
+        "n": 802,
+        "failures": 174,
+        "rate": 0.2169576059850374,
+        "lo": 0.18981697121555677,
+        "hi": 0.24679677582314433
+      },
+      "dollar": {
+        "total_atomic": "2036500",
+        "failed_atomic": "809000",
+        "note": "Kish effective-n approximation",
+        "rate": 0.397250184139454,
+        "lo": 0.3492362961839379,
+        "hi": 0.44732764109637024,
+        "effective_n": 378.7085720808127
+      }
+    },
+    {
+      "key": "scraping",
+      "n": 537,
+      "failures": 2,
+      "count": {
+        "n": 537,
+        "failures": 2,
+        "rate": 0.0037243947858473,
+        "lo": 0.0010219582608983722,
+        "hi": 0.013476669299044373
+      },
+      "dollar": {
+        "total_atomic": "1209700",
+        "failed_atomic": "20000",
+        "note": "Kish effective-n approximation",
+        "rate": 0.016533024716871,
+        "lo": 0.007316013084759956,
+        "hi": 0.03693001292946503,
+        "effective_n": 328.3986835992989
+      }
+    }
+  ],
+  "top_sellers": [
+    {
+      "key": "api-xpay.com",
+      "n": 158,
+      "failures": 158,
+      "count": {
+        "n": 158,
+        "failures": 158,
+        "rate": 1,
+        "lo": 0.97626406170675,
+        "hi": 1
+      },
+      "dollar": {
+        "total_atomic": "790000",
+        "failed_atomic": "790000",
+        "note": "Kish effective-n approximation",
+        "rate": 1,
+        "lo": 0.97626406170675,
+        "hi": 1,
+        "effective_n": 158
+      },
+      "seller_id": 2,
+      "domain": "api-xpay.com",
+      "tier": "top",
+      "category": "other"
+    },
+    {
+      "key": "odds.rjhsignaltech.workers.dev",
+      "n": 39,
+      "failures": 28,
+      "count": {
+        "n": 39,
+        "failures": 28,
+        "rate": 0.717948717948718,
+        "lo": 0.56224680389129,
+        "hi": 0.8345650798287103
+      },
+      "dollar": {
+        "total_atomic": "81000",
+        "failed_atomic": "56000",
+        "note": "Kish effective-n approximation",
+        "rate": 0.691358024691358,
+        "lo": 0.5307010919324173,
+        "hi": 0.8160771739523207,
+        "effective_n": 37.067796610169495
+      },
+      "seller_id": 1503,
+      "domain": "odds.rjhsignaltech.workers.dev",
+      "tier": "tail",
+      "category": "inference"
+    },
+    {
+      "key": "api.loyalspark.online",
+      "n": 40,
+      "failures": 10,
+      "count": {
+        "n": 40,
+        "failures": 10,
+        "rate": 0.25,
+        "lo": 0.14187118574387983,
+        "hi": 0.40193961548535195
+      },
+      "dollar": {
+        "total_atomic": "40000",
+        "failed_atomic": "10000",
+        "note": "Kish effective-n approximation",
+        "rate": 0.25,
+        "lo": 0.14187118574387983,
+        "hi": 0.40193961548535195,
+        "effective_n": 40
+      },
+      "seller_id": 45,
+      "domain": "api.loyalspark.online",
+      "tier": "tail",
+      "category": "data"
+    },
+    {
+      "key": "x402engine.app",
+      "n": 33,
+      "failures": 3,
+      "count": {
+        "n": 33,
+        "failures": 3,
+        "rate": 0.09090909090909091,
+        "lo": 0.03140394127969749,
+        "hi": 0.23572605791510637
+      },
+      "dollar": {
+        "total_atomic": "44023",
+        "failed_atomic": "8023",
+        "note": "Kish effective-n approximation",
+        "rate": 0.182245644322286,
+        "lo": 0.08078799500957995,
+        "hi": 0.36106963603252373,
+        "effective_n": 27.713355624904164
+      },
+      "seller_id": 649,
+      "domain": "x402engine.app",
+      "tier": null,
+      "category": "inference"
+    },
+    {
+      "key": "blockrun.ai",
+      "n": 296,
+      "failures": 0,
+      "count": {
+        "n": 296,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.012811633506681915
+      },
+      "dollar": {
+        "total_atomic": "590000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.012854504511108953,
+        "effective_n": 295
+      },
+      "seller_id": 3,
+      "domain": "blockrun.ai",
+      "tier": "top",
+      "category": "inference"
+    },
+    {
+      "key": "intel.degenscan.io",
+      "n": 139,
+      "failures": 0,
+      "count": {
+        "n": 139,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.026893164711292446
+      },
+      "dollar": {
+        "total_atomic": "161000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.029484961643936082,
+        "effective_n": 126.44390243902438
+      },
+      "seller_id": 1170,
+      "domain": "intel.degenscan.io",
+      "tier": "top",
+      "category": "data"
+    },
+    {
+      "key": "minifetch.com",
+      "n": 127,
+      "failures": 0,
+      "count": {
+        "n": 127,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.029359645743335123
+      },
+      "dollar": {
+        "total_atomic": "188000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.03503004916073388,
+        "effective_n": 105.82035928143712
+      },
+      "seller_id": 36,
+      "domain": "minifetch.com",
+      "tier": null,
+      "category": "scraping"
+    },
+    {
+      "key": "sift.srv1996466.hstgr.cloud",
+      "n": 121,
+      "failures": 0,
+      "count": {
+        "n": 121,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.030770698417971906
+      },
+      "dollar": {
+        "total_atomic": "205000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.034166591522114396,
+        "effective_n": 108.59173126614986
+      },
+      "seller_id": 1187,
+      "domain": "sift.srv1996466.hstgr.cloud",
+      "tier": "tail",
+      "category": "scraping"
+    },
+    {
+      "key": "rpc.nodeflare.app",
+      "n": 112,
+      "failures": 0,
+      "count": {
+        "n": 112,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.03316134757274064
+      },
+      "dollar": {
+        "total_atomic": "118000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.0346235986497323,
+        "effective_n": 107.1076923076923
+      },
+      "seller_id": 37,
+      "domain": "rpc.nodeflare.app",
+      "tier": "tail",
+      "category": "compute"
+    },
+    {
+      "key": "datetime.openverbs.com",
+      "n": 92,
+      "failures": 0,
+      "count": {
+        "n": 92,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.04008138989259148
+      },
+      "dollar": {
+        "total_atomic": "214000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.04394718725525096,
+        "effective_n": 83.56934306569343
+      },
+      "seller_id": 2019,
+      "domain": "datetime.openverbs.com",
+      "tier": "tail",
+      "category": "compute"
+    },
+    {
+      "key": "x402.forgemesh.io",
+      "n": 92,
+      "failures": 0,
+      "count": {
+        "n": 92,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.04008138989259148
+      },
+      "dollar": {
+        "total_atomic": "102000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.04915133111678095,
+        "effective_n": 74.31428571428572
+      },
+      "seller_id": 1941,
+      "domain": "x402.forgemesh.io",
+      "tier": null,
+      "category": "inference"
+    },
+    {
+      "key": "x402.clashofcoins.com",
+      "n": 70,
+      "failures": 0,
+      "count": {
+        "n": 70,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.05202306318827403
+      },
+      "dollar": {
+        "total_atomic": "70000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.05202306318827403,
+        "effective_n": 70
+      },
+      "seller_id": 209,
+      "domain": "x402.clashofcoins.com",
+      "tier": "top",
+      "category": "other"
+    },
+    {
+      "key": "api.locus.report",
+      "n": 63,
+      "failures": 0,
+      "count": {
+        "n": 63,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.05747120044339639
+      },
+      "dollar": {
+        "total_atomic": "630000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.05747120044339639,
+        "effective_n": 63
+      },
+      "seller_id": 2112,
+      "domain": "api.locus.report",
+      "tier": "top",
+      "category": "other"
+    },
+    {
+      "key": "api.clawfetch.ai",
+      "n": 58,
+      "failures": 0,
+      "count": {
+        "n": 58,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.06211785670628563
+      },
+      "dollar": {
+        "total_atomic": "112000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.10325624966037915,
+        "effective_n": 33.361702127659576
+      },
+      "seller_id": 211,
+      "domain": "api.clawfetch.ai",
+      "tier": null,
+      "category": "scraping"
+    },
+    {
+      "key": "jev-x402.vercel.app",
+      "n": 58,
+      "failures": 0,
+      "count": {
+        "n": 58,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.06211785670628563
+      },
+      "dollar": {
+        "total_atomic": "58000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.06211785670628563,
+        "effective_n": 58
+      },
+      "seller_id": 365,
+      "domain": "jev-x402.vercel.app",
+      "tier": "top",
+      "category": "inference"
+    },
+    {
+      "key": "energy.halowerk.com",
+      "n": 52,
+      "failures": 0,
+      "count": {
+        "n": 52,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.06879223713445443
+      },
+      "dollar": {
+        "total_atomic": "52000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.06879223713445443,
+        "effective_n": 52
+      },
+      "seller_id": 374,
+      "domain": "energy.halowerk.com",
+      "tier": null,
+      "category": "compute"
+    },
+    {
+      "key": "crypto.apitoll.cloud",
+      "n": 48,
+      "failures": 0,
+      "count": {
+        "n": 48,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.07410013074848032
+      },
+      "dollar": {
+        "total_atomic": "48000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.07410013074848032,
+        "effective_n": 48
+      },
+      "seller_id": 5,
+      "domain": "crypto.apitoll.cloud",
+      "tier": "tail",
+      "category": "data"
+    },
+    {
+      "key": "api.bitrefill.com",
+      "n": 46,
+      "failures": 0,
+      "count": {
+        "n": 46,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.07707356420776004
+      },
+      "dollar": {
+        "total_atomic": "73000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08387082296302695,
+        "effective_n": 41.960629921259844
+      },
+      "seller_id": 10,
+      "domain": "api.bitrefill.com",
+      "tier": "top",
+      "category": "data"
+    },
+    {
+      "key": "web.openverbs.com",
+      "n": 46,
+      "failures": 0,
+      "count": {
+        "n": 46,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.07707356420776004
+      },
+      "dollar": {
+        "total_atomic": "222000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08357440827087687,
+        "effective_n": 42.12307692307692
+      },
+      "seller_id": 1809,
+      "domain": "web.openverbs.com",
+      "tier": null,
+      "category": "scraping"
+    },
+    {
+      "key": "scraplingdata.xyz",
+      "n": 44,
+      "failures": 0,
+      "count": {
+        "n": 44,
+        "failures": 0,
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.08029560492349135
+      },
+      "dollar": {
+        "total_atomic": "64000",
+        "failed_atomic": "0",
+        "note": "Kish effective-n approximation",
+        "rate": 0,
+        "lo": 0,
+        "hi": 0.12476795051570433,
+        "effective_n": 26.94736842105263
+      },
+      "seller_id": 1140,
+      "domain": "scraplingdata.xyz",
+      "tier": null,
+      "category": "scraping"
+    }
+  ],
+  "stress": {
+    "duplicate": {
+      "intents": 0,
+      "intents_with_second_settlement": 0,
+      "rate": 0,
+      "lo": 0,
+      "hi": 1
+    },
+    "timeout": {
+      "intents": 0,
+      "settled_despite_abort": 0,
+      "intents_with_retry": 0,
+      "second_settlement_on_retry": 0
+    }
+  },
+  "chain_proxy": {
+    "window": {
+      "since_ms": 1792960381000,
+      "until_ms": 1792974540141,
+      "first_transfer_ts": null,
+      "last_transfer_ts": null
+    },
+    "dust_floor_atomic": "100",
+    "pay_tos": 0,
+    "transfers": 0,
+    "dust_transfers": 0,
+    "total_atomic": "0",
+    "overcharge_proxy": {
+      "count": 0,
+      "sum_atomic": "0",
+      "excess_atomic": "0",
+      "count_rate": 0,
+      "dollar_rate": 0,
+      "method": "per pay_to modal value (JS, ties to lower value, dust removed); transfers strictly above the mode"
+    },
+    "duplicate_proxy": {
+      "runs": 0,
+      "count": 0,
+      "sum_atomic": "0",
+      "count_rate": 0,
+      "dollar_rate": 0,
+      "window_s": 120
+    },
+    "per_pay_to": [],
+    "caveat": "delivery is invisible on-chain; these are floors"
+  },
+  "telemetry": [],
+  "probes": {
+    "rounds": 4,
+    "probes": 5280,
+    "ok": 4973,
+    "overcharge": 64,
+    "our_error": 0,
+    "price_discrimination": 0,
+    "payto_changed": 1,
+    "quote_drift": 4
+  },
+  "reproducibility": {
+    "config_hashes": [
+      "130ee670cf880d56ef069fe8a94a4556bea9e7284905790af1de38dbdac19c8e",
+      "56062fb7db0cf2348fddac4cd186046989e4ddfef8eb54304ca6587a8cdece82",
+      "ace23ecad71cd2d33a839a7c42a8097fa73cada674c5bb8918574d034c00f1d8",
+      "ceae4d41006933cd5f51a4a2bad1eedb6240c99a82c1a0698a3e190e5d73c229",
+      "e96c923ad468b51a63141b8ee61248d9367a83d3703f732ecc17d6b058a34c0c",
+      "f7c6814048dee4c7937ccd3a96f0b79b51b5b88548726597db18e50a8c608891"
+    ],
+    "wallet_count": 4,
+    "date_range": {
+      "first_call": "2026-10-25T20:35:03.700Z",
+      "last_call": "2026-10-26T00:19:14.173Z"
+    },
+    "spend_atomic": "9089928",
+    "spend_usdc": "9.089928",
+    "schema_version": "1",
+    "git_commit": "5f8c1a769cef74d2da2e150d4bbd7d05a78d18a6",
+    "runs": [
+      {
+        "id": 5,
+        "subcommand": "stress duplicate",
+        "config_hash": "56062fb7db0cf2348fddac4cd186046989e4ddfef8eb54304ca6587a8cdece82",
+        "network": "eip155:8453",
+        "dry_run": 1,
+        "started_at": 1792811074999,
+        "finished_at": null,
+        "status": "running"
+      },
+      {
+        "id": 25,
+        "subcommand": "probe run",
+        "config_hash": "56062fb7db0cf2348fddac4cd186046989e4ddfef8eb54304ca6587a8cdece82",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792915155667,
+        "finished_at": null,
+        "status": "running"
+      },
+      {
+        "id": 29,
+        "subcommand": "buy run",
+        "config_hash": "ace23ecad71cd2d33a839a7c42a8097fa73cada674c5bb8918574d034c00f1d8",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792926821087,
+        "finished_at": null,
+        "status": "running"
+      },
+      {
+        "id": 30,
+        "subcommand": "buy run",
+        "config_hash": "ace23ecad71cd2d33a839a7c42a8097fa73cada674c5bb8918574d034c00f1d8",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792930812111,
+        "finished_at": null,
+        "status": "running"
+      },
+      {
+        "id": 31,
+        "subcommand": "buy run",
+        "config_hash": "ace23ecad71cd2d33a839a7c42a8097fa73cada674c5bb8918574d034c00f1d8",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792933231485,
+        "finished_at": null,
+        "status": "running"
+      },
+      {
+        "id": 32,
+        "subcommand": "buy run",
+        "config_hash": "ace23ecad71cd2d33a839a7c42a8097fa73cada674c5bb8918574d034c00f1d8",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792935283027,
+        "finished_at": null,
+        "status": "running"
+      },
+      {
+        "id": 33,
+        "subcommand": "buy run",
+        "config_hash": "ace23ecad71cd2d33a839a7c42a8097fa73cada674c5bb8918574d034c00f1d8",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792935694854,
+        "finished_at": null,
+        "status": "running"
+      },
+      {
+        "id": 34,
+        "subcommand": "buy run",
+        "config_hash": "ace23ecad71cd2d33a839a7c42a8097fa73cada674c5bb8918574d034c00f1d8",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792937072331,
+        "finished_at": null,
+        "status": "running"
+      },
+      {
+        "id": 38,
+        "subcommand": "buy run",
+        "config_hash": "130ee670cf880d56ef069fe8a94a4556bea9e7284905790af1de38dbdac19c8e",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792960502891,
+        "finished_at": 1792965325508,
+        "status": "ok"
+      },
+      {
+        "id": 39,
+        "subcommand": "buy run",
+        "config_hash": "ceae4d41006933cd5f51a4a2bad1eedb6240c99a82c1a0698a3e190e5d73c229",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792965381731,
+        "finished_at": 1792968217267,
+        "status": "ok"
+      },
+      {
+        "id": 40,
+        "subcommand": "buy run",
+        "config_hash": "f7c6814048dee4c7937ccd3a96f0b79b51b5b88548726597db18e50a8c608891",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792971155768,
+        "finished_at": 1792973419805,
+        "status": "ok"
+      },
+      {
+        "id": 41,
+        "subcommand": "buy run",
+        "config_hash": "e96c923ad468b51a63141b8ee61248d9367a83d3703f732ecc17d6b058a34c0c",
+        "network": "eip155:8453",
+        "dry_run": 0,
+        "started_at": 1792973471632,
+        "finished_at": 1792973985694,
+        "status": "ok"
+      }
+    ],
+    "halts": [
+      {
+        "id": 20,
+        "run_id": 38,
+        "ts": 1792960503497,
+        "reason": "cap_per_seller_per_day",
+        "details_json": "{\"sellerId\":18,\"spentToday\":\"20000000 (20.000000 USD)\",\"next\":\"50000 (0.050000 USD)\",\"cap\":\"20000000 (20.000000 USD)\",\"resourceId\":30,\"stage\":\"before_quote\",\"action\":\"seller parked until next UTC day\",\"until\":1792972800000}"
+      },
+      {
+        "id": 21,
+        "run_id": 39,
+        "ts": 1792965382259,
+        "reason": "cap_per_seller_per_day",
+        "details_json": "{\"sellerId\":18,\"spentToday\":\"20000000 (20.000000 USD)\",\"next\":\"50000 (0.050000 USD)\",\"cap\":\"20000000 (20.000000 USD)\",\"resourceId\":30,\"stage\":\"before_quote\",\"action\":\"seller parked until next UTC day\",\"until\":1792972800000}"
+      },
+      {
+        "id": 22,
+        "run_id": 40,
+        "ts": 1792971156382,
+        "reason": "cap_per_seller_per_day",
+        "details_json": "{\"sellerId\":18,\"spentToday\":\"20000000 (20.000000 USD)\",\"next\":\"50000 (0.050000 USD)\",\"cap\":\"20000000 (20.000000 USD)\",\"resourceId\":30,\"stage\":\"before_quote\",\"action\":\"seller parked until next UTC day\",\"until\":1792972800000}"
+      }
+    ],
+    "query_names": [
+      "calls_by_source_outcome",
+      "spend_total",
+      "wallets_used",
+      "date_range",
+      "config_hashes",
+      "chain_proxy_overcharge",
+      "telemetry_by_source_outcome",
+      "payto_volume_windows",
+      "chain_totals",
+      "chain_proxy_duplicate_runs",
+      "telemetry_sources",
+      "buy_headline_counts",
+      "buy_excluded_counts",
+      "buy_overcharge_ratios",
+      "buy_timeout_below_declared",
+      "buy_our_error_reasons",
+      "buy_flag_counts",
+      "buy_by_failure_type",
+      "buy_by_tier",
+      "buy_by_category",
+      "buy_sellers_min_calls",
+      "stress_duplicate_summary",
+      "stress_timeout_summary",
+      "probes_summary",
+      "schema_version",
+      "runs_list",
+      "halts_list"
+    ]
+  },
+  "queries_used": {
+    "meta": [
+      "calls_by_source_outcome",
+      "spend_total",
+      "wallets_used",
+      "date_range",
+      "config_hashes",
+      "chain_proxy_overcharge",
+      "telemetry_by_source_outcome"
+    ],
+    "chain_proxy": [
+      "payto_volume_windows",
+      "chain_proxy_overcharge",
+      "chain_totals",
+      "chain_proxy_duplicate_runs"
+    ],
+    "telemetry": [
+      "telemetry_by_source_outcome",
+      "telemetry_sources"
+    ],
+    "headline": [
+      "buy_headline_counts",
+      "buy_excluded_counts",
+      "buy_overcharge_ratios",
+      "buy_timeout_below_declared",
+      "buy_our_error_reasons",
+      "buy_flag_counts"
+    ],
+    "by_failure_type": [
+      "buy_by_failure_type"
+    ],
+    "by_tier": [
+      "buy_by_tier"
+    ],
+    "by_category": [
+      "buy_by_category"
+    ],
+    "top_sellers": [
+      "buy_sellers_min_calls"
+    ],
+    "stress": [
+      "stress_duplicate_summary",
+      "stress_timeout_summary"
+    ],
+    "probes": [
+      "probes_summary"
+    ],
+    "reproducibility": [
+      "schema_version",
+      "runs_list",
+      "halts_list",
+      "config_hashes",
+      "wallets_used",
+      "date_range",
+      "spend_total"
+    ]
+  }
+}
