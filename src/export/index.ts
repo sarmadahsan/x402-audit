@@ -285,9 +285,9 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   return { files: [...Object.keys(texts), "README.md"], sellers: main.length, lowSample: low.length, resources: resources.length, evidenceFiles: main.length + low.length };
 }
 
-const README = `# public-data
+const README = `# paidfor-data
 
-Machine-readable twin of the x402 buyer-failure report (docs/FINAL-REPORT.md). Written by \`x402-audit export\` from data/audit.sqlite.
+Machine-readable twin of the x402 buyer-failure report, refreshed hourly by the audit loop (\`x402-audit export\` over its SQLite database). Every file below sits at the root of this repository; fetch it from \`https://raw.githubusercontent.com/sarmadahsan/paidfor-data/main/<file>\`.
 Every rate uses the report's definitions: the paid denominator is ok, overcharge, non_delivery, wrong_goods, injection and duplicate buy rows;
 a failure is overcharge, non_delivery, wrong_goods or duplicate. Intervals are 95% Wilson. Rates are fractions in [0, 1]. Money is USDC (6 decimals) as decimal strings.
 All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harness commit that wrote them).

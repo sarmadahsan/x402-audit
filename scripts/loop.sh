@@ -3,8 +3,10 @@
 #   hourly : one probe round over the current probe set, settlement re-check (moves no money), export, publish
 #   daily  : at LOOP_BUY_HOUR_UTC, a gated live buy with a fresh seed over the wide seller set (config/sample.yaml),
 #            budget LOOP_DAILY_USD, per-call cap LOOP_PER_CALL_USD; then settlement confirmation, export, publish
-#   publish: git add public-data && git commit -m "data: <timestamp>" && git push, on branch public-data, from a
-#            worktree at data/public-data-branch so the main checkout stays clean for the commit gate.
+#   publish: export into the root of a worktree at data/paidfor-data (orphan branch paidfor-data-main), then
+#            git add -A && git commit -m "data: <timestamp>" && git push to main of the public repo
+#            sarmadahsan/paidfor-data (remote "paidfor-data"). The main checkout stays clean for the commit gate.
+#            The old public-data branch of this repo is no longer updated.
 # Every existing gate stays: --live, X402_AUDIT_LIVE=1, --network eip155:8453, `pnpm gate` on a clean committed HEAD,
 # the MAX_* caps, and the halt / halt-buy / halt-probe files. A skipped step is logged; the loop itself never stops.
 #
@@ -19,6 +21,8 @@
 #          s3://$BACKUP_BUCKET/audit/<date>.sqlite.gz (skipped and logged when BACKUP_BUCKET or the aws CLI is missing).
 # Env:   LOOP_DAILY_USD (2.00)  LOOP_PER_CALL_USD (0.10)  LOOP_BUY_HOUR_UTC (14)  LOOP_BUY_CONCURRENCY (4)
 #        LOOP_PUBLISH (1; 0 = export but do not commit or push)  BACKUP_BUCKET (unset = no backup)
+#        LOOP_PUBLISH_URL (https://github.com/sarmadahsan/paidfor-data.git; the server uses the SSH alias
+#        git@github-data:sarmadahsan/paidfor-data.git so its write deploy key for that repo is offered)
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 1
@@ -32,8 +36,12 @@ LOOP_PUBLISH="${LOOP_PUBLISH:-1}"
 NETWORK="eip155:8453"
 LOG="$REPO/data/loop.log"
 STATE="$REPO/data/loop-state"
-WT="$REPO/data/public-data-branch"
-BRANCH="public-data"
+PUB_URL="${LOOP_PUBLISH_URL:-https://github.com/sarmadahsan/paidfor-data.git}"
+PUB_REMOTE="paidfor-data"
+PUB_DIR="$REPO/data/paidfor-data"
+PUB_LOCAL_BRANCH="paidfor-data-main"
+# Commits to the public repo carry a neutral identity, never the operator's own name or email.
+PUB_IDENT=(env GIT_AUTHOR_NAME=paidfor-audit GIT_AUTHOR_EMAIL=paidfor-audit@users.noreply.github.com GIT_COMMITTER_NAME=paidfor-audit GIT_COMMITTER_EMAIL=paidfor-audit@users.noreply.github.com)
 LABEL="com.x402audit.loop"
 UNIT="paidfor-audit"
 UNIT_FILE="/etc/systemd/system/$UNIT.service"
@@ -46,32 +54,38 @@ run() { log "run: $*"; "$@" >> "$LOG" 2>&1; local rc=$?; [ "$rc" -ne 0 ] && log 
 lock() { until mkdir "$STATE/$1.lock" 2>/dev/null; do sleep 5; done; }
 unlock() { rmdir "$STATE/$1.lock" 2>/dev/null || true; }
 
-ensure_worktree() {
-  if [ -e "$WT/.git" ]; then return 0; fi
-  git fetch -q origin "$BRANCH" 2>/dev/null || true
-  if git show-ref -q --verify "refs/heads/$BRANCH"; then git worktree add -q "$WT" "$BRANCH"
-  elif git show-ref -q --verify "refs/remotes/origin/$BRANCH"; then git worktree add -q -b "$BRANCH" "$WT" "origin/$BRANCH"
-  else git worktree add -q --orphan -b "$BRANCH" "$WT"; fi
+# Worktree for the public data repo: an orphan branch of this repo whose upstream is main of paidfor-data.
+# Before every export it is reset to the remote's main, so any publisher (laptop or server) fast-forwards.
+ensure_pub_worktree() {
+  if git remote get-url "$PUB_REMOTE" >/dev/null 2>&1; then git remote set-url "$PUB_REMOTE" "$PUB_URL"; else git remote add "$PUB_REMOTE" "$PUB_URL"; fi
+  local have_remote=0
+  git fetch -q "$PUB_REMOTE" main 2>/dev/null && git show-ref -q --verify "refs/remotes/$PUB_REMOTE/main" && have_remote=1
+  if [ ! -e "$PUB_DIR/.git" ]; then
+    if [ "$have_remote" = 1 ]; then git worktree add -q -B "$PUB_LOCAL_BRANCH" "$PUB_DIR" "$PUB_REMOTE/main"
+    else git worktree add -q --orphan -b "$PUB_LOCAL_BRANCH" "$PUB_DIR"; fi
+  elif [ "$have_remote" = 1 ]; then
+    git -C "$PUB_DIR" reset -q --hard "$PUB_REMOTE/main"
+  fi
 }
 
 export_publish() {
   lock publish
   if [ "$LOOP_PUBLISH" = 1 ]; then
-    if ! ensure_worktree >> "$LOG" 2>&1; then log "publish skipped: could not set up worktree $WT"; unlock publish; return 1; fi
-    out="$WT/public-data"
+    if ! ensure_pub_worktree >> "$LOG" 2>&1; then log "publish skipped: could not set up worktree $PUB_DIR"; unlock publish; return 1; fi
+    out="$PUB_DIR"
   else
     out="$REPO/public-data"
   fi
   if ! run "${CLI[@]}" export --out "$out"; then log "export failed; nothing published"; unlock publish; return 1; fi
   if [ "$LOOP_PUBLISH" = 1 ]; then
     ts="$(date -u +%FT%TZ)"
-    (cd "$WT" && git add public-data) >> "$LOG" 2>&1
-    if (cd "$WT" && git diff --cached --quiet); then
+    git -C "$PUB_DIR" add -A >> "$LOG" 2>&1
+    if git -C "$PUB_DIR" diff --cached --quiet; then
       log "publish: no change"
-    elif (cd "$WT" && git commit -q -m "data: $ts" && git push -q origin "$BRANCH") >> "$LOG" 2>&1; then
-      log "published data: $ts"
+    elif ("${PUB_IDENT[@]}" git -C "$PUB_DIR" commit -q -m "data: $ts" && git -C "$PUB_DIR" push -q "$PUB_REMOTE" "HEAD:main") >> "$LOG" 2>&1; then
+      log "published data: $ts to $PUB_REMOTE main"
     else
-      log "publish failed (commit or push); will retry next hour"
+      log "publish failed (commit or push to $PUB_REMOTE); will retry next hour"
     fi
   fi
   unlock publish

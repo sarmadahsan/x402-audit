@@ -80,21 +80,23 @@ echo "waiting for cloud-init to finish on $IP (several minutes: Node, AWS CLI, F
 SSH=(ssh -i "$KEY_FILE" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "ubuntu@$IP")
 until "${SSH[@]}" true 2>/dev/null; do sleep 10; done
 "${SSH[@]}" "cloud-init status --wait >/dev/null; test -f /var/lib/paidfor-audit-bootstrap-done" || { echo "cloud-init failed; see /var/log/cloud-init-output.log on the host" >&2; exit 1; }
-"${SSH[@]}" "sudo cat /home/audit/.ssh/id_ed25519.pub" > infra/aws/deploy-key.pub
+"${SSH[@]}" "sudo cat /home/audit/.ssh/id_audit_read.pub" > infra/aws/deploy-key-x402-audit-read.pub
+"${SSH[@]}" "sudo cat /home/audit/.ssh/id_data_write.pub" > infra/aws/deploy-key-paidfor-data-write.pub
 
 cat <<NEXT
 
 Provisioned. Instance $INSTANCE at $IP; backups to s3://$BUCKET/audit/. State: $STATE.
 
-1. Add the deploy key (write access; GitHub deploy keys cannot be limited to one branch):
-   gh repo deploy-key add infra/aws/deploy-key.pub --repo sarmadahsan/x402-audit --title "paidfor-audit $INSTANCE" --allow-write
+1. Add the two deploy keys (read-only for the harness, write for the public data repo):
+   gh repo deploy-key add infra/aws/deploy-key-x402-audit-read.pub --repo sarmadahsan/x402-audit --title "paidfor-audit $INSTANCE read"
+   gh repo deploy-key add infra/aws/deploy-key-paidfor-data-write.pub --repo sarmadahsan/paidfor-data --title "paidfor-audit $INSTANCE write" --allow-write
 
 2. Copy the database and env files:
    scp -i $KEY_FILE data/audit.sqlite data/server-audit.env data/server-wallets.env ubuntu@$IP:/tmp/
 
 3. On the host (ssh -i $KEY_FILE ubuntu@$IP):
    sudo sh -c 'cat /tmp/server-audit.env /tmp/server-wallets.env > /etc/paidfor/audit.env && chmod 600 /etc/paidfor/audit.env' && rm /tmp/server-audit.env /tmp/server-wallets.env
-   sudo -u audit git clone git@github.com:sarmadahsan/x402-audit.git /home/audit/x402-audit
+   sudo -u audit git clone git@github-audit:sarmadahsan/x402-audit.git /home/audit/x402-audit
    sudo -u audit mkdir -p /home/audit/x402-audit/data && sudo install -o audit -g audit -m 600 /tmp/audit.sqlite /home/audit/x402-audit/data/audit.sqlite && rm /tmp/audit.sqlite
    sudo -u audit touch /home/audit/x402-audit/halt
    sudo -u audit bash -c 'cd /home/audit/x402-audit && pnpm install && ANVIL_BIN=/home/audit/.foundry/bin/anvil pnpm gate'

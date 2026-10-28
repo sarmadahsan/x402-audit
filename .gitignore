@@ -28,4 +28,4 @@ coverage/
 
 # AWS provisioning state (resource ids) and the fetched deploy key
 infra/aws/state.env
-infra/aws/deploy-key.pub
+infra/aws/deploy-key*.pub

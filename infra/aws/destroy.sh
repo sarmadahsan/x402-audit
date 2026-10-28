@@ -29,5 +29,5 @@ if [ -n "${BUCKET:-}" ]; then
   aws s3api delete-bucket --bucket "$BUCKET" && echo "deleted bucket $BUCKET"
 fi
 left=$(aws resourcegroupstaggingapi get-resources --tag-filters Key=Name,Values=paidfor-audit --query 'ResourceTagMappingList[].ResourceARN' --output text 2>/dev/null)
-if [ -n "$left" ]; then echo "still tagged paidfor-audit (may be terminating): $left"; else rm -f "$STATE" infra/aws/deploy-key.pub; echo "all clear"; fi
-echo "Remember to remove the deploy key: gh repo deploy-key list --repo sarmadahsan/x402-audit, then gh repo deploy-key delete <id> --repo sarmadahsan/x402-audit"
+if [ -n "$left" ]; then echo "still tagged paidfor-audit (may be terminating): $left"; else rm -f "$STATE" infra/aws/deploy-key*.pub; echo "all clear"; fi
+echo "Remember to remove the deploy keys: gh repo deploy-key list --repo sarmadahsan/x402-audit and --repo sarmadahsan/paidfor-data, then gh repo deploy-key delete <id> --repo <repo>"
