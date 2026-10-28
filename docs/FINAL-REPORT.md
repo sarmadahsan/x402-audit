@@ -1,5 +1,40 @@
 # x402 Buyer Failure Rate on Base Mainnet: Final Report
 
+> **Revision 2026-10-28.** The report's queries matched only the network id
+> `eip155:8453`, so 188 purchase calls (and 4 stress calls) to sellers that
+> quote the x402 v1 name `base` for the same chain (Base mainnet) were left out
+> of every rate: api.slamai.dev
+> (171 calls, a top-20 seller by volume), slamlink-ai-main-50fbb45.d2.zuplo.dev
+> (10), uxus.finance (5) and x402factory.ai (2). The queries now treat `base`
+> and `eip155:8453` as one network; no stored row was changed. The original
+> limitations section predicted a shift under 0.1 point; the count rate moved
+> 0.01 point.
+>
+> | measure | before | after |
+> |---|---|---|
+> | denominator | 12,805 | 12,992 |
+> | count-weighted failures | 848 | 859 |
+> | count-weighted rate | 6.62% [6.20%, 7.07%] | 6.61% [6.20%, 7.05%] |
+> | dollar-weighted base, failed | 57.65, 4.48 USDC | 57.92, 4.51 USDC |
+> | dollar-weighted rate | 7.76% [6.72%, 8.95%] | 7.79% [6.75%, 8.98%] |
+> | Kish effective n | 2,217 | 2,237 |
+> | non_delivery | 498 | 509 |
+> | overcharge at 2x only | 6.2% [5.8%, 6.7%] | 6.2% [5.8%, 6.6%] |
+> | charged_then_rejected | 140 | 143 |
+> | client timeouts before declared window | 3 | 9 |
+> | top tier | 3,837, 10.1% [9.2%, 11.1%] | 4,007, 9.8% [8.9%, 10.8%] |
+> | tail tier | 3,861, 4.6% [3.9%, 5.3%] | 3,871, 4.5% [3.9%, 5.2%] |
+> | unassigned tier | 5,107, 5.6% [5.0%, 6.2%] | 5,114, 5.7% [5.1%, 6.3%] |
+> | data category | 3,237, 6.1% [5.3%, 6.9%] | 3,419, 6.0% [5.2%, 6.8%] |
+> | inference category | 2,871, 5.0% [4.2%, 5.8%] | 2,876, 5.1% [4.3%, 5.9%] |
+> | phases 1 / 2 / 3 to 6 (denominator) | 1,997 / 7,428 / 3,380 | 2,035 / 7,548 / 3,409 |
+>
+> Phase rates, the seller counts (362 reached, 93 with at least 30 calls, 69 of
+> them with no failure) and the worst-ten table do not change; those counts in
+> the original text already included the v1 rows. api.slamai.dev now qualifies
+> for the 30-call seller set. The interval half-width in 2.5 is corrected to
+> ±0.43 (it was 0.43 before this revision too).
+
 Study window: 2026-10-24 20:25 UTC to 2026-10-26 00:19 UTC (purchases), with
 discovery, on-chain measurement and probing from 2026-10-24 01:40 UTC to
 2026-10-26 07:13 UTC. Repository: `sarmadahsan/x402-audit` (private), commit
@@ -11,14 +46,14 @@ Database: `data/audit.sqlite` (one file; every number below is a query over it).
 **Question.** Of paid x402 API calls on Base mainnet, what share fail the
 buyer, by count and by dollars, and why?
 
-**Answer.** Across 12,805 paid calls that count in the denominator:
+**Answer.** Across 12,992 paid calls that count in the denominator:
 
 | measure | denominator | failures | rate [95% Wilson CI] |
 |---|---|---|---|
-| count-weighted | 12,805 paid calls | 848 | **6.6% [6.2%, 7.1%]** |
-| dollar-weighted | 57.65 USDC | 4.48 USDC | **7.8% [6.7%, 9.0%]** (Kish effective n = 2,217) |
+| count-weighted | 12,992 paid calls | 859 | **6.6% [6.2%, 7.1%]** |
+| dollar-weighted | 57.92 USDC | 4.51 USDC | **7.8% [6.8%, 9.0%]** (Kish effective n = 2,237) |
 
-Failures split into two kinds. `non_delivery` (498 calls, 59% of failures):
+Failures split into two kinds. `non_delivery` (509 calls, 59% of failures):
 the seller settled the payment on-chain and then returned a 4xx or 5xx, an
 empty or wrong-typed body, or nothing at all within its own declared timeout.
 `overcharge` (350 calls, 41%): the seller's 402 quote exceeded the price it
@@ -28,14 +63,14 @@ were configured) and no `duplicate` settlement occurred in the main sample.
 
 The rate is robust to how strictly overcharge is defined: counting an
 overcharge only at 1.1x the listed price gives 6.4% [6.0%, 6.8%]; only at 2x
-gives 6.2% [5.8%, 6.7%]. Most overcharges were not marginal: of 350, 175 were
+gives 6.2% [5.8%, 6.6%]. Most overcharges were not marginal: of 350, 175 were
 2x to 5x and 124 were 5x or more the listed price, concentrated in nine
 sellers.
 
 Reported separately and never in the denominator: 976 `not_paid` (the seller
 never produced a payable 402, or rejected the payment before settling; no
 money moved), 597 `our_error` (listings from which no valid request could be
-formed; no money moved except 140 cases described below), and 15
+formed; no money moved except 143 cases described below), and 15
 `indeterminate` (payment signed, no response, no settlement visible within
 24 hours).
 
@@ -98,7 +133,7 @@ pool down: phase 1 (top 20 + 40 tail sellers), phase 2 (top 20 + 300 tail,
 widened mid-phase to 600 tail), phases 3 to 6 (same wide set, fresh seeds).
 
 Intervals are 95% Wilson. The 3,000-call target was chosen so a 10% rate
-would carry about ±1.1 points; the final 12,805 carries ±0.45. The
+would carry about ±1.1 points; the final 12,992 carries ±0.43. The
 dollar-weighted interval uses Kish's effective sample size and is labelled an
 approximation. The per-seller table requires at least 30 calls, where the
 interval is about ±10 points: enough to separate a 5% seller from a 40% one.
@@ -157,9 +192,9 @@ Per phase (count-weighted headline, 95% CI):
 
 | phase | window (UTC) | denominator | rate |
 |---|---|---|---|
-| 1: top 20 + 40 tail sellers | 10-24 20:25 to 10-25 08:19 | 1,997 | 6.7% [5.7%, 7.9%] |
-| 2: top 20 + 300 to 600 tail | 10-25 08:19 to 20:33 | 7,428 | 6.3% [5.7%, 6.8%] |
-| 3 to 6: same wide set | 10-25 20:33 to 10-26 00:19 | 3,380 | 7.3% [6.5%, 8.3%] |
+| 1: top 20 + 40 tail sellers | 10-24 20:25 to 10-25 08:19 | 2,035 | 6.7% [5.7%, 7.9%] |
+| 2: top 20 + 300 to 600 tail | 10-25 08:19 to 20:33 | 7,548 | 6.3% [5.7%, 6.8%] |
+| 3 to 6: same wide set | 10-25 20:33 to 10-26 00:19 | 3,409 | 7.3% [6.5%, 8.3%] |
 
 ### 4.2 Breakdown
 
@@ -168,9 +203,9 @@ phases and have no tier label):
 
 | tier | sellers | n | rate [CI] | dollar-weighted |
 |---|---|---|---|---|
-| top 20 by volume | 17 | 3,837 | 10.1% [9.2%, 11.1%] | 6.3% |
-| random tail | 155 | 3,861 | 4.6% [3.9%, 5.3%] | 6.6% |
-| unassigned (widened phases) | 190 | 5,107 | 5.6% [5.0%, 6.2%] | 12.1% |
+| top 20 by volume | 17 | 4,007 | 9.8% [8.9%, 10.8%] | 6.3% |
+| random tail | 155 | 3,871 | 4.5% [3.9%, 5.2%] | 6.5% |
+| unassigned (widened phases) | 190 | 5,114 | 5.7% [5.1%, 6.3%] | 12.3% |
 
 By category:
 
@@ -178,14 +213,14 @@ By category:
 |---|---|---|---|
 | other | 3,198 | 10.3% [9.3%, 11.4%] | 16.6% |
 | compute | 1,974 | 7.6% [6.6%, 8.9%] | 4.0% |
-| data | 3,237 | 6.1% [5.3%, 6.9%] | 11.9% |
-| inference | 2,871 | 5.0% [4.2%, 5.8%] | 11.9% |
+| data | 3,419 | 6.0% [5.2%, 6.8%] | 11.6% |
+| inference | 2,876 | 5.1% [4.3%, 5.9%] | 12.2% |
 | scraping | 1,525 | 2.0% [1.4%, 2.8%] | 4.6% |
 
 `non_delivery` by what came back after settlement: no response within the
 seller's declared window 293 (18 sellers, 1.44 USDC); 4xx 145 (12 sellers);
 5xx 27 (4 sellers); 2xx with an empty, truncated or wrong-typed body 44 (6
-sellers). 140 rows carry `charged_then_rejected`: the seller settled and then
+sellers). 143 rows carry `charged_then_rejected`: the seller settled and then
 rejected the request as malformed, including requests built from the seller's
 own listed example.
 
@@ -207,7 +242,10 @@ had zero failures. The worst, by count rate:
 | api.sitecheck-api.workers.dev | | data | 87 | 18 | 20.7% [13.5%, 30.4%] |
 | agent-tools-production-e6aa.up.railway.app | tail | scraping | 152 | 29 | 19.1% [13.6%, 26.1%] |
 
-api-xpay.com alone contributes 270 of the 848 failures: it is a top-20 seller
+api.slamai.dev (top 20 by volume, data) joined this set in the 2026-10-28
+revision: 170 calls, 6 failures, 3.5% [1.6%, 7.5%].
+
+api-xpay.com alone contributes 270 of the 859 failures: it is a top-20 seller
 by volume that took payment on hundreds of calls and did not answer within its
 own declared 60 seconds. amanchain-relay took $0.05 per call 150 times and
 never delivered.
@@ -250,7 +288,7 @@ than a clean overcharge rate.
 ## 5. Conclusions
 
 1. **About one paid x402 call in fifteen fails the buyer.** 6.6% by count
-   (6.2% to 7.1%), 7.8% by dollars (6.7% to 9.0%), on 12,805 calls to 362
+   (6.2% to 7.1%), 7.8% by dollars (6.8% to 9.0%), on 12,992 calls to 362
    sellers. The count interval is narrow enough that the true market rate is
    not below 6% or above 7.1% for this universe and period.
 2. **Two mechanisms, roughly even by count.** Paying and getting nothing
@@ -264,9 +302,9 @@ than a clean overcharge rate.
    failures, and one top-20 seller (api-xpay.com) for a third of them. A
    buyer with a short deny-list would see a rate well under 2%.
 4. **Volume rank does not protect buyers.** The top-20-by-volume tier failed
-   at 10.1% versus 4.6% for the random tail, driven by two high-volume sellers
+   at 9.8% versus 4.5% for the random tail, driven by two high-volume sellers
    that charge first and answer late or never.
-5. **Settlement precedes validation at many sellers.** 140 calls were charged
+5. **Settlement precedes validation at many sellers.** 143 calls were charged
    and then rejected as malformed; 2 of 10 sellers settled a request whose
    connection was dropped after 2 seconds; 5 of 10 settled a duplicate intent.
    Nothing in the current `exact` scheme ties a payment to an idempotency key,
@@ -290,16 +328,14 @@ than a clean overcharge rate.
 - Overcharge is relative to the Bazaar listing; a seller that lists a stale
   price and quotes its real one is counted as overcharging, which is the
   buyer's experience but not necessarily intent.
-- 3 `non_delivery` rows timed out in our client (60 s) before the seller's
-  declared 300 s window; they are an upper bound on those sellers' fault.
+- 9 `non_delivery` rows (6 of them api.slamai.dev) timed out in our client
+  (60 s) before the seller's declared 300 s window; they are an upper bound on those sellers' fault.
 - Requests were built from each listing's example or typed field descriptors;
   597 attempts the sellers rejected as malformed are excluded as `our_error`,
-  and the 140 `charged_then_rejected` rows include requests built the same way.
-- The report's network filter matches `eip155:8453` or null; 203 resources
-  from v1 sellers that advertise the legacy name `base` fall outside it, which
-  is why the denominator (12,805) is 187 below ok+overcharge+non_delivery in
-  the raw table. Those rows are in the database and shift the rate by less
-  than 0.1 point.
+  and the 143 `charged_then_rejected` rows include requests built the same way.
+- Calls quoted under the x402 v1 network name `base` (the same chain as
+  `eip155:8453`) are now included: the queries treat both names as one network
+  (revision 2026-10-28).
 - Phase 2's plan was rebuilt mid-phase when the probe set widened, so phase 2
   mixes two seller sets; the per-phase table is descriptive, the combined
   figure is the result.

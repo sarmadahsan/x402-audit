@@ -12,8 +12,9 @@
  *   of at most 18 digits contributes 0 (it can never overflow the sum).
  * - Sums of squared weights (for the Kish effective n) are REAL: that figure is
  *   an approximation already, and REAL cannot overflow.
- * - Calls are filtered by `quote_network = @network OR quote_network IS NULL`
- *   (rows that never got a quote, e.g. some our_error rows, carry no network).
+ * - Calls are filtered by network with `netMatch`: the CAIP-2 id, its x402 v1 name (`base` is Base mainnet,
+ *   `base-sepolia` is Base Sepolia; one chain, two names), or NULL (rows that never got a quote, e.g. some
+ *   our_error rows, carry no network). The alias is applied at query time; stored rows are never rewritten.
  * - Chain proxy "mode" (per pay_to modal transfer value) is computed in JS from
  *   the per-pay_to value histogram returned by `chain_proxy_overcharge`, because
  *   value_atomic is TEXT and must be compared as a bigint. Ties go to the lower
@@ -30,7 +31,13 @@ const FAIL_LIST = sqlList(HEADLINE_FAILURE_OUTCOMES);
 const intOf = (e: string): string =>
   `(CASE WHEN ${e} IS NOT NULL AND ${e} <> '' AND ${e} NOT GLOB '*[^0-9]*' AND length(${e}) <= 18 THEN CAST(${e} AS INTEGER) ELSE 0 END)`;
 
-const CALL_WINDOW = `c.ts >= @since AND c.ts <= @until AND (c.quote_network = @network OR c.quote_network IS NULL)`;
+/** x402 v1 network names for each CAIP-2 id (same chain, older name). */
+export const V1_NETWORK_NAMES: Readonly<Record<string, string>> = { "eip155:8453": "base", "eip155:84532": "base-sepolia" };
+const V1_CASE = `(CASE @network ${Object.entries(V1_NETWORK_NAMES).map(([caip, v1]) => `WHEN '${caip}' THEN '${v1}'`).join(" ")} END)`;
+/** True when a stored network column names @network under either its CAIP-2 id or its v1 name, or is NULL. */
+const netMatch = (col: string): string => `(${col} = @network OR ${col} = ${V1_CASE} OR ${col} IS NULL)`;
+
+const CALL_WINDOW = `c.ts >= @since AND c.ts <= @until AND ${netMatch("c.quote_network")}`;
 
 const hasFlag = (flagsCol: string, flag: string): string =>
   `EXISTS (SELECT 1 FROM json_each(${flagsCol}) WHERE json_each.value = '${flag}')`;
@@ -214,7 +221,7 @@ export const QUERIES = {
   telemetry_by_source_outcome: `SELECT t.source_id AS source_id, t.outcome AS outcome, COUNT(*) AS n,
       CAST(COALESCE(SUM(${intOf("t.amount_atomic")}), 0) AS TEXT) AS amount_atomic
     FROM telemetry_calls t
-    WHERE t.received_at >= @since AND t.received_at <= @until AND (t.network = @network OR t.network IS NULL)
+    WHERE t.received_at >= @since AND t.received_at <= @until AND ${netMatch("t.network")}
     GROUP BY 1, 2 ORDER BY 1, 2`,
 
   /** Registered telemetry sources. */
@@ -229,7 +236,7 @@ export const QUERIES = {
       (SELECT COUNT(*) FROM price_events e WHERE e.kind = 'payto_changed' AND e.ts >= @since AND e.ts <= @until) AS payto_changed,
       (SELECT COUNT(*) FROM price_events e WHERE e.kind = 'quote_drift' AND e.ts >= @since AND e.ts <= @until) AS quote_drift
     FROM probes p
-    WHERE p.ts >= @since AND p.ts <= @until AND (p.network = @network OR p.network IS NULL)`,
+    WHERE p.ts >= @since AND p.ts <= @until AND ${netMatch("p.network")}`,
 
   /** Exact spend: SUM(amount_paid_atomic) over paid=1 calls, by source. */
   spend_total: `SELECT c.source AS source, COUNT(*) AS paid_calls,
@@ -309,13 +316,13 @@ export const QUERIES = {
       (SELECT COUNT(*) FROM resources r WHERE r.seller_id = s.id AND r.source = 'bazaar') AS bazaar_listings,
       MAX(COALESCE((SELECT MAX(c.ts) FROM calls c WHERE c.seller_id = s.id AND c.source = 'buy' AND ${CALL_WINDOW}), 0),
           COALESCE((SELECT MAX(p.ts) FROM probes p JOIN resources r ON r.id = p.resource_id
-                    WHERE r.seller_id = s.id AND p.ts >= @since AND p.ts <= @until AND (p.network = @network OR p.network IS NULL)), 0)) AS last_seen_ts
+                    WHERE r.seller_id = s.id AND p.ts >= @since AND p.ts <= @until AND ${netMatch("p.network")}), 0)) AS last_seen_ts
     FROM sellers s ORDER BY s.id`,
 
   /** Pay-to addresses per seller: listed on its resources or quoted to us. */
   seller_pay_tos: `SELECT seller_id, pay_to FROM (
       SELECT r.seller_id AS seller_id, lower(r.pay_to) AS pay_to FROM resources r WHERE r.pay_to IS NOT NULL AND r.pay_to <> ''
-        AND (r.network = @network OR r.network IS NULL)
+        AND ${netMatch("r.network")}
       UNION
       SELECT c.seller_id, lower(c.quote_pay_to) FROM calls c WHERE c.quote_pay_to IS NOT NULL AND c.quote_pay_to <> '' AND ${CALL_WINDOW}
     ) ORDER BY seller_id, pay_to`,
@@ -323,6 +330,16 @@ export const QUERIES = {
   /** Resource facts for the export. */
   resource_meta: `SELECT r.id AS resource_id, r.url AS url, r.method AS method, s.domain AS domain, r.declared_price_atomic AS listed_atomic
     FROM resources r JOIN sellers s ON s.id = r.seller_id ORDER BY r.id`,
+
+  /** Latest live buy run and latest probe run (liveness for the public index). */
+  last_runs: `SELECT subcommand, started_at, finished_at, status,
+      CASE subcommand WHEN 'probe run' THEN (SELECT MAX(p.ts) FROM probes p)
+                      ELSE (SELECT MAX(c.ts) FROM calls c WHERE c.source = 'buy') END AS last_activity
+    FROM (
+      SELECT r.subcommand, r.started_at, r.finished_at, r.status,
+        ROW_NUMBER() OVER (PARTITION BY r.subcommand ORDER BY COALESCE(r.finished_at, r.started_at) DESC, r.id DESC) AS rn
+      FROM runs r WHERE r.network = @network AND r.subcommand IN ('buy run', 'probe run') AND (r.subcommand <> 'buy run' OR r.dry_run = 0)
+    ) WHERE rn = 1`,
 
   /** Every wallet we ever used; the export refuses to write a file that contains one. */
   our_wallets: `SELECT DISTINCT lower(wallet) AS wallet FROM (SELECT wallet FROM calls WHERE wallet IS NOT NULL UNION SELECT wallet FROM attempts)`,

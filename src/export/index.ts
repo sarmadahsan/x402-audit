@@ -91,10 +91,17 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
 
   // ------------------------------------------------------------ summary.json
   const reached = q<{ sellers: number; resources: number }>("buy_reached")[0];
+  const runs = q<{ subcommand: string; started_at: number; finished_at: number | null; status: string | null; last_activity: number | null }>("last_runs");
+  const lastRun = (sub: string) => {
+    const r = runs.find((x) => x.subcommand === sub);
+    return r ? { started_at: iso(num(r.started_at)), finished_at: iso(r.finished_at == null ? null : num(r.finished_at)), status: r.status, last_activity: iso(r.last_activity == null ? null : num(r.last_activity)) } : null;
+  };
   const h = report.headline;
   const summary = {
     ...header,
     last_updated: generatedAt,
+    last_buy_run: lastRun("buy run"),
+    last_probe_run: lastRun("probe run"),
     study_window: { first_call: report.meta.date_range.first_call, last_call: report.meta.date_range.last_call },
     denominator_paid_calls: h.count.n,
     count_weighted: { failures: h.count.failures, rate: h.count.rate, wilson_low: h.count.lo, wilson_high: h.count.hi },

@@ -25,3 +25,7 @@ coverage/
 
 # export output (published from the public-data branch worktree under data/)
 /public-data/
+
+# AWS provisioning state (resource ids) and the fetched deploy key
+infra/aws/state.env
+infra/aws/deploy-key.pub
