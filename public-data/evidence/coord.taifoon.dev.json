@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "coord.taifoon.dev",
+  "seller_id": 1142,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T11:43:23.323Z",
+      "resource": "https://coord.taifoon.dev/v1/x402/class/inference.metered",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x0c8c3d7e05c34ff0510ccd71e73334a07acebd9c3afe7ead61362f46c97966c8",
+      "basescan_url": "https://basescan.org/tx/0x0c8c3d7e05c34ff0510ccd71e73334a07acebd9c3afe7ead61362f46c97966c8"
+    }
+  ]
+}

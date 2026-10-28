@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "api.vextorium.com",
+  "seller_id": 1007,
+  "failures_total": 6,
+  "shown": 6,
+  "samples": [
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T20:40:43.115Z",
+      "resource": "https://api.vextorium.com/mi-ip-pago",
+      "method": "POST",
+      "quote_usdc": "0.003000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xd9501df4e6e2d4a526a6a66ad646947c45677f8b50ab1e9920494e841719dfd8",
+      "basescan_url": "https://basescan.org/tx/0xd9501df4e6e2d4a526a6a66ad646947c45677f8b50ab1e9920494e841719dfd8"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T20:36:01.427Z",
+      "resource": "https://api.vextorium.com/prueba-x402-pago",
+      "method": "POST",
+      "quote_usdc": "0.003000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x83fdda21146e2c625dd4fa68a94d23a5fe65a739e8c680417f1cdd4c0cf2c75d",
+      "basescan_url": "https://basescan.org/tx/0x83fdda21146e2c625dd4fa68a94d23a5fe65a739e8c680417f1cdd4c0cf2c75d"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T11:37:34.205Z",
+      "resource": "https://api.vextorium.com/prueba-x402-pago",
+      "method": "POST",
+      "quote_usdc": "0.003000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x9ad35435ea8a9747c213543170860b385aa7214d36864ef833397dd3c1f38ad8",
+      "basescan_url": "https://basescan.org/tx/0x9ad35435ea8a9747c213543170860b385aa7214d36864ef833397dd3c1f38ad8"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T10:20:45.043Z",
+      "resource": "https://api.vextorium.com/prueba-x402-pago",
+      "method": "POST",
+      "quote_usdc": "0.003000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xfec2792fc1ab53178b3acf6111c33bfed12d346f871e4f323cec3c2c31c10af4",
+      "basescan_url": "https://basescan.org/tx/0xfec2792fc1ab53178b3acf6111c33bfed12d346f871e4f323cec3c2c31c10af4"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-24T22:01:34.364Z",
+      "resource": "https://api.vextorium.com/reparar-json-pago",
+      "method": "POST",
+      "quote_usdc": "0.003000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x7a711c76f94953e4f1e4d95e1307b4e0845c7b3116214931dc8a8c0bce258eee",
+      "basescan_url": "https://basescan.org/tx/0x7a711c76f94953e4f1e4d95e1307b4e0845c7b3116214931dc8a8c0bce258eee"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-24T21:33:31.380Z",
+      "resource": "https://api.vextorium.com/prueba-x402-pago",
+      "method": "POST",
+      "quote_usdc": "0.003000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xd542c2e7e2940d8bfa617c73b27b4ed35dfdf8455103ad3d79e027222e435c5d",
+      "basescan_url": "https://basescan.org/tx/0xd542c2e7e2940d8bfa617c73b27b4ed35dfdf8455103ad3d79e027222e435c5d"
+    }
+  ]
+}

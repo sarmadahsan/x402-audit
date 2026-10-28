@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "stabletravel.dev",
+  "seller_id": 91,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T11:21:02.802Z",
+      "resource": "https://stabletravel.dev/api/flightaware/airports/KDFW/weather/observations",
+      "method": "GET",
+      "quote_usdc": "0.004000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x500232f38513bb36c93f8b978d2453de3b7b6a1c16422e5d1723612e7628ff0e",
+      "basescan_url": "https://basescan.org/tx/0x500232f38513bb36c93f8b978d2453de3b7b6a1c16422e5d1723612e7628ff0e"
+    }
+  ]
+}

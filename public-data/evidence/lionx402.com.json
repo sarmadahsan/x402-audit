@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "lionx402.com",
+  "seller_id": 100,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:50:37.974Z",
+      "resource": "https://lionx402.com/api/x402/composite-bundle-json",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xca6a55b26836d131a2bb5e7e8659e37f5440116a91d398513d6a5a9485eb9455",
+      "basescan_url": "https://basescan.org/tx/0xca6a55b26836d131a2bb5e7e8659e37f5440116a91d398513d6a5a9485eb9455"
+    }
+  ]
+}

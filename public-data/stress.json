@@ -1,0 +1,231 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "summary": {
+    "duplicate": {
+      "intents": 10,
+      "intents_with_second_settlement": 5,
+      "rate": 0.5,
+      "lo": 0.2365930890114794,
+      "hi": 0.7634069109885206
+    },
+    "timeout": {
+      "intents": 10,
+      "settled_despite_abort": 5,
+      "intents_with_retry": 10,
+      "second_settlement_on_retry": 5
+    }
+  },
+  "tables": [
+    {
+      "heading": "Duplicate: one intent, two back-to-back paid calls",
+      "rows": [
+        {
+          "resource": "https://api.bitrefill.com/x402/checkout/info",
+          "intent": "d717441a",
+          "calls": "2",
+          "settlements": "2",
+          "double-settled": "yes",
+          "spent": "$0.002000"
+        },
+        {
+          "resource": "https://api.vapinetwork.ai/shim/o1/tokens",
+          "intent": "557218a5",
+          "calls": "2",
+          "settlements": "0",
+          "double-settled": "no",
+          "spent": "$0.004000"
+        },
+        {
+          "resource": "https://api.surplusintelligence.ai/v1/chat/completions",
+          "intent": "e788793a",
+          "calls": "2",
+          "settlements": "0",
+          "double-settled": "no",
+          "spent": "$0.000000"
+        },
+        {
+          "resource": "https://api.slamai.dev/chain/tokens/trending",
+          "intent": "3ca5dbaa",
+          "calls": "2",
+          "settlements": "2",
+          "double-settled": "yes",
+          "spent": "$0.002000"
+        },
+        {
+          "resource": "https://laso.finance/auth",
+          "intent": "6f2944d6",
+          "calls": "2",
+          "settlements": "2",
+          "double-settled": "yes",
+          "spent": "$0.002000"
+        },
+        {
+          "resource": "https://www.ax1.vc/api/dashboard/q-verdict/resource",
+          "intent": "e33d5379",
+          "calls": "2",
+          "settlements": "0",
+          "double-settled": "no",
+          "spent": "$0.040000"
+        },
+        {
+          "resource": "https://www.api-xpay.com/x402/quote",
+          "intent": "f2e0026c",
+          "calls": "2",
+          "settlements": "2",
+          "double-settled": "yes",
+          "spent": "$0.010000"
+        },
+        {
+          "resource": "https://x402.clashofcoins.com/x402/cheap-health",
+          "intent": "73896b42",
+          "calls": "2",
+          "settlements": "2",
+          "double-settled": "yes",
+          "spent": "$0.002000"
+        },
+        {
+          "resource": "https://api.nansen.ai/api/v1/profiler/address/current-balance",
+          "intent": "d26a8b15",
+          "calls": "2",
+          "settlements": "0",
+          "double-settled": "no",
+          "spent": "$0.020000"
+        },
+        {
+          "resource": "https://api.locus.report/api/locus-parcel-lookup",
+          "intent": "508f3511",
+          "calls": "2",
+          "settlements": "0",
+          "double-settled": "no",
+          "spent": "$0.020000"
+        }
+      ]
+    },
+    {
+      "heading": "Timeout: abort after payment, then a naive retry",
+      "rows": [
+        {
+          "resource": "https://api.bitrefill.com/x402/checkout/info",
+          "intent": "534b1425",
+          "call 1 aborted": "no",
+          "settled despite abort": "no",
+          "second settlement on retry": "yes",
+          "settlements": "2",
+          "spent": "$0.002000"
+        },
+        {
+          "resource": "https://api.vapinetwork.ai/shim/o1/tokens",
+          "intent": "b4345dfd",
+          "call 1 aborted": "no",
+          "settled despite abort": "no",
+          "second settlement on retry": "no",
+          "settlements": "0",
+          "spent": "$0.004000"
+        },
+        {
+          "resource": "https://api.surplusintelligence.ai/v1/chat/completions",
+          "intent": "085ae8ad",
+          "call 1 aborted": "no",
+          "settled despite abort": "no",
+          "second settlement on retry": "no",
+          "settlements": "0",
+          "spent": "$0.000000"
+        },
+        {
+          "resource": "https://api.slamai.dev/chain/tokens/trending",
+          "intent": "52a8bcd4",
+          "call 1 aborted": "yes",
+          "settled despite abort": "yes",
+          "second settlement on retry": "yes",
+          "settlements": "2",
+          "spent": "$0.002000"
+        },
+        {
+          "resource": "https://laso.finance/auth",
+          "intent": "ae7860bd",
+          "call 1 aborted": "no",
+          "settled despite abort": "no",
+          "second settlement on retry": "yes",
+          "settlements": "2",
+          "spent": "$0.002000"
+        },
+        {
+          "resource": "https://www.ax1.vc/api/dashboard/q-verdict/resource",
+          "intent": "5693407e",
+          "call 1 aborted": "no",
+          "settled despite abort": "no",
+          "second settlement on retry": "no",
+          "settlements": "0",
+          "spent": "$0.040000"
+        },
+        {
+          "resource": "https://www.api-xpay.com/x402/quote",
+          "intent": "058583df",
+          "call 1 aborted": "yes",
+          "settled despite abort": "yes",
+          "second settlement on retry": "yes",
+          "settlements": "2",
+          "spent": "$0.010000"
+        },
+        {
+          "resource": "https://x402.clashofcoins.com/x402/cheap-health",
+          "intent": "deb8f6de",
+          "call 1 aborted": "no",
+          "settled despite abort": "no",
+          "second settlement on retry": "yes",
+          "settlements": "2",
+          "spent": "$0.002000"
+        },
+        {
+          "resource": "https://api.nansen.ai/api/v1/profiler/address/current-balance",
+          "intent": "ef90f48b",
+          "call 1 aborted": "no",
+          "settled despite abort": "no",
+          "second settlement on retry": "no",
+          "settlements": "0",
+          "spent": "$0.020000"
+        },
+        {
+          "resource": "https://api.locus.report/api/locus-parcel-lookup",
+          "intent": "1de75784",
+          "call 1 aborted": "yes",
+          "settled despite abort": "no",
+          "second settlement on retry": "no",
+          "settlements": "0",
+          "spent": "$0.020000"
+        }
+      ]
+    },
+    {
+      "heading": "Totals",
+      "rows": [
+        {
+          "metric": "intents (duplicate test)",
+          "value": "10"
+        },
+        {
+          "metric": "double-settled intents",
+          "value": "5"
+        },
+        {
+          "metric": "intents (timeout test)",
+          "value": "10"
+        },
+        {
+          "metric": "settled despite abort",
+          "value": "2"
+        },
+        {
+          "metric": "second settlement on retry",
+          "value": "5"
+        },
+        {
+          "metric": "total stress spend",
+          "value": "$0.204000"
+        }
+      ]
+    }
+  ]
+}

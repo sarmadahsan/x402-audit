@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "api.slamai.dev",
+  "seller_id": 1684,
+  "failures_total": 6,
+  "shown": 6,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:55:38.440Z",
+      "resource": "https://api.slamai.dev/chain/tokens/trending",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x00e0c17b84663593df222e4bb6b62e970c9fce067da7371de20cd1ae32539151",
+      "basescan_url": "https://basescan.org/tx/0x00e0c17b84663593df222e4bb6b62e970c9fce067da7371de20cd1ae32539151"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:09:23.490Z",
+      "resource": "https://api.slamai.dev/chain/tokens/trending",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x0208765c4c159610af0156350a94a5623d4525880eaa1212df9934bf939bd7e6",
+      "basescan_url": "https://basescan.org/tx/0x0208765c4c159610af0156350a94a5623d4525880eaa1212df9934bf939bd7e6"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T11:57:44.982Z",
+      "resource": "https://api.slamai.dev/chain/tokens/trending",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x5a095bb051a3c1310cddbf1bafbd249bdaec75a4b6b5405b3dc76a27452b4c78",
+      "basescan_url": "https://basescan.org/tx/0x5a095bb051a3c1310cddbf1bafbd249bdaec75a4b6b5405b3dc76a27452b4c78"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T09:08:31.626Z",
+      "resource": "https://api.slamai.dev/chain/tokens/trending",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xfd1092ab4cfda1a2e77f50468a87f638c682fb80a5caa905e768dc5f77d609a6",
+      "basescan_url": "https://basescan.org/tx/0xfd1092ab4cfda1a2e77f50468a87f638c682fb80a5caa905e768dc5f77d609a6"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T03:31:32.660Z",
+      "resource": "https://api.slamai.dev/chain/tokens/trending",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x4d0faae5f92bd26710b4725c65137fe8d775b4c87f69846a0703b45688d5d995",
+      "basescan_url": "https://basescan.org/tx/0x4d0faae5f92bd26710b4725c65137fe8d775b4c87f69846a0703b45688d5d995"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T01:21:21.418Z",
+      "resource": "https://api.slamai.dev/chain/tokens/trending",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xd9f5563459d203e02aab89b66b6218f6e74fff487d2d9a0f0947ecdbf8f20f75",
+      "basescan_url": "https://basescan.org/tx/0xd9f5563459d203e02aab89b66b6218f6e74fff487d2d9a0f0947ecdbf8f20f75"
+    }
+  ]
+}

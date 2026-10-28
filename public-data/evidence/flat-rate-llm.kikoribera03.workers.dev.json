@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "flat-rate-llm.kikoribera03.workers.dev",
+  "seller_id": 507,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T18:38:51.269Z",
+      "resource": "https://flat-rate-llm.kikoribera03.workers.dev/v1/red/asn",
+      "method": "GET",
+      "quote_usdc": "0.005000",
+      "reference_price_usdc": "0.005000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [
+        {
+          "validator": "content_type",
+          "reason": "body_not_json"
+        },
+        {
+          "validator": "non_empty",
+          "reason": "empty_body"
+        }
+      ],
+      "settlement_tx_hash": "0xb1f2fb443cf7fdb4a955ef6237006a743a58dade4ff098b7c344330363636037",
+      "basescan_url": "https://basescan.org/tx/0xb1f2fb443cf7fdb4a955ef6237006a743a58dade4ff098b7c344330363636037"
+    }
+  ]
+}

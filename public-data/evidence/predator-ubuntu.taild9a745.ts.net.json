@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "predator-ubuntu.taild9a745.ts.net",
+  "seller_id": 2444,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:37:16.071Z",
+      "resource": "https://predator-ubuntu.taild9a745.ts.net/v1/receipt",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xff18ab203102bf828fda767a7dfa437341b527737648721b50b89e645de0f230",
+      "basescan_url": "https://basescan.org/tx/0xff18ab203102bf828fda767a7dfa437341b527737648721b50b89e645de0f230"
+    }
+  ]
+}

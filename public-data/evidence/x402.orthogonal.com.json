@@ -1,0 +1,263 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "x402.orthogonal.com",
+  "seller_id": 2332,
+  "failures_total": 14,
+  "shown": 14,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:30:24.019Z",
+      "resource": "https://x402.orthogonal.com/exchange-rates/v1/historical",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x1fed68dda03de0845b25c50311794830d7f4076199777c9aa6ba2fc0f3eb69d4",
+      "basescan_url": "https://basescan.org/tx/0x1fed68dda03de0845b25c50311794830d7f4076199777c9aa6ba2fc0f3eb69d4"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:27:39.383Z",
+      "resource": "https://x402.orthogonal.com/exchange-rates/v1/convert",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x26ecbe77c0b345896b8647166c60302543cee4f3f959bb265f0b1478c1ae9f28",
+      "basescan_url": "https://basescan.org/tx/0x26ecbe77c0b345896b8647166c60302543cee4f3f959bb265f0b1478c1ae9f28"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:24:31.820Z",
+      "resource": "https://x402.orthogonal.com/abstractapi/v1/convert",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x1edde437c0243ad7e462a005a4cf5d222a91183e454b35417f7b8846ab9fb4f2",
+      "basescan_url": "https://basescan.org/tx/0x1edde437c0243ad7e462a005a4cf5d222a91183e454b35417f7b8846ab9fb4f2"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:18:05.005Z",
+      "resource": "https://x402.orthogonal.com/exchange-rates/v1/live",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xd5664556c37692ff6e74458480cb237471afd483d1ba1e975fea51e8817ef9b7",
+      "basescan_url": "https://basescan.org/tx/0xd5664556c37692ff6e74458480cb237471afd483d1ba1e975fea51e8817ef9b7"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:14:10.351Z",
+      "resource": "https://x402.orthogonal.com/abstractapi/v1",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [
+        {
+          "validator": "content_type",
+          "reason": "content_type_mismatch"
+        }
+      ],
+      "settlement_tx_hash": "0xe85a54e4a733684ff363c79076515764d01b4167123a018df1f9c9c2222331f3",
+      "basescan_url": "https://basescan.org/tx/0xe85a54e4a733684ff363c79076515764d01b4167123a018df1f9c9c2222331f3"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:10:19.535Z",
+      "resource": "https://x402.orthogonal.com/avatars/v1",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [
+        {
+          "validator": "content_type",
+          "reason": "content_type_mismatch"
+        }
+      ],
+      "settlement_tx_hash": "0x251431be964f40a0b3a3de9f9ff003bc3e2ec7181bc5a745ec87da68bfdbd36f",
+      "basescan_url": "https://basescan.org/tx/0x251431be964f40a0b3a3de9f9ff003bc3e2ec7181bc5a745ec87da68bfdbd36f"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:01:11.144Z",
+      "resource": "https://x402.orthogonal.com/exchange-rates/v1/historical",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x888eabd099e8e88f9b9a41bc05a4fee994762d13a3586b0799efe085ae54247c",
+      "basescan_url": "https://basescan.org/tx/0x888eabd099e8e88f9b9a41bc05a4fee994762d13a3586b0799efe085ae54247c"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:58:19.687Z",
+      "resource": "https://x402.orthogonal.com/exchange-rates/v1/convert",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x9b26a03d9decb9598531d0b0004bf58a822c7db81bac3e37de9d9e6dba9b22eb",
+      "basescan_url": "https://basescan.org/tx/0x9b26a03d9decb9598531d0b0004bf58a822c7db81bac3e37de9d9e6dba9b22eb"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:53:59.074Z",
+      "resource": "https://x402.orthogonal.com/abstractapi/v1/convert",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x75ceef0355b4df2a12090c6bdd548f879d318574edd4936d915dee8b49682daf",
+      "basescan_url": "https://basescan.org/tx/0x75ceef0355b4df2a12090c6bdd548f879d318574edd4936d915dee8b49682daf"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:45:49.029Z",
+      "resource": "https://x402.orthogonal.com/exchange-rates/v1/live",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x75815b339a8bd4d0dd80156d919e52da1cb9a78f85bf9ff1a5c11c4ee66b4e43",
+      "basescan_url": "https://basescan.org/tx/0x75815b339a8bd4d0dd80156d919e52da1cb9a78f85bf9ff1a5c11c4ee66b4e43"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:40:32.171Z",
+      "resource": "https://x402.orthogonal.com/abstractapi/v1",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [
+        {
+          "validator": "content_type",
+          "reason": "content_type_mismatch"
+        }
+      ],
+      "settlement_tx_hash": "0xcd8b5321aa937e1cb2b80cdc2b7ad0d659eed0dd4da046ea7e97f06d21de45c8",
+      "basescan_url": "https://basescan.org/tx/0xcd8b5321aa937e1cb2b80cdc2b7ad0d659eed0dd4da046ea7e97f06d21de45c8"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:34:55.460Z",
+      "resource": "https://x402.orthogonal.com/avatars/v1",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [
+        {
+          "validator": "content_type",
+          "reason": "content_type_mismatch"
+        }
+      ],
+      "settlement_tx_hash": "0xe75e03d6511722c66decf0b456db77fa440df2d6ecafa26347c4b6c4a923195e",
+      "basescan_url": "https://basescan.org/tx/0xe75e03d6511722c66decf0b456db77fa440df2d6ecafa26347c4b6c4a923195e"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T12:08:18.005Z",
+      "resource": "https://x402.orthogonal.com/abstractapi/v1/live",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x646d6fc11f297b4152481f3d27dc936909a2e8318dce3592a9cb544c44c6d3a1",
+      "basescan_url": "https://basescan.org/tx/0x646d6fc11f297b4152481f3d27dc936909a2e8318dce3592a9cb544c44c6d3a1"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T10:41:14.245Z",
+      "resource": "https://x402.orthogonal.com/abstractapi/v1/live",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x4c2c1ae2f4ff97c0aa8647fd805bff41868f6c61069c260924b15c236e91356e",
+      "basescan_url": "https://basescan.org/tx/0x4c2c1ae2f4ff97c0aa8647fd805bff41868f6c61069c260924b15c236e91356e"
+    }
+  ]
+}

@@ -1,0 +1,322 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "api.loyalspark.online",
+  "seller_id": 45,
+  "failures_total": 16,
+  "shown": 16,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-26T00:14:33.665Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/balance",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xa6f7c4f1157bf4499d1c1ad26d05b777b9df956acdf364805f2632abc24db162",
+      "basescan_url": "https://basescan.org/tx/0xa6f7c4f1157bf4499d1c1ad26d05b777b9df956acdf364805f2632abc24db162"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-26T00:13:15.478Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/rewards",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 403,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        },
+        {
+          "validator": "not_truncated",
+          "reason": "shorter_than_declared"
+        }
+      ],
+      "settlement_tx_hash": "0x6219d5529ca696a18d3e79c6835daa1c8b3aeb3e619c217f06bf3581bc3d16c4",
+      "basescan_url": "https://basescan.org/tx/0x6219d5529ca696a18d3e79c6835daa1c8b3aeb3e619c217f06bf3581bc3d16c4"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T23:37:22.948Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/balance",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xad438540935d3c4be7602bb6df753388151703d7243e2200101ac8ed816abcb0",
+      "basescan_url": "https://basescan.org/tx/0xad438540935d3c4be7602bb6df753388151703d7243e2200101ac8ed816abcb0"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T23:35:27.651Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/rewards",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 403,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        },
+        {
+          "validator": "not_truncated",
+          "reason": "shorter_than_declared"
+        }
+      ],
+      "settlement_tx_hash": "0xf264bdae4a04ff2c530953f9ceabde4f0ea95a554ceeec422d150c31efb99438",
+      "basescan_url": "https://basescan.org/tx/0xf264bdae4a04ff2c530953f9ceabde4f0ea95a554ceeec422d150c31efb99438"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T22:01:31.674Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/balance",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xfb43692607aea7c53c96cf47b37e1560d48b0d07a9a06199a63b68717b73d338",
+      "basescan_url": "https://basescan.org/tx/0xfb43692607aea7c53c96cf47b37e1560d48b0d07a9a06199a63b68717b73d338"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T21:59:23.895Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/rewards",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 403,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        },
+        {
+          "validator": "not_truncated",
+          "reason": "shorter_than_declared"
+        }
+      ],
+      "settlement_tx_hash": "0x92f4e6aad44b1edfb8bf34fc0612d033965c59cfca1e3aba2ae0bff0745976f5",
+      "basescan_url": "https://basescan.org/tx/0x92f4e6aad44b1edfb8bf34fc0612d033965c59cfca1e3aba2ae0bff0745976f5"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:48:41.989Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/balance",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xc08dc42aa002826bc843ca683543969ba1d27b064fd079e5595f85df63e34319",
+      "basescan_url": "https://basescan.org/tx/0xc08dc42aa002826bc843ca683543969ba1d27b064fd079e5595f85df63e34319"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:47:16.929Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/rewards",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 403,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        },
+        {
+          "validator": "not_truncated",
+          "reason": "shorter_than_declared"
+        }
+      ],
+      "settlement_tx_hash": "0x14971e193b507fe3fe63cdc38aae4ab822934aebcf53d7b05bbc3841b835039b",
+      "basescan_url": "https://basescan.org/tx/0x14971e193b507fe3fe63cdc38aae4ab822934aebcf53d7b05bbc3841b835039b"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:41:40.052Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/balance",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xef9ef683174fb11ed14aad5ba0d770f9aa75dc1a325a8a70388a607d0b58a89a",
+      "basescan_url": "https://basescan.org/tx/0xef9ef683174fb11ed14aad5ba0d770f9aa75dc1a325a8a70388a607d0b58a89a"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:39:00.245Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/rewards",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 403,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        },
+        {
+          "validator": "not_truncated",
+          "reason": "shorter_than_declared"
+        }
+      ],
+      "settlement_tx_hash": "0x9630489e1e44c9e0de09cfa00ae02f78dc85b5baf302a0ac2e83cee2c5e17d68",
+      "basescan_url": "https://basescan.org/tx/0x9630489e1e44c9e0de09cfa00ae02f78dc85b5baf302a0ac2e83cee2c5e17d68"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T18:54:30.274Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/balance",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x4a752abd057a34ef4f1190009e517ae230823ab8e246fe59cc8f237ae8212e3c",
+      "basescan_url": "https://basescan.org/tx/0x4a752abd057a34ef4f1190009e517ae230823ab8e246fe59cc8f237ae8212e3c"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T18:47:20.065Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/balance",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xc374fdef5280b16a756388a293660cde9c08c12df48472a942f6e6c683f25a29",
+      "basescan_url": "https://basescan.org/tx/0xc374fdef5280b16a756388a293660cde9c08c12df48472a942f6e6c683f25a29"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T18:36:55.830Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/balance",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x2bb47d517b44bb0714d39eb081c59fbf534d12dc4ac61250274f5098731b4698",
+      "basescan_url": "https://basescan.org/tx/0x2bb47d517b44bb0714d39eb081c59fbf534d12dc4ac61250274f5098731b4698"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T18:32:43.742Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/rewards",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 403,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        },
+        {
+          "validator": "not_truncated",
+          "reason": "shorter_than_declared"
+        }
+      ],
+      "settlement_tx_hash": "0x0bcf1668b15e9f64e7a617d5590475960a7270589e9ccba4b6b1bedb8e5e3fc1",
+      "basescan_url": "https://basescan.org/tx/0x0bcf1668b15e9f64e7a617d5590475960a7270589e9ccba4b6b1bedb8e5e3fc1"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:07:20.242Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/rewards",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 403,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        },
+        {
+          "validator": "not_truncated",
+          "reason": "shorter_than_declared"
+        }
+      ],
+      "settlement_tx_hash": "0xc9343e5a9c17fd95382508fa609344a10a62f7959a07ddb9ca7a009faf3f87de",
+      "basescan_url": "https://basescan.org/tx/0xc9343e5a9c17fd95382508fa609344a10a62f7959a07ddb9ca7a009faf3f87de"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T12:27:21.698Z",
+      "resource": "https://api.loyalspark.online/x402-gateway/recipient-api/rewards",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x993da1b2ca1e614dae309139de5d3e5f37d751d9777c3650ac80b9776d4b15df",
+      "basescan_url": "https://basescan.org/tx/0x993da1b2ca1e614dae309139de5d3e5f37d751d9777c3650ac80b9776d4b15df"
+    }
+  ]
+}

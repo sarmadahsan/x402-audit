@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "agents.rtrvr.ai",
+  "seller_id": 955,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:01:36.417Z",
+      "resource": "https://agents.rtrvr.ai/zcj/b2okvgjicnp5/scrape",
+      "method": "POST",
+      "quote_usdc": "0.050000",
+      "reference_price_usdc": "0.050000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x1a35e0efbfa4e7b240c71cff101e3ca1740facc26b32c95bca404480601c360a",
+      "basescan_url": "https://basescan.org/tx/0x1a35e0efbfa4e7b240c71cff101e3ca1740facc26b32c95bca404480601c360a"
+    }
+  ]
+}

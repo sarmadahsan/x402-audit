@@ -1,0 +1,407 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "x402engine.app",
+  "seller_id": 649,
+  "failures_total": 22,
+  "shown": 22,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:46:43.574Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x411a0e1908420c76e78c5ee71e3696634052320a04e17a947e0c7474769f6acf",
+      "basescan_url": "https://basescan.org/tx/0x411a0e1908420c76e78c5ee71e3696634052320a04e17a947e0c7474769f6acf"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:39:22.067Z",
+      "resource": "https://x402engine.app/api/llm/glm-5.3-flash",
+      "method": "POST",
+      "quote_usdc": "0.003237",
+      "reference_price_usdc": "0.003237",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xd7b3a031b8934ad781a59a3b4e90c117ce88d0369947f68803351c16dc6245e0",
+      "basescan_url": "https://basescan.org/tx/0xd7b3a031b8934ad781a59a3b4e90c117ce88d0369947f68803351c16dc6245e0"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:37:56.894Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xf271135c09c91988058c63477997f2d73b59a963bcc5c5c0d1e30f391b84b3b3",
+      "basescan_url": "https://basescan.org/tx/0xf271135c09c91988058c63477997f2d73b59a963bcc5c5c0d1e30f391b84b3b3"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:37:54.984Z",
+      "resource": "https://x402engine.app/api/llm/llama",
+      "method": "POST",
+      "quote_usdc": "0.002613",
+      "reference_price_usdc": "0.002613",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xa8b6db5492b975b0e9df92ff5e7f5f6e0a69cbff635b7a424a016b633ca33677",
+      "basescan_url": "https://basescan.org/tx/0xa8b6db5492b975b0e9df92ff5e7f5f6e0a69cbff635b7a424a016b633ca33677"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:27:36.366Z",
+      "resource": "https://x402engine.app/api/llm/llama",
+      "method": "POST",
+      "quote_usdc": "0.002613",
+      "reference_price_usdc": "0.002613",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x727fb06a5d71beaae69d83c03f1370e300b646c85bcb713f9cf8f5e28429e091",
+      "basescan_url": "https://basescan.org/tx/0x727fb06a5d71beaae69d83c03f1370e300b646c85bcb713f9cf8f5e28429e091"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:16:03.497Z",
+      "resource": "https://x402engine.app/api/llm/glm-5.3-flash",
+      "method": "POST",
+      "quote_usdc": "0.003237",
+      "reference_price_usdc": "0.003237",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x141c7002faacc89eb9ec0058ef928d0e3de15a9d461090998d3ae55e1f1887b0",
+      "basescan_url": "https://basescan.org/tx/0x141c7002faacc89eb9ec0058ef928d0e3de15a9d461090998d3ae55e1f1887b0"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:14:41.331Z",
+      "resource": "https://x402engine.app/api/llm/llama",
+      "method": "POST",
+      "quote_usdc": "0.002613",
+      "reference_price_usdc": "0.002613",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x2b0fe20a01ce558605ccecd6dd0e6dcce9912d992aadfd2c9f8e3b791aa6538c",
+      "basescan_url": "https://basescan.org/tx/0x2b0fe20a01ce558605ccecd6dd0e6dcce9912d992aadfd2c9f8e3b791aa6538c"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:13:14.364Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xe26db1cdb9a0c79fd366d0fbe92f6ce2e1c67d341402ccbb8668fa09eb64992a",
+      "basescan_url": "https://basescan.org/tx/0xe26db1cdb9a0c79fd366d0fbe92f6ce2e1c67d341402ccbb8668fa09eb64992a"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:01:35.221Z",
+      "resource": "https://x402engine.app/api/llm/glm-5.3-flash",
+      "method": "POST",
+      "quote_usdc": "0.003237",
+      "reference_price_usdc": "0.003237",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xe7d63a26c24da801781b8f89b1e7265e2ccd80d97419de99114c653a0c5bef3a",
+      "basescan_url": "https://basescan.org/tx/0xe7d63a26c24da801781b8f89b1e7265e2ccd80d97419de99114c653a0c5bef3a"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:59:39.225Z",
+      "resource": "https://x402engine.app/api/llm/llama",
+      "method": "POST",
+      "quote_usdc": "0.002613",
+      "reference_price_usdc": "0.002613",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x2f2361f550e656da23c279ad69c1128f61586e522fef88c39a706c3724f523e8",
+      "basescan_url": "https://basescan.org/tx/0x2f2361f550e656da23c279ad69c1128f61586e522fef88c39a706c3724f523e8"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:58:08.843Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x9d95ee89eadfc750f882395972c2d134e2aa7aa2b198357a20472a103fe5b801",
+      "basescan_url": "https://basescan.org/tx/0x9d95ee89eadfc750f882395972c2d134e2aa7aa2b198357a20472a103fe5b801"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:44:35.872Z",
+      "resource": "https://x402engine.app/api/llm/glm-5.3-flash",
+      "method": "POST",
+      "quote_usdc": "0.003237",
+      "reference_price_usdc": "0.003237",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x5b373e204d55efa4ddebf4e4c0314e066bc085a0ddcc4562db263f3a1db11d43",
+      "basescan_url": "https://basescan.org/tx/0x5b373e204d55efa4ddebf4e4c0314e066bc085a0ddcc4562db263f3a1db11d43"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:41:46.236Z",
+      "resource": "https://x402engine.app/api/llm/llama",
+      "method": "POST",
+      "quote_usdc": "0.002613",
+      "reference_price_usdc": "0.002613",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xada3e2a0da283df2de98c9f46c4cf14683b81f2a1fc89c0dfa16b61091f388a1",
+      "basescan_url": "https://basescan.org/tx/0xada3e2a0da283df2de98c9f46c4cf14683b81f2a1fc89c0dfa16b61091f388a1"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:39:00.783Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x229a7440ff53a809f043784eab963892f57f51a871e7719ee0ded8e517fb2767",
+      "basescan_url": "https://basescan.org/tx/0x229a7440ff53a809f043784eab963892f57f51a871e7719ee0ded8e517fb2767"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:19:19.933Z",
+      "resource": "https://x402engine.app/api/llm/glm-5.3-flash",
+      "method": "POST",
+      "quote_usdc": "0.003237",
+      "reference_price_usdc": "0.003237",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x9caf7617cbe42fd8d3bf4da84606a6871fabd007ca604db85f7d8a51c9291090",
+      "basescan_url": "https://basescan.org/tx/0x9caf7617cbe42fd8d3bf4da84606a6871fabd007ca604db85f7d8a51c9291090"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:15:31.729Z",
+      "resource": "https://x402engine.app/api/llm/llama",
+      "method": "POST",
+      "quote_usdc": "0.002613",
+      "reference_price_usdc": "0.002613",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xb98f77282e3ba545751a59b3769c763e01dba797dd57d646ec4ae1d7ba5a0ea8",
+      "basescan_url": "https://basescan.org/tx/0xb98f77282e3ba545751a59b3769c763e01dba797dd57d646ec4ae1d7ba5a0ea8"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:11:51.104Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x12f684cd377020f6ebd6d4b1551b545f428b9b1b474aa325f524dc85c8734102",
+      "basescan_url": "https://basescan.org/tx/0x12f684cd377020f6ebd6d4b1551b545f428b9b1b474aa325f524dc85c8734102"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:47:12.980Z",
+      "resource": "https://x402engine.app/api/llm/glm-5.3-flash",
+      "method": "POST",
+      "quote_usdc": "0.003237",
+      "reference_price_usdc": "0.003237",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xfc77599f05784a24411f2bbec979e4632260243c6f710669e8576333993a7d37",
+      "basescan_url": "https://basescan.org/tx/0xfc77599f05784a24411f2bbec979e4632260243c6f710669e8576333993a7d37"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:42:14.137Z",
+      "resource": "https://x402engine.app/api/llm/llama",
+      "method": "POST",
+      "quote_usdc": "0.002613",
+      "reference_price_usdc": "0.002613",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xccffe778e244fc51015f5401686c1cf9c47f8e5b793542e66f45e691e5e4a4e2",
+      "basescan_url": "https://basescan.org/tx/0xccffe778e244fc51015f5401686c1cf9c47f8e5b793542e66f45e691e5e4a4e2"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:36:57.470Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x6cc62794f51956399b56e0562026e545abb6c2d4169292767ab3703bd55398cb",
+      "basescan_url": "https://basescan.org/tx/0x6cc62794f51956399b56e0562026e545abb6c2d4169292767ab3703bd55398cb"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T10:57:04.437Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x9fa660aac31ffddf05d2a78919c26d927a36029bb6716fb6a4d81338a1f2418e",
+      "basescan_url": "https://basescan.org/tx/0x9fa660aac31ffddf05d2a78919c26d927a36029bb6716fb6a4d81338a1f2418e"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T09:40:10.903Z",
+      "resource": "https://x402engine.app/api/llm/gpt-5-nano",
+      "method": "POST",
+      "quote_usdc": "0.002393",
+      "reference_price_usdc": "0.002393",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x4a79065af25850fb5b0cc53787009e4030f8b6fcc9dbc7c31e418d417ef9d867",
+      "basescan_url": "https://basescan.org/tx/0x4a79065af25850fb5b0cc53787009e4030f8b6fcc9dbc7c31e418d417ef9d867"
+    }
+  ]
+}

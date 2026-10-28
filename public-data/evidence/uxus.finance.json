@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "uxus.finance",
+  "seller_id": 956,
+  "failures_total": 3,
+  "shown": 3,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T10:19:44.634Z",
+      "resource": "https://uxus.finance/api/scrape",
+      "method": "GET",
+      "quote_usdc": "0.010000",
+      "reference_price_usdc": "0.010000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xd39fac96ad3eeb1b0bc1d46b4fc0557150d3eeed600a0b4076d721c35697745d",
+      "basescan_url": "https://basescan.org/tx/0xd39fac96ad3eeb1b0bc1d46b4fc0557150d3eeed600a0b4076d721c35697745d"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T09:43:42.261Z",
+      "resource": "https://uxus.finance/api/search",
+      "method": "GET",
+      "quote_usdc": "0.010000",
+      "reference_price_usdc": "0.010000",
+      "reference_source": "bazaar",
+      "http_status": 502,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x0838a892d885fdddc9f1f83b76a6b4184698adab138584b49317f94857344ace",
+      "basescan_url": "https://basescan.org/tx/0x0838a892d885fdddc9f1f83b76a6b4184698adab138584b49317f94857344ace"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T08:39:58.530Z",
+      "resource": "https://uxus.finance/api/extract",
+      "method": "POST",
+      "quote_usdc": "0.010000",
+      "reference_price_usdc": "0.010000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xd7ce38a8ba0a90de7c9d46cb20d232e92e98c4e98ed17b3fa7b02cd4542167d4",
+      "basescan_url": "https://basescan.org/tx/0xd7ce38a8ba0a90de7c9d46cb20d232e92e98c4e98ed17b3fa7b02cd4542167d4"
+    }
+  ]
+}

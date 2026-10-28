@@ -1,0 +1,137 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "api.blockchain.info",
+  "seller_id": 418,
+  "failures_total": 7,
+  "shown": 7,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:52:03.589Z",
+      "resource": "https://api.blockchain.info/explorer-gateway-kt/x402/bch/transaction",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xe9565fb1d3c7344241df6788d97e1822485dae8818508abe7f86ec25be3ed38d",
+      "basescan_url": "https://basescan.org/tx/0xe9565fb1d3c7344241df6788d97e1822485dae8818508abe7f86ec25be3ed38d"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:46:40.194Z",
+      "resource": "https://api.blockchain.info/explorer-gateway-kt/x402/bch/transaction",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x43e3c23a937c38b9495dd9448851d3de1b7f2e3a91ff54431abb8cec9522aa3a",
+      "basescan_url": "https://basescan.org/tx/0x43e3c23a937c38b9495dd9448851d3de1b7f2e3a91ff54431abb8cec9522aa3a"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:37:51.537Z",
+      "resource": "https://api.blockchain.info/explorer-gateway-kt/x402/bch/transaction",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x05513377a61953a63606832933b2d3d90ef3e01c32ed05cf2631267035cef262",
+      "basescan_url": "https://basescan.org/tx/0x05513377a61953a63606832933b2d3d90ef3e01c32ed05cf2631267035cef262"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:07:49.265Z",
+      "resource": "https://api.blockchain.info/explorer-gateway-kt/x402/bch/transaction",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x55889b2cb87cfeda05d8b0541e2e3d8b271e66c39a2162a3e13e41944976519d",
+      "basescan_url": "https://basescan.org/tx/0x55889b2cb87cfeda05d8b0541e2e3d8b271e66c39a2162a3e13e41944976519d"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:00:14.559Z",
+      "resource": "https://api.blockchain.info/explorer-gateway-kt/x402/bch/transaction",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x38787f6f65f30ecdca86a2780e2b8bd8a1dda6a91ec97ff5f57d5130b9baa9e9",
+      "basescan_url": "https://basescan.org/tx/0x38787f6f65f30ecdca86a2780e2b8bd8a1dda6a91ec97ff5f57d5130b9baa9e9"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T10:54:39.553Z",
+      "resource": "https://api.blockchain.info/explorer-gateway-kt/x402/bch/transaction",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x61e8aa1a18d034d9222c70566f106ee3e9002f12bc6705f3ab059a4f50836dea",
+      "basescan_url": "https://basescan.org/tx/0x61e8aa1a18d034d9222c70566f106ee3e9002f12bc6705f3ab059a4f50836dea"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T09:38:35.660Z",
+      "resource": "https://api.blockchain.info/explorer-gateway-kt/x402/bch/transaction",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 404,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xfe92eae67b70fe3d8e808b859628e54fa422109b7897dc3001b0030aa12929c3",
+      "basescan_url": "https://basescan.org/tx/0xfe92eae67b70fe3d8e808b859628e54fa422109b7897dc3001b0030aa12929c3"
+    }
+  ]
+}

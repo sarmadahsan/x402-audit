@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "toolrail.dev",
+  "seller_id": 150,
+  "failures_total": 3,
+  "shown": 3,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T22:04:38.131Z",
+      "resource": "https://toolrail.dev/qr",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [
+        {
+          "validator": "content_type",
+          "reason": "content_type_mismatch"
+        }
+      ],
+      "settlement_tx_hash": "0xfbc53a178183ffc8ff5391ff16dbeaa2fad45b17b6af1fef192dab44b2c7b1dd",
+      "basescan_url": "https://basescan.org/tx/0xfbc53a178183ffc8ff5391ff16dbeaa2fad45b17b6af1fef192dab44b2c7b1dd"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:25:03.198Z",
+      "resource": "https://toolrail.dev/qr",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [
+        {
+          "validator": "content_type",
+          "reason": "content_type_mismatch"
+        }
+      ],
+      "settlement_tx_hash": "0x387986d6b0f35a3918fafcf6173f56c0e255712c583fcd3071fdc1dc466103f8",
+      "basescan_url": "https://basescan.org/tx/0x387986d6b0f35a3918fafcf6173f56c0e255712c583fcd3071fdc1dc466103f8"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:54:25.047Z",
+      "resource": "https://toolrail.dev/qr",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [
+        {
+          "validator": "content_type",
+          "reason": "content_type_mismatch"
+        }
+      ],
+      "settlement_tx_hash": "0xf66845ee67ee434a64a27a7165e38c2f49cb21e1e05e368b1479f8400c3d4236",
+      "basescan_url": "https://basescan.org/tx/0xf66845ee67ee434a64a27a7165e38c2f49cb21e1e05e368b1479f8400c3d4236"
+    }
+  ]
+}

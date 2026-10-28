@@ -1,0 +1,209 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "gibbr.app",
+  "seller_id": 2397,
+  "failures_total": 11,
+  "shown": 11,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:37:11.662Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xe7cd110e41e29023dae4d1e19fbc0244ece0b7882fe32206904c18b539d80d8d",
+      "basescan_url": "https://basescan.org/tx/0xe7cd110e41e29023dae4d1e19fbc0244ece0b7882fe32206904c18b539d80d8d"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T18:34:51.235Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x7bff3331540b4ac80c7a1fd2886ae7e5febbb14d5ff6fd96d4ef6d8e98c778c0",
+      "basescan_url": "https://basescan.org/tx/0x7bff3331540b4ac80c7a1fd2886ae7e5febbb14d5ff6fd96d4ef6d8e98c778c0"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T10:42:54.871Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xfbd061c0c859a1ef7bae21b0a4befe964650e460966d9dc0569c2b70022b5437",
+      "basescan_url": "https://basescan.org/tx/0xfbd061c0c859a1ef7bae21b0a4befe964650e460966d9dc0569c2b70022b5437"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T09:17:52.149Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x5eef7e88fa45ae2b07410e6ec8b15bd230f91dc1e0a21947a1c6460dafb3538c",
+      "basescan_url": "https://basescan.org/tx/0x5eef7e88fa45ae2b07410e6ec8b15bd230f91dc1e0a21947a1c6460dafb3538c"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T01:23:02.333Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xe081f82e5067efc9bad49135b1453c0632045a30f6b7f9716224e55aa436c971",
+      "basescan_url": "https://basescan.org/tx/0xe081f82e5067efc9bad49135b1453c0632045a30f6b7f9716224e55aa436c971"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T00:50:32.013Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x971c046a86ccdf6e38fdfd127a5c060cd7326a99ea698f4bb6fd2a2f74b618e0",
+      "basescan_url": "https://basescan.org/tx/0x971c046a86ccdf6e38fdfd127a5c060cd7326a99ea698f4bb6fd2a2f74b618e0"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T00:26:27.606Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x87a50c9cfc9fb4b31946e24b944f52a752c9200c48f1ac759c444b81b137c831",
+      "basescan_url": "https://basescan.org/tx/0x87a50c9cfc9fb4b31946e24b944f52a752c9200c48f1ac759c444b81b137c831"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-24T23:54:41.913Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x38db124f108439c62b77e553a98b590933beed45ff5f0bb1ad0c09a12c18f82a",
+      "basescan_url": "https://basescan.org/tx/0x38db124f108439c62b77e553a98b590933beed45ff5f0bb1ad0c09a12c18f82a"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-24T23:21:05.641Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x07024ab4e61e3788fca914a412965667f7e0273c277a40a5ca11d08314e6697e",
+      "basescan_url": "https://basescan.org/tx/0x07024ab4e61e3788fca914a412965667f7e0273c277a40a5ca11d08314e6697e"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-24T22:18:38.324Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x79127946c11c583be172fc334e86c8fe2bfe90c4bbd83f051cb3a0d060078b41",
+      "basescan_url": "https://basescan.org/tx/0x79127946c11c583be172fc334e86c8fe2bfe90c4bbd83f051cb3a0d060078b41"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-24T21:15:58.926Z",
+      "resource": "https://gibbr.app/agent/translate",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xe1d8d04923c6adc4cad431290882fd116d7b7825d667086a924c27a1c74c2574",
+      "basescan_url": "https://basescan.org/tx/0xe1d8d04923c6adc4cad431290882fd116d7b7825d667086a924c27a1c74c2574"
+    }
+  ]
+}

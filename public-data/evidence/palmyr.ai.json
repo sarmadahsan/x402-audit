@@ -1,0 +1,456 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "palmyr.ai",
+  "seller_id": 383,
+  "failures_total": 27,
+  "shown": 25,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-26T00:14:36.051Z",
+      "resource": "https://palmyr.ai/social/twitter/post",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x181a736829a602edf54ee0161a91b5cd66277c9403c8dc40d7ed807b21e6e050",
+      "basescan_url": "https://basescan.org/tx/0x181a736829a602edf54ee0161a91b5cd66277c9403c8dc40d7ed807b21e6e050"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-26T00:14:00.859Z",
+      "resource": "https://palmyr.ai/social/twitter/unfollow",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x4c382e211ccefe4c1b2a6f539d56e83e73479a57413295adcfab6bee769b11b6",
+      "basescan_url": "https://basescan.org/tx/0x4c382e211ccefe4c1b2a6f539d56e83e73479a57413295adcfab6bee769b11b6"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-26T00:11:33.338Z",
+      "resource": "https://palmyr.ai/social/twitter/profile",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x25ad272063814efb11e5964a8110bf0fb8ef4180767e5250e5d1a630f773d8d6",
+      "basescan_url": "https://basescan.org/tx/0x25ad272063814efb11e5964a8110bf0fb8ef4180767e5250e5d1a630f773d8d6"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T22:06:59.251Z",
+      "resource": "https://palmyr.ai/social/twitter/post",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x3b742c5863f3372498d52c1829651953d2302d35cb2271c4b2572d0eec1957c7",
+      "basescan_url": "https://basescan.org/tx/0x3b742c5863f3372498d52c1829651953d2302d35cb2271c4b2572d0eec1957c7"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T22:06:41.517Z",
+      "resource": "https://palmyr.ai/social/twitter/unfollow",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x07d6249e2ad1fa30fbcc122701ef6e6ee420185fb485889ce67477fdc826f586",
+      "basescan_url": "https://basescan.org/tx/0x07d6249e2ad1fa30fbcc122701ef6e6ee420185fb485889ce67477fdc826f586"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T22:05:33.946Z",
+      "resource": "https://palmyr.ai/social/twitter/profile",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x25d8e8ebc240418d130d0e6d7897a747f83a6189b33650c1b12c702e1401d41c",
+      "basescan_url": "https://basescan.org/tx/0x25d8e8ebc240418d130d0e6d7897a747f83a6189b33650c1b12c702e1401d41c"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T22:01:40.115Z",
+      "resource": "https://palmyr.ai/social/twitter/post",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xaf4c3506007acc5fd99753425bd10197439066b963526c517732e8f119d6c324",
+      "basescan_url": "https://basescan.org/tx/0xaf4c3506007acc5fd99753425bd10197439066b963526c517732e8f119d6c324"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T22:00:40.899Z",
+      "resource": "https://palmyr.ai/social/twitter/unfollow",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x598235bf0680b0e0d8bdc7ac9c26de844f4155f000fde13ab35031dacabf79a2",
+      "basescan_url": "https://basescan.org/tx/0x598235bf0680b0e0d8bdc7ac9c26de844f4155f000fde13ab35031dacabf79a2"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T21:56:47.602Z",
+      "resource": "https://palmyr.ai/social/twitter/profile",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x308499ab1984d02124ab7ee8d45f4d595117751fec6ea00f514112cb47ff60c6",
+      "basescan_url": "https://basescan.org/tx/0x308499ab1984d02124ab7ee8d45f4d595117751fec6ea00f514112cb47ff60c6"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:17:17.068Z",
+      "resource": "https://palmyr.ai/social/twitter/post",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x3496a2f2f7f83cc08e75ce6a3ca6ec3cf8d87b1eb9d3cf3acc92a176657d5b1b",
+      "basescan_url": "https://basescan.org/tx/0x3496a2f2f7f83cc08e75ce6a3ca6ec3cf8d87b1eb9d3cf3acc92a176657d5b1b"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:15:57.420Z",
+      "resource": "https://palmyr.ai/social/twitter/unfollow",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x1f6719a189eafcf125f0ce639cdf7f9b59ce77d48509eb608666eba75905c60b",
+      "basescan_url": "https://basescan.org/tx/0x1f6719a189eafcf125f0ce639cdf7f9b59ce77d48509eb608666eba75905c60b"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:03:19.211Z",
+      "resource": "https://palmyr.ai/social/twitter/post",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x4fe03a97983affc2c868d632a64c9dc9b6eec05419c082542d9bc1f03241cc19",
+      "basescan_url": "https://basescan.org/tx/0x4fe03a97983affc2c868d632a64c9dc9b6eec05419c082542d9bc1f03241cc19"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T16:01:29.365Z",
+      "resource": "https://palmyr.ai/social/twitter/unfollow",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xed660f2a6c3afcac85d0a5bb80943fb9cb5517134f6ca20edffc1f342130bd76",
+      "basescan_url": "https://basescan.org/tx/0xed660f2a6c3afcac85d0a5bb80943fb9cb5517134f6ca20edffc1f342130bd76"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:46:25.489Z",
+      "resource": "https://palmyr.ai/social/twitter/post",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x6fa98f877e6de82a350d4ae39f255bcfe99dc978f9cc6f07a26c52d2da784c77",
+      "basescan_url": "https://basescan.org/tx/0x6fa98f877e6de82a350d4ae39f255bcfe99dc978f9cc6f07a26c52d2da784c77"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:44:10.458Z",
+      "resource": "https://palmyr.ai/social/twitter/unfollow",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xc8cda3f7c95dd5818c6f8b35f82955db4606abb984ee8b717de8942f263c610f",
+      "basescan_url": "https://basescan.org/tx/0xc8cda3f7c95dd5818c6f8b35f82955db4606abb984ee8b717de8942f263c610f"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:22:01.721Z",
+      "resource": "https://palmyr.ai/social/twitter/post",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xc1144eac7a552611e1d278ff3a94ad0359d09999614a88fff95d1a14fb6b9ede",
+      "basescan_url": "https://basescan.org/tx/0xc1144eac7a552611e1d278ff3a94ad0359d09999614a88fff95d1a14fb6b9ede"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T15:18:54.165Z",
+      "resource": "https://palmyr.ai/social/twitter/unfollow",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x23244d0bafba97c1c39b743e701ebda00f59b7430590ec801c11a8e710ad4f17",
+      "basescan_url": "https://basescan.org/tx/0x23244d0bafba97c1c39b743e701ebda00f59b7430590ec801c11a8e710ad4f17"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:50:53.850Z",
+      "resource": "https://palmyr.ai/social/twitter/post",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x9f5599b2b67bc27b65b5a2a47378a593d8deb42fb6414fd126266857d7e1cc0b",
+      "basescan_url": "https://basescan.org/tx/0x9f5599b2b67bc27b65b5a2a47378a593d8deb42fb6414fd126266857d7e1cc0b"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:46:42.239Z",
+      "resource": "https://palmyr.ai/social/twitter/unfollow",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xc7813bad4d485b7224cc4d3066684876f4e2900f3fbf4a317dfc62e3e7a74da4",
+      "basescan_url": "https://basescan.org/tx/0xc7813bad4d485b7224cc4d3066684876f4e2900f3fbf4a317dfc62e3e7a74da4"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:41:43.747Z",
+      "resource": "https://palmyr.ai/social/twitter/username",
+      "method": "POST",
+      "quote_usdc": "0.005000",
+      "reference_price_usdc": "0.005000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xda1c318899bc5889eb7966fc87390a0e7c34c1b3c5e580cb10af3aaf059e0f52",
+      "basescan_url": "https://basescan.org/tx/0xda1c318899bc5889eb7966fc87390a0e7c34c1b3c5e580cb10af3aaf059e0f52"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:59:35.139Z",
+      "resource": "https://palmyr.ai/social/twitter/profile",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x2e300c77ad6d45aa2a7f0a9881de7bbf1fc59ff6c4dc608205b1adccaf676f0f",
+      "basescan_url": "https://basescan.org/tx/0x2e300c77ad6d45aa2a7f0a9881de7bbf1fc59ff6c4dc608205b1adccaf676f0f"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:18:59.533Z",
+      "resource": "https://palmyr.ai/social/twitter/profile",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x286fd7691c7ea2f566a7481e1e3d5588cb5b75ac4e761cf055e943d3cd905412",
+      "basescan_url": "https://basescan.org/tx/0x286fd7691c7ea2f566a7481e1e3d5588cb5b75ac4e761cf055e943d3cd905412"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T12:38:27.206Z",
+      "resource": "https://palmyr.ai/social/twitter/profile",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xd26af47ec98b7f9c10f2cee7504e9835cf89e24300d6241a324699ad2b179459",
+      "basescan_url": "https://basescan.org/tx/0xd26af47ec98b7f9c10f2cee7504e9835cf89e24300d6241a324699ad2b179459"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T11:28:09.755Z",
+      "resource": "https://palmyr.ai/social/twitter/profile",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x73ad8ccccbfe51aa2a8743c333fb1f11ce6520759b85dc9cd787f672282d7be8",
+      "basescan_url": "https://basescan.org/tx/0x73ad8ccccbfe51aa2a8743c333fb1f11ce6520759b85dc9cd787f672282d7be8"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T10:13:21.924Z",
+      "resource": "https://palmyr.ai/social/twitter/profile",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 400,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x750a8c598392cf4e6b5230a54e6a3f17d78f9298d794ad9f357bc7390b6d1687",
+      "basescan_url": "https://basescan.org/tx/0x750a8c598392cf4e6b5230a54e6a3f17d78f9298d794ad9f357bc7390b6d1687"
+    }
+  ]
+}

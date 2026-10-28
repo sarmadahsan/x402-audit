@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "api.govparse.io",
+  "seller_id": 2417,
+  "failures_total": 3,
+  "shown": 3,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T20:37:14.264Z",
+      "resource": "https://api.govparse.io/v1/stats/opportunities",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xfd899599dda8fdb4e06a061cb52e91326c25e437bb5f20462127d3665520e1ff",
+      "basescan_url": "https://basescan.org/tx/0xfd899599dda8fdb4e06a061cb52e91326c25e437bb5f20462127d3665520e1ff"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T18:58:35.313Z",
+      "resource": "https://api.govparse.io/v1/stats/opportunities",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0x1a5f319720fedba92412e8c77594660b6d7e82620bbaeb0a464c763cfb5dc037",
+      "basescan_url": "https://basescan.org/tx/0x1a5f319720fedba92412e8c77594660b6d7e82620bbaeb0a464c763cfb5dc037"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T18:34:55.508Z",
+      "resource": "https://api.govparse.io/v1/stats/opportunities",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 503,
+      "validator_failures": [
+        {
+          "validator": "http_status",
+          "reason": "non_2xx_status"
+        }
+      ],
+      "settlement_tx_hash": "0xe5afe63168ffc74640356fba0bcd38cd751eb43effd03582852d9ee2bc99f0f5",
+      "basescan_url": "https://basescan.org/tx/0xe5afe63168ffc74640356fba0bcd38cd751eb43effd03582852d9ee2bc99f0f5"
+    }
+  ]
+}

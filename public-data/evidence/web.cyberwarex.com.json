@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "web.cyberwarex.com",
+  "seller_id": 38,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:10:44.778Z",
+      "resource": "https://web.cyberwarex.com/fetch",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x46813a56151f77b4d48c1b5c99182eb948d752963de44648ca657fbd0e804744",
+      "basescan_url": "https://basescan.org/tx/0x46813a56151f77b4d48c1b5c99182eb948d752963de44648ca657fbd0e804744"
+    }
+  ]
+}

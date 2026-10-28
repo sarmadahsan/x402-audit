@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "api.nansen.ai",
+  "seller_id": 40,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:10:28.014Z",
+      "resource": "https://api.nansen.ai/api/v1/profiler/address/current-balance",
+      "method": "POST",
+      "quote_usdc": "0.010000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x0baf389b286bfae4ed69caaea606ba3fbc304250b2bfb1d04e228ab8fa25f820",
+      "basescan_url": "https://basescan.org/tx/0x0baf389b286bfae4ed69caaea606ba3fbc304250b2bfb1d04e228ab8fa25f820"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "blockrun.ai",
+  "seller_id": 3,
+  "failures_total": 2,
+  "shown": 2,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:43:46.321Z",
+      "resource": "https://blockrun.ai/api/v1/chat/completions",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x9ac7052d48f6f68ce6576dd9e2d949dee560fa684d4b596fbe09dd79cd923356",
+      "basescan_url": "https://basescan.org/tx/0x9ac7052d48f6f68ce6576dd9e2d949dee560fa684d4b596fbe09dd79cd923356"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:01:48.434Z",
+      "resource": "https://blockrun.ai/api/v1/chat/completions",
+      "method": "POST",
+      "quote_usdc": "0.002000",
+      "reference_price_usdc": "0.002000",
+      "reference_source": "bazaar",
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x8ebf906683edfb7d1e2368bafeb56f62706ca33ddb2168b1156bb07a045e6a4e",
+      "basescan_url": "https://basescan.org/tx/0x8ebf906683edfb7d1e2368bafeb56f62706ca33ddb2168b1156bb07a045e6a4e"
+    }
+  ]
+}

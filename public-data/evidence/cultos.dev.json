@@ -1,0 +1,37 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "cultos.dev",
+  "seller_id": 44,
+  "failures_total": 2,
+  "shown": 2,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T14:11:02.709Z",
+      "resource": "https://www.cultos.dev/services/json-toolbox",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xb0d94c529cf958af17472454cf0c737d4e3bc6a76dc09c9a26251a09eb4f6e71",
+      "basescan_url": "https://basescan.org/tx/0xb0d94c529cf958af17472454cf0c737d4e3bc6a76dc09c9a26251a09eb4f6e71"
+    },
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:47:41.604Z",
+      "resource": "https://www.cultos.dev/services/json-toolbox",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xb2bb2d9c210746034b945d70bc7728763d9e42086f7ed4f75e2e8496910ae67c",
+      "basescan_url": "https://basescan.org/tx/0xb2bb2d9c210746034b945d70bc7728763d9e42086f7ed4f75e2e8496910ae67c"
+    }
+  ]
+}

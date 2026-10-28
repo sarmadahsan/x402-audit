@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "rpc.nodeflare.app",
+  "seller_id": 37,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:45:59.275Z",
+      "resource": "https://rpc.nodeflare.app/base/x402",
+      "method": "POST",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xec6753501c28f0bf9faef2991572e3492fd281d0a00b8ce6c91506a4d5b6d314",
+      "basescan_url": "https://basescan.org/tx/0xec6753501c28f0bf9faef2991572e3492fd281d0a00b8ce6c91506a4d5b6d314"
+    }
+  ]
+}

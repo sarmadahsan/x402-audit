@@ -1,0 +1,102 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "x402tap.com",
+  "seller_id": 19,
+  "failures_total": 7,
+  "shown": 7,
+  "samples": [
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T23:32:36.822Z",
+      "resource": "https://x402tap.com/api/insights",
+      "method": "GET",
+      "quote_usdc": "0.025000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x76cae78f9ec6c04d7971f7187d820c9d487579d7f3a2c5778b82635ffe3b60b8",
+      "basescan_url": "https://basescan.org/tx/0x76cae78f9ec6c04d7971f7187d820c9d487579d7f3a2c5778b82635ffe3b60b8"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T21:56:22.625Z",
+      "resource": "https://x402tap.com/api/insights",
+      "method": "GET",
+      "quote_usdc": "0.025000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x1d970963eeb90d05d3e401c4f5514c293ebe56dfd9d7d7168640cffabbb5adfc",
+      "basescan_url": "https://basescan.org/tx/0x1d970963eeb90d05d3e401c4f5514c293ebe56dfd9d7d7168640cffabbb5adfc"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T20:45:15.520Z",
+      "resource": "https://x402tap.com/api/insights",
+      "method": "GET",
+      "quote_usdc": "0.025000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x2a2d4dc1b538479eda6398799a4fb156a2ee786cffbb521a3af8c4b8d277ff99",
+      "basescan_url": "https://basescan.org/tx/0x2a2d4dc1b538479eda6398799a4fb156a2ee786cffbb521a3af8c4b8d277ff99"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T20:35:03.706Z",
+      "resource": "https://x402tap.com/api/insights",
+      "method": "GET",
+      "quote_usdc": "0.025000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x40097f189187871acabe64699c1b1ef34bb3ac7e56bc019a66d9962902592bb8",
+      "basescan_url": "https://basescan.org/tx/0x40097f189187871acabe64699c1b1ef34bb3ac7e56bc019a66d9962902592bb8"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T11:17:26.379Z",
+      "resource": "https://x402tap.com/api/insights",
+      "method": "GET",
+      "quote_usdc": "0.025000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x036d5fab81f57ac2cc3ed548d8f153863733f3a698ae95784a3f3297691f6c67",
+      "basescan_url": "https://basescan.org/tx/0x036d5fab81f57ac2cc3ed548d8f153863733f3a698ae95784a3f3297691f6c67"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T10:07:24.565Z",
+      "resource": "https://x402tap.com/api/insights",
+      "method": "GET",
+      "quote_usdc": "0.025000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x59ce91fa4e2147bdc3122629e8829e3db7482ef066057c872352c0d24a9e114a",
+      "basescan_url": "https://basescan.org/tx/0x59ce91fa4e2147bdc3122629e8829e3db7482ef066057c872352c0d24a9e114a"
+    },
+    {
+      "outcome": "overcharge",
+      "timestamp": "2026-10-25T08:24:46.254Z",
+      "resource": "https://x402tap.com/api/insights",
+      "method": "GET",
+      "quote_usdc": "0.025000",
+      "reference_price_usdc": "0.001000",
+      "reference_source": "bazaar",
+      "http_status": 200,
+      "validator_failures": [],
+      "settlement_tx_hash": "0x2f65790b3fb7e3c5f5608c69ddb31f49999822d469d720f208d1c899ed54ece6",
+      "basescan_url": "https://basescan.org/tx/0x2f65790b3fb7e3c5f5608c69ddb31f49999822d469d720f208d1c899ed54ece6"
+    }
+  ]
+}

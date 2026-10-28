@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "x402.deepsense.stream",
+  "seller_id": 1121,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:32:20.820Z",
+      "resource": "https://x402.deepsense.stream/api/v1/ping",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xd045581e0b88d5557e806f09e0d365a9347a1bd27e0a3c7a5ebcecdbe986ef10",
+      "basescan_url": "https://basescan.org/tx/0xd045581e0b88d5557e806f09e0d365a9347a1bd27e0a3c7a5ebcecdbe986ef10"
+    }
+  ]
+}

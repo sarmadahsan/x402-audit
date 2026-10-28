@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-28T17:11:35.551Z",
+  "network": "eip155:8453",
+  "git_commit": "9d5556dfbb25e9c298cca4f25f7a9db0998737a2",
+  "domain": "data.greeneris.io",
+  "seller_id": 633,
+  "failures_total": 1,
+  "shown": 1,
+  "samples": [
+    {
+      "outcome": "non_delivery",
+      "timestamp": "2026-10-25T13:22:42.887Z",
+      "resource": "https://data.greeneris.io/v1/fr/geocode",
+      "method": "GET",
+      "quote_usdc": "0.001000",
+      "reference_price_usdc": null,
+      "reference_source": null,
+      "http_status": null,
+      "validator_failures": [],
+      "settlement_tx_hash": "0xe4720e652215565c341bc12a585895d78dd05e4435750e09665e1d4de4382374",
+      "basescan_url": "https://basescan.org/tx/0xe4720e652215565c341bc12a585895d78dd05e4435750e09665e1d4de4382374"
+    }
+  ]
+}
