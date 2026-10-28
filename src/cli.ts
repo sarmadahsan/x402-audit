@@ -9,6 +9,7 @@ import { registerDiscover } from "./cli/discover.js";
 import { registerProbe } from "./cli/probe.js";
 import { registerTelemetry } from "./cli/telemetry.js";
 import { registerReport } from "./cli/report.js";
+import { registerExport } from "./cli/export.js";
 import { registerBuy, registerStress } from "./cli/buy.js";
 
 export interface GlobalOpts {
@@ -103,6 +104,7 @@ export function buildProgram(): Command {
   registerChain(program, (cmd) => globalOpts(cmd));
   registerTelemetry(program, (cmd) => globalOpts(cmd));
   registerReport(program, (cmd) => globalOpts(cmd));
+  registerExport(program, (cmd) => globalOpts(cmd));
   return program;
 }
 

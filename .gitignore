@@ -22,3 +22,6 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+
+# export output (published from the public-data branch worktree under data/)
+/public-data/

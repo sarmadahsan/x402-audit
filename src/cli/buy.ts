@@ -90,14 +90,34 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .option("--confirm-interval-seconds <n>", "how often to re-check the chain while waiting for a settlement", (v) => parseInt(v, 10), 3)
     .option("--resume-since <iso>", "only subtract calls made at or after this time from the plan (start of this phase); default: all earlier calls")
     .option("--concurrency <n>", "concurrent calls, each to a different seller (default 1)", (v) => parseInt(v, 10), 1)
-    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number }) {
+    .option("--no-persist-tiers", "do not rewrite sellers.tier from this plan's seed (keeps the published tiers stable across daily reseeds)")
+    .option("--budget-usd <usd>", "size this run's plan to this budget: overrides sample.max_total_usd, scales target_calls to match, and trims the plan to fit (the MAX_* caps still apply)", parseFloat)
+    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean }) {
       const g = globals(this);
       const { live } = moneyGate(g, requireLive);
       const env = loadEnv();
       const files = loadFileConfigs();
       const caps = capsFromEnv(env);
       const db = openDb(g.db);
-      const plan = buildBuyPlan(db, { sample: files.sample, caps, network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: true });
+      let sample = files.sample;
+      if (o.budgetUsd !== undefined) {
+        if (!(o.budgetUsd > 0)) throw new Error(`--budget-usd must be > 0, got ${o.budgetUsd}`);
+        const target = Math.max(1, Math.round((files.sample.target_calls * o.budgetUsd) / files.sample.max_total_usd));
+        sample = { ...files.sample, max_total_usd: o.budgetUsd, target_calls: target };
+      }
+      const plan = buildBuyPlan(db, { sample, caps, network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: o.persistTiers });
+      if (o.budgetUsd !== undefined && plan.totalSpendAtomic > plan.sampleMaxTotalAtomic) {
+        // Trim one call at a time from the largest allocations until the plan fits the budget.
+        while (plan.totalSpendAtomic > plan.sampleMaxTotalAtomic) {
+          const a = [...plan.allocations].filter((x) => x.calls > 0).sort((x, y) => y.calls - x.calls || (y.priceAtomic > x.priceAtomic ? 1 : -1))[0];
+          if (!a) break;
+          a.calls -= 1;
+          plan.totalCalls -= 1;
+          plan.totalSpendAtomic -= a.priceAtomic;
+        }
+        plan.allocations = plan.allocations.filter((x) => x.calls > 0);
+        plan.notes.push(`plan trimmed to fit --budget-usd ${o.budgetUsd}`);
+      }
       assertPlanWithinCaps(plan, caps);
       if (o.maxCalls) {
         // Partial run: take calls round-robin across allocations so a short run still spans sellers and strata.
@@ -131,7 +151,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         if (plan.totalCalls !== before) log.info(`resume: ${before - plan.totalCalls} call(s) already made in earlier runs are subtracted from the plan`);
       }
       console.log(renderPlan(plan));
-      const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, live }, g.network, !live);
+      const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, budgetUsd: o.budgetUsd, live }, g.network, !live);
       const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : ephemeralPayers(g.network, caps.perCallAtomic);
       const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
       // Receipts for seller-reported tx hashes come from the canonical-head RPC (BASE_RPC_URL); logs from the logs RPC.
