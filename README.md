@@ -41,6 +41,7 @@ Every subcommand is dry-run by default and writes to the one SQLite file in `X40
 | `pnpm cli telemetry serve` / `telemetry report` | no | ingest for `@x402-audit/client` records |
 | `pnpm cli report` | no | `reports/YYYY-MM-DD.md` + `.json`, every number from a named query |
 | `pnpm cli samplesize --rate 0.1 --halfwidth 0.01` | no | calls needed for a Wilson half-width |
+| `pnpm cli health [--trigger t] [--dry-run]` | no | machine and loop health (unit, disk, memory, halt files by existence only, runs, caps and spend, pool balances, the last run's redacted log lines) posted to `{PAIDFOR_INDEX_URL}/v1/admin/health`, signed like the audit callback; `--dry-run` prints the body; a failed post is a one-line warning, exit 0. `scripts/loop.sh` posts after every probe round, buy and export, and a systemd timer every 15 minutes |
 
 Stopping: create a file named `halt` in the repo root; every loop checks it. To stop
 one job without the others, use `halt-buy`, `halt-stress` or `halt-probe`. The probe

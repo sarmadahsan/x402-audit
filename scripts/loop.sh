@@ -26,7 +26,11 @@
 #                                   Linux: (sudo) write /etc/systemd/system/paidfor-audit.service and enable it
 #        scripts/loop.sh uninstall  stop and remove the agent or service
 #        scripts/loop.sh status     agent or service state and the last log lines
+#        scripts/loop.sh health [trigger] [--dry-run]  post machine and loop health to the index now (--dry-run prints it)
 # On Linux every setting and secret comes from /etc/paidfor/audit.env (systemd EnvironmentFile); nothing logs them.
+# health : after every probe round, buy and export/publish, `x402-audit health` posts machine and loop state to
+#          {PAIDFOR_INDEX_URL}/v1/admin/health, signed with AUDIT_SECRET like the audit callback; on Linux a systemd timer
+#          (paidfor-audit-health.timer, written by install) also posts every 15 minutes. A failed post never changes the loop.
 # backup : after the first scheduled run of the UTC day, a consistent snapshot of data/audit.sqlite is gzipped and copied to
 #          s3://$BACKUP_BUCKET/audit/<date>.sqlite.gz (skipped and logged when BACKUP_BUCKET or the aws CLI is missing).
 # Env:   LOOP_RUN_USD (1.00)  LOOP_RUN_HOURS_UTC ("0 6 12 18")  LOOP_AUDIT_HOUR_UTC (12)  LOOP_DAILY_USD (4.00)
@@ -65,6 +69,9 @@ PUB_IDENT=(env GIT_AUTHOR_NAME=paidfor-audit GIT_AUTHOR_EMAIL=paidfor-audit@user
 LABEL="com.x402audit.loop"
 UNIT="paidfor-audit"
 UNIT_FILE="/etc/systemd/system/$UNIT.service"
+HEALTH_UNIT="paidfor-audit-health"
+HEALTH_SERVICE_FILE="/etc/systemd/system/$HEALTH_UNIT.service"
+HEALTH_TIMER_FILE="/etc/systemd/system/$HEALTH_UNIT.timer"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 CLI=(pnpm -s tsx src/cli.ts --db data/audit.sqlite --network "$NETWORK")
 mkdir -p "$STATE"
@@ -73,6 +80,13 @@ log() { echo "$(date -u +%FT%TZ) [$$] $*" >> "$LOG"; }
 run() { log "run: $*"; "$@" >> "$LOG" 2>&1; local rc=$?; [ "$rc" -ne 0 ] && log "exit $rc: $*"; return "$rc"; }
 lock() { until mkdir "$STATE/$1.lock" 2>/dev/null; do sleep 5; done; }
 unlock() { rmdir "$STATE/$1.lock" 2>/dev/null || true; }
+# Health post after a step (trigger probe|buy|export). Not through `run`, so the log tail it sends is the step that just
+# ran, not itself; bounded in time where `timeout` exists; its output goes to the log and its exit status is ignored.
+health_post() {
+  local t=()
+  command -v timeout >/dev/null 2>&1 && t=(timeout 180)
+  ${t[@]+"${t[@]}"} "${CLI[@]}" health --trigger "$1" >> "$LOG" 2>&1 || true
+}
 
 # Worktree for the public data repo: an orphan branch of this repo whose upstream is main of paidfor-data.
 # Before every export it is reset to the remote's main, so any publisher (laptop or server) fast-forwards.
@@ -89,6 +103,13 @@ ensure_pub_worktree() {
 }
 
 export_publish() {
+  local rc=0
+  export_publish_once || rc=$?
+  health_post export
+  return "$rc"
+}
+
+export_publish_once() {
   lock publish
   if [ "$LOOP_PUBLISH" = 1 ]; then
     if ! ensure_pub_worktree >> "$LOG" 2>&1; then log "publish skipped: could not set up worktree $PUB_DIR"; unlock publish; return 1; fi
@@ -116,6 +137,7 @@ hourly() {
     log "halt file present: skipping probe and settlement re-check"
   else
     run "${CLI[@]}" probe run --once || log "probe round failed; continuing"
+    health_post probe
     # Indeterminate and unconfirmed rows are re-checked for 24 h after a buy; moves no money.
     run "${CLI[@]}" buy resolve || true
     run "${CLI[@]}" buy reconcile --apply || true
@@ -196,6 +218,7 @@ scheduled_buy() {
   # shellcheck disable=SC2046
   run "${CLI[@]}" --live buy run $(buy_args "$seed" "$since") \
     || log "scheduled buy $today $hh:00: buy run exited non-zero; continuing to settlement confirmation"
+  health_post buy
   run "${CLI[@]}" buy resolve || true
   run "${CLI[@]}" buy reconcile --apply || true
   run "${CLI[@]}" buy reclassify --apply --reason "loop: settlement confirmation after scheduled buy $today $hh:00" || true
@@ -208,6 +231,7 @@ scheduled_buy() {
       # Weekly; buys only with BREADTH_RUN_ENABLED=1, otherwise logs its plan.
       # shellcheck disable=SC2046
       run "${CLI[@]}" --live buy run $(breadth_args) || log "breadth run $today: exited non-zero"
+      health_post buy
       run "${CLI[@]}" buy resolve || true
       run "${CLI[@]}" buy reclassify --apply --reason "loop: settlement confirmation after breadth run $today" || true
     fi
@@ -267,6 +291,41 @@ WantedBy=multi-user.target
 EOU
 }
 
+# The 15-minute health post on Linux: a oneshot service and its timer, same user, checkout and env file as the loop.
+write_health_service() {
+  cat <<EOU
+[Unit]
+Description=paidfor x402-audit health post (machine and loop state to the index; moves no money)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=$1
+Group=$1
+WorkingDirectory=$2
+EnvironmentFile=/etc/paidfor/audit.env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash $2/scripts/loop.sh health timer
+TimeoutStartSec=300
+EOU
+}
+
+write_health_timer() {
+  cat <<EOU
+[Unit]
+Description=paidfor x402-audit health post every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+AccuracySec=30s
+Unit=$HEALTH_UNIT.service
+
+[Install]
+WantedBy=timers.target
+EOU
+}
+
 case "${1:-loop}" in
   loop)
     rm -rf "$STATE"/*.lock
@@ -299,8 +358,11 @@ case "${1:-loop}" in
       [ "$(id -u)" -eq 0 ] || { echo "run with sudo on Linux" >&2; exit 1; }
       [ -f /etc/paidfor/audit.env ] || echo "warning: /etc/paidfor/audit.env is missing; the service will not start until it exists" >&2
       write_unit "$(stat -c %U "$REPO")" "$REPO" > "$UNIT_FILE"
-      chmod 644 "$UNIT_FILE"
-      systemctl daemon-reload && systemctl enable --now "$UNIT" && echo "enabled $UNIT ($UNIT_FILE); log: $LOG"
+      write_health_service "$(stat -c %U "$REPO")" "$REPO" > "$HEALTH_SERVICE_FILE"
+      write_health_timer > "$HEALTH_TIMER_FILE"
+      chmod 644 "$UNIT_FILE" "$HEALTH_SERVICE_FILE" "$HEALTH_TIMER_FILE"
+      systemctl daemon-reload && systemctl enable --now "$UNIT" && echo "enabled $UNIT ($UNIT_FILE); log: $LOG" \
+        && systemctl enable --now "$HEALTH_UNIT.timer" && echo "enabled $HEALTH_UNIT.timer ($HEALTH_TIMER_FILE, every 15 minutes)"
       exit $?
     fi
     mkdir -p "$HOME/Library/LaunchAgents"
@@ -328,12 +390,14 @@ EOP
   uninstall)
     if [ "$(uname -s)" = Linux ]; then
       [ "$(id -u)" -eq 0 ] || { echo "run with sudo on Linux" >&2; exit 1; }
-      systemctl disable --now "$UNIT" 2>/dev/null || true; rm -f "$UNIT_FILE"; systemctl daemon-reload; echo "removed $UNIT"; exit 0
+      systemctl disable --now "$HEALTH_UNIT.timer" 2>/dev/null || true; rm -f "$HEALTH_TIMER_FILE" "$HEALTH_SERVICE_FILE"
+      systemctl disable --now "$UNIT" 2>/dev/null || true; rm -f "$UNIT_FILE"; systemctl daemon-reload; echo "removed $UNIT and $HEALTH_UNIT.timer"; exit 0
     fi
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true; rm -f "$PLIST"; echo "removed $LABEL" ;;
   status)
     if [ "$(uname -s)" = Linux ]; then
       systemctl status "$UNIT" --no-pager 2>/dev/null | head -5 || echo "$UNIT not installed"
+      systemctl list-timers "$HEALTH_UNIT.timer" --no-pager 2>/dev/null | head -2 || true
     else
       launchctl print "gui/$(id -u)/$LABEL" 2>/dev/null | grep -E "state|pid|last exit" | head -5 || echo "$LABEL not loaded"
     fi
@@ -341,5 +405,12 @@ EOP
   unit)
     # Print the systemd unit for a given user and checkout (used by infra/aws/user-data.sh).
     write_unit "${2:-audit}" "${3:-/home/audit/x402-audit}" ;;
-  *) echo "usage: $0 [loop|once|caps|dry-run-buy|dry-run-audit|dry-run-breadth|install|uninstall|status|unit]" >&2; exit 2 ;;
+  health-units)
+    # Print the health service and timer for a given user and checkout (what install writes).
+    write_health_service "${2:-audit}" "${3:-/home/audit/x402-audit}"; echo; write_health_timer ;;
+  health)
+    # One health post now: `scripts/loop.sh health [timer|probe|buy|export|manual] [--dry-run]` (the timer runs `health timer`).
+    t="${2:-manual}"; shift; shift || true
+    "${CLI[@]}" health --trigger "$t" "$@" ;;
+  *) echo "usage: $0 [loop|once|caps|dry-run-buy|dry-run-audit|dry-run-breadth|install|uninstall|status|unit|health-units|health]" >&2; exit 2 ;;
 esac
