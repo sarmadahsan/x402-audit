@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Keeps the public index alive without an operator.
 #   hourly : one probe round over the current probe set, settlement re-check (moves no money), export, publish
-#   daily  : at LOOP_BUY_HOUR_UTC, a gated live buy with a fresh seed over the wide seller set (config/sample.yaml),
-#            budget LOOP_DAILY_USD, per-call cap LOOP_PER_CALL_USD; then settlement confirmation, export, publish
+#   6-hour : at each hour in LOOP_RUN_HOURS_UTC (00, 06, 12, 18), the free candidate import (discover
+#            import-candidates), then a gated live buy with a fresh seed per run over the wide seller set
+#            (config/sample.yaml) plus the expensive-sellers lane and, when CANDIDATE_BUYS_ENABLED=1, queued candidates:
+#            per-run cap LOOP_RUN_USD, per-call cap LOOP_PER_CALL_USD, per-seller cap MAX_PER_SELLER_PER_DAY_USD / runs,
+#            scheduled-buy day budget LOOP_DAILY_USD (MAX_PER_DAY_USD stays the all-sources backstop); then settlement
+#            confirmation, export, publish. After the LOOP_AUDIT_HOUR_UTC run only: audit-triggers (records its
+#            decisions; buys only with AUDIT_TRIGGERS_ENABLED=1).
 #   publish: export into the root of a worktree at data/paidfor-data (orphan branch paidfor-data-main), then
 #            git add -A && git commit -m "data: <timestamp>" && git push to main of the public repo
 #            sarmadahsan/paidfor-data (remote "paidfor-data"). The main checkout stays clean for the commit gate.
@@ -12,14 +17,17 @@
 #
 # Usage: scripts/loop.sh            run the loop in the foreground (what launchd runs)
 #        scripts/loop.sh once       one hourly cycle now, then exit
+#        scripts/loop.sh dry-run-buy    print what the current slot's scheduled buy would buy; spends nothing
+#        scripts/loop.sh dry-run-audit  print (and record as dry_run) the audits the index would trigger now
 #        scripts/loop.sh install    macOS: write and load the launchd agent (com.x402audit.loop)
 #                                   Linux: (sudo) write /etc/systemd/system/paidfor-audit.service and enable it
 #        scripts/loop.sh uninstall  stop and remove the agent or service
 #        scripts/loop.sh status     agent or service state and the last log lines
 # On Linux every setting and secret comes from /etc/paidfor/audit.env (systemd EnvironmentFile); nothing logs them.
-# backup : after the daily buy, a consistent snapshot of data/audit.sqlite is gzipped and copied to
+# backup : after the first scheduled run of the UTC day, a consistent snapshot of data/audit.sqlite is gzipped and copied to
 #          s3://$BACKUP_BUCKET/audit/<date>.sqlite.gz (skipped and logged when BACKUP_BUCKET or the aws CLI is missing).
-# Env:   LOOP_DAILY_USD (2.00)  LOOP_PER_CALL_USD (0.10)  LOOP_BUY_HOUR_UTC (14)  LOOP_BUY_CONCURRENCY (4)
+# Env:   LOOP_RUN_USD (0.75)  LOOP_RUN_HOURS_UTC ("0 6 12 18")  LOOP_AUDIT_HOUR_UTC (12)  LOOP_DAILY_USD (2.00)
+#        LOOP_PER_CALL_USD (0.10)  LOOP_BUY_CONCURRENCY (4)  (LOOP_BUY_HOUR_UTC is no longer used)
 #        LOOP_PUBLISH (1; 0 = export but do not commit or push)  BACKUP_BUCKET (unset = no backup)
 #        LOOP_PUBLISH_URL (https://github.com/sarmadahsan/paidfor-data.git; the server uses the SSH alias
 #        git@github-data:sarmadahsan/paidfor-data.git so its write deploy key for that repo is offered)
@@ -30,7 +38,9 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
 LOOP_DAILY_USD="${LOOP_DAILY_USD:-2.00}"
 LOOP_PER_CALL_USD="${LOOP_PER_CALL_USD:-0.10}"
-LOOP_BUY_HOUR_UTC="${LOOP_BUY_HOUR_UTC:-14}"
+LOOP_RUN_USD="${LOOP_RUN_USD:-0.75}"
+LOOP_RUN_HOURS_UTC="${LOOP_RUN_HOURS_UTC:-0 6 12 18}"
+LOOP_AUDIT_HOUR_UTC="${LOOP_AUDIT_HOUR_UTC:-12}"
 LOOP_BUY_CONCURRENCY="${LOOP_BUY_CONCURRENCY:-4}"
 LOOP_PUBLISH="${LOOP_PUBLISH:-1}"
 NETWORK="eip155:8453"
@@ -122,48 +132,75 @@ backup() {
   rm -f "$snap.gz"
 }
 
-daily_buy() {
-  local today="$1"
-  sh -c 'echo $PPID' > "$STATE/buy.pid"
-  log "daily buy $today: start (budget $LOOP_DAILY_USD USDC, per-call $LOOP_PER_CALL_USD)"
-  if [ -e halt ] || [ -e halt-buy ]; then log "daily buy $today: skipped, halt or halt-buy file present"; return 0; fi
-  live="${X402_AUDIT_LIVE:-$(grep -E '^X402_AUDIT_LIVE=' .env 2>/dev/null | tail -1 | cut -d= -f2)}"
-  if [ "$live" != 1 ]; then log "daily buy $today: skipped, X402_AUDIT_LIVE is not 1"; return 0; fi
-  if [ -n "$(git status --porcelain)" ]; then log "daily buy $today: skipped, working tree is dirty (the commit gate needs a clean, committed HEAD)"; return 0; fi
-  if ! run pnpm gate; then log "daily buy $today: skipped, pnpm gate failed"; return 0; fi
-  pool="$(wallet_pool_usd)"
-  if [ -z "$pool" ]; then log "daily buy $today: skipped, could not read wallet balances"; return 0; fi
-  if awk -v b="$pool" -v n="$LOOP_DAILY_USD" 'BEGIN { exit !(b + 0 < n + 0) }'; then
-    log "daily buy $today: skipped, wallet pool holds $pool USDC, less than the day's budget $LOOP_DAILY_USD"; return 0
-  fi
-  seed="$(date -u +%Y%m%d)"
-  log "daily buy $today: wallet pool $pool USDC, seed $seed"
-  # The per-day cap counts every source since 00:00 UTC, so it is a hard ceiling on the day's spend.
-  MAX_PER_CALL_USD="$LOOP_PER_CALL_USD" MAX_PER_DAY_USD="$LOOP_DAILY_USD" \
-    run "${CLI[@]}" --live buy run --seed "$seed" --no-persist-tiers --budget-usd "$LOOP_DAILY_USD" --resume-since "${today}T00:00:00Z" --concurrency "$LOOP_BUY_CONCURRENCY" \
-    || log "daily buy $today: buy run exited non-zero; continuing to settlement confirmation"
-  run "${CLI[@]}" buy resolve || true
-  run "${CLI[@]}" buy reconcile --apply || true
-  run "${CLI[@]}" buy reclassify --apply --reason "loop: settlement confirmation after daily buy $today" || true
-  export_publish || true
-  backup "$today" || true
-  log "daily buy $today: done"
+runs_per_day() { set -- $LOOP_RUN_HOURS_UTC; echo "$#"; }
+
+# The scheduled buy for one run slot. `live` = 1 spends (every gate below must pass); 0 prints the plan (dry run).
+buy_args() {
+  local seed="$1" since="$2"
+  echo --seed "$seed" --no-persist-tiers --budget-usd "$LOOP_RUN_USD" --run-usd "$LOOP_RUN_USD" --per-call-usd "$LOOP_PER_CALL_USD" \
+    --runs-per-day "$(runs_per_day)" --day-budget-usd "$LOOP_DAILY_USD" --resume-since "$since" --concurrency "$LOOP_BUY_CONCURRENCY" --expensive --candidates
 }
 
-maybe_daily() {
-  local today hour
+scheduled_buy() {
+  local today="$1" hh="$2" since seed
+  since="${today}T${hh}:00:00Z"
+  seed="$(date -u +%Y%m%d)${hh}"   # a fresh seed per run, so the tail sample and each seller's calls spread across runs
+  sh -c 'echo $PPID' > "$STATE/buy.pid"
+  log "scheduled buy $today $hh:00: start (run cap $LOOP_RUN_USD USDC, per-call $LOOP_PER_CALL_USD, day budget $LOOP_DAILY_USD)"
+  # Free: import and probe user candidates so queued ones can enter this run (a no-op until the index serves them).
+  run "${CLI[@]}" discover import-candidates --per-call-usd "$LOOP_PER_CALL_USD" || log "candidate import failed; continuing"
+  if [ -e halt ] || [ -e halt-buy ]; then log "scheduled buy $today $hh:00: skipped, halt or halt-buy file present"; return 0; fi
+  live="${X402_AUDIT_LIVE:-$(grep -E '^X402_AUDIT_LIVE=' .env 2>/dev/null | tail -1 | cut -d= -f2)}"
+  if [ "$live" != 1 ]; then log "scheduled buy $today $hh:00: skipped, X402_AUDIT_LIVE is not 1"; return 0; fi
+  if [ -n "$(git status --porcelain)" ]; then log "scheduled buy $today $hh:00: skipped, working tree is dirty (the commit gate needs a clean, committed HEAD)"; return 0; fi
+  if ! run pnpm gate; then log "scheduled buy $today $hh:00: skipped, pnpm gate failed"; return 0; fi
+  pool="$(wallet_pool_usd)"
+  if [ -z "$pool" ]; then log "scheduled buy $today $hh:00: skipped, could not read wallet balances"; return 0; fi
+  if awk -v b="$pool" -v n="$LOOP_RUN_USD" 'BEGIN { exit !(b + 0 < n + 0) }'; then
+    log "scheduled buy $today $hh:00: skipped, wallet pool holds $pool USDC, less than the run cap $LOOP_RUN_USD"; return 0
+  fi
+  log "scheduled buy $today $hh:00: wallet pool $pool USDC, seed $seed"
+  # shellcheck disable=SC2046
+  run "${CLI[@]}" --live buy run $(buy_args "$seed" "$since") \
+    || log "scheduled buy $today $hh:00: buy run exited non-zero; continuing to settlement confirmation"
+  run "${CLI[@]}" buy resolve || true
+  run "${CLI[@]}" buy reconcile --apply || true
+  run "${CLI[@]}" buy reclassify --apply --reason "loop: settlement confirmation after scheduled buy $today $hh:00" || true
+  if [ "$((10#$hh))" -eq "$((10#$LOOP_AUDIT_HOUR_UTC))" ]; then
+    # Records every decision; spends only when AUDIT_TRIGGERS_ENABLED=1 (and the live gates above).
+    run "${CLI[@]}" --live audit-triggers || log "audit-triggers $today: exited non-zero"
+  fi
+  export_publish || true
+  log "scheduled buy $today $hh:00: done"
+}
+
+# The latest run slot at or before `hour`, zero-padded, or empty before the first slot of the day.
+current_slot() {
+  local hour="$1" best="" h
+  for h in $LOOP_RUN_HOURS_UTC; do [ "$((10#$h))" -le "$((10#$hour))" ] && best="$(printf %02d "$((10#$h))")"; done
+  echo "$best"
+}
+
+maybe_scheduled() {
+  local today hour slot key
   today="$(date -u +%F)"; hour="$(date -u +%H)"
-  [ "$(cat "$STATE/last-buy-date" 2>/dev/null)" = "$today" ] && return 0
-  [ "$((10#$hour))" -lt "$LOOP_BUY_HOUR_UTC" ] && return 0
-  if [ -f "$STATE/buy.pid" ] && kill -0 "$(cat "$STATE/buy.pid")" 2>/dev/null; then log "daily buy $today: previous buy still running; will check next hour"; return 0; fi
-  echo "$today" > "$STATE/last-buy-date"   # once per UTC day, whether it buys or skips
-  ( daily_buy "$today"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ) &
+  slot="$(current_slot "$hour")"
+  [ -z "$slot" ] && return 0
+  key="${today}T${slot}"
+  if [ ! -f "$STATE/last-buy-slot" ]; then
+    # First start on the six-hourly schedule: the next boundary is the first run, never a catch-up buy at deploy time.
+    echo "$key" > "$STATE/last-buy-slot"; log "schedule: first start; next scheduled buy at the next boundary in ($LOOP_RUN_HOURS_UTC) UTC"; return 0
+  fi
+  [ "$(cat "$STATE/last-buy-slot" 2>/dev/null)" = "$key" ] && return 0
+  if [ -f "$STATE/buy.pid" ] && kill -0 "$(cat "$STATE/buy.pid")" 2>/dev/null; then log "scheduled buy $key: previous buy still running; will check next hour"; return 0; fi
+  echo "$key" > "$STATE/last-buy-slot"   # once per slot, whether it buys or skips
+  ( scheduled_buy "$today" "$slot"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ) &
 }
 
 write_unit() {
   cat <<EOU
 [Unit]
-Description=paidfor x402-audit loop (hourly probe, daily gated buy, publish, backup)
+Description=paidfor x402-audit loop (hourly probe, six-hourly gated buy, audit triggers, publish, backup)
 After=network-online.target
 Wants=network-online.target
 
@@ -187,15 +224,23 @@ EOU
 case "${1:-loop}" in
   loop)
     rm -rf "$STATE"/*.lock
-    log "loop: start (daily $LOOP_DAILY_USD USDC at ${LOOP_BUY_HOUR_UTC}:00 UTC, per-call $LOOP_PER_CALL_USD, publish=$LOOP_PUBLISH)"
+    log "loop: start (runs at ($LOOP_RUN_HOURS_UTC) UTC, $LOOP_RUN_USD USDC per run, day budget $LOOP_DAILY_USD, per-call $LOOP_PER_CALL_USD, audits after ${LOOP_AUDIT_HOUR_UTC}:00, publish=$LOOP_PUBLISH)"
     trap 'log "loop: stopping"; kill $(jobs -p) 2>/dev/null; exit 0' INT TERM
     while true; do
       hourly
-      maybe_daily
+      maybe_scheduled
       sleep $((3600 - $(date +%s) % 3600 + 30)) & wait $!
     done ;;
   once)
     hourly ;;
+  dry-run-buy)
+    # What the next scheduled run would buy, without spending: the same command without --live (no gate needed).
+    today="$(date -u +%F)"; slot="$(current_slot "$(date -u +%H)")"; slot="${slot:-00}"
+    # shellcheck disable=SC2046
+    "${CLI[@]}" buy run $(buy_args "$(date -u +%Y%m%d)$slot" "${today}T${slot}:00:00Z") ;;
+  dry-run-audit)
+    # Planned audits from the live index, recorded as dry_run decisions; spends nothing.
+    "${CLI[@]}" audit-triggers ;;
   install)
     if [ "$(uname -s)" = Linux ]; then
       [ "$(id -u)" -eq 0 ] || { echo "run with sudo on Linux" >&2; exit 1; }
@@ -221,7 +266,7 @@ case "${1:-loop}" in
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>LOOP_DAILY_USD</key><string>$LOOP_DAILY_USD</string>
-    <key>LOOP_BUY_HOUR_UTC</key><string>$LOOP_BUY_HOUR_UTC</string>
+    <key>LOOP_RUN_USD</key><string>$LOOP_RUN_USD</string>
   </dict>
 </dict></plist>
 EOP
@@ -243,5 +288,5 @@ EOP
   unit)
     # Print the systemd unit for a given user and checkout (used by infra/aws/user-data.sh).
     write_unit "${2:-audit}" "${3:-/home/audit/x402-audit}" ;;
-  *) echo "usage: $0 [loop|once|install|uninstall|status|unit]" >&2; exit 2 ;;
+  *) echo "usage: $0 [loop|once|dry-run-buy|dry-run-audit|install|uninstall|status|unit]" >&2; exit 2 ;;
 esac

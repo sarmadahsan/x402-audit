@@ -147,6 +147,22 @@ source `audit_disagreement` or `audit_demand`, no retries; the result is
 posted to the index (`docs/audit-callback.md`). Nothing is bought unless
 `AUDIT_TRIGGERS_ENABLED=1` as well as `--live` and `X402_AUDIT_LIVE=1`.
 
+### Schedule (2026-10-29)
+
+`scripts/loop.sh` under systemd (`paidfor-audit.service`, one long-running
+unit; no timer): every hour a probe round, settlement re-checks and an export.
+At 00:00, 06:00, 12:00 and 18:00 UTC a scheduled run replaces the old daily
+buy: the free candidate import, then `buy run --live` with a seed per run
+(date and hour), `--budget-usd 0.75 --run-usd 0.75 --per-call-usd 0.10
+--runs-per-day 4 --day-budget-usd $LOOP_DAILY_USD --expensive --candidates`.
+Per-seller caps are `MAX_PER_SELLER_PER_DAY_USD` divided by four per run;
+`MAX_PER_DAY_USD` stays the all-sources backstop and `LOOP_DAILY_USD` the
+scheduled-buy budget for the day. A fresh seed per run spreads each seller's
+calls across runs. `audit-triggers` runs after the 12:00 run only. Every run
+ends with an export and publish. On first start the loop waits for the next
+boundary instead of buying at deploy time. `scripts/loop.sh dry-run-buy` and
+`dry-run-audit` print what the next run would do without spending.
+
 ### Candidates (2026-10-29)
 
 `discover import-candidates` reads the index's `/v1/candidates` (a logged

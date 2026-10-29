@@ -34,10 +34,14 @@ export interface ExpensiveLaneResult {
 }
 
 /** One call per listed seller that is under its weekly frequency, on its cheapest resource within its own cap. */
-export function expensiveAllocations(db: Db, list: readonly ExpensiveSeller[], o: { network: string; now: number }): ExpensiveLaneResult {
+export function expensiveAllocations(db: Db, list: readonly ExpensiveSeller[], o: { network: string; now: number; scheduledCapAtomic: bigint }): ExpensiveLaneResult {
   const out: ExpensiveLaneResult = { allocations: [], skipped: [] };
   const findSeller = db.prepare<[string], { id: number; excluded: number }>("SELECT id, excluded FROM sellers WHERE domain = ?");
-  const recent = db.prepare(`SELECT COUNT(*) n FROM calls WHERE seller_id = ? AND paid = 1 AND ts >= ? AND source IN (${MEASURED_SOURCES.map(() => "?").join(",")})`);
+  // The weekly frequency counts this seller's paid calls above the scheduled cap (the purchases this list exists for).
+  const recent = db.prepare(
+    `SELECT COUNT(*) n FROM calls WHERE seller_id = ? AND paid = 1 AND ts >= ? AND source IN (${MEASURED_SOURCES.map(() => "?").join(",")})
+       AND amount_paid_atomic GLOB '[0-9]*' AND CAST(amount_paid_atomic AS INTEGER) > ?`,
+  );
   for (const e of list) {
     const s = findSeller.get(e.domain.toLowerCase());
     if (!s) {
@@ -48,9 +52,9 @@ export function expensiveAllocations(db: Db, list: readonly ExpensiveSeller[], o
       out.skipped.push({ domain: e.domain, reason: "excluded" });
       continue;
     }
-    const n = (recent.get(s.id, o.now - WEEK_MS, ...MEASURED_SOURCES) as { n: number }).n;
+    const n = (recent.get(s.id, o.now - WEEK_MS, ...MEASURED_SOURCES, o.scheduledCapAtomic.toString()) as { n: number }).n;
     if (n >= e.max_per_week) {
-      out.skipped.push({ domain: e.domain, reason: `${n} purchase(s) in the last 7 days; at most ${e.max_per_week}` });
+      out.skipped.push({ domain: e.domain, reason: `${n} purchase(s) above the scheduled cap in the last 7 days; at most ${e.max_per_week}` });
       continue;
     }
     const cap = usdToAtomic(e.per_call_usd);

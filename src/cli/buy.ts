@@ -130,7 +130,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       if (o.expensive) {
         // Each listed seller's own cap, clamped to MAX_PER_CALL_USD: this list can never raise a cap.
         const list = files.expensive.sellers.map((e) => ({ ...e, per_call_usd: Math.min(e.per_call_usd, env.MAX_PER_CALL_USD) }));
-        const lane = expensiveAllocations(db, list, { network: g.network, now: runStart });
+        const lane = expensiveAllocations(db, list, { network: g.network, now: runStart, scheduledCapAtomic: caps.perCallAtomic });
         addLane(lane.allocations, "expensive-sellers lane");
         for (const sk of lane.skipped) plan.notes.push(`expensive-sellers lane: ${sk.domain} skipped, ${sk.reason}.`);
       }

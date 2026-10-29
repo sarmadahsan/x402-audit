@@ -346,6 +346,8 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
 const README = `# paidfor-data
 
 Machine-readable twin of the x402 buyer-failure report, refreshed hourly by the audit loop (\`x402-audit export\` over its SQLite database). Every file below sits at the root of this repository; fetch it from \`https://raw.githubusercontent.com/sarmadahsan/paidfor-data/main/<file>\`.
+
+Schedule: unpaid probes every hour; scheduled purchases four times a day at 00:00, 06:00, 12:00 and 18:00 UTC (at most 0.75 USDC per run, 0.10 per call, a fresh seller sample each run so time-of-day behaviour is sampled), each followed by an export, so \`last_buy_run\` is never more than about six hours old. Triggered audits may follow the 12:00 run (see \`audit_purchases\`).
 Every rate uses the report's definitions: the paid denominator is ok, overcharge, non_delivery, wrong_goods, injection and duplicate buy rows;
 a failure is overcharge, non_delivery, wrong_goods or duplicate. Intervals are 95% Wilson. Rates are fractions in [0, 1]. Money is USDC (6 decimals) as decimal strings.
 All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harness commit that wrote them).
