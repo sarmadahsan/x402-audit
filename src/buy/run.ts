@@ -32,7 +32,10 @@ import {
   startRun,
   type CapBreach,
   type ConfirmPolicy,
-  type Logger, utcDayStart } from "./guard.js";
+  type Logger,
+  type RunLimits,
+  utcDayStart } from "./guard.js";
+import { CALL_SOURCES, type CallSource } from "../taxonomy.js";
 
 export const RATE_LIMIT_BACKOFF_MS = 5 * 60_000;
 
@@ -69,6 +72,12 @@ export interface RunBuyOptions extends ConfirmPolicy {
   /** Concurrent calls, each to a different seller (default 1 = sequential). Caps are read from the DB before every
    * signature, so N workers can overshoot a cap by at most N-1 calls; per-resource spacing is unchanged. */
   concurrency?: number;
+  /** Source tag on every call row (default buy; audits use audit_disagreement / audit_demand). */
+  source?: CallSource;
+  /** Which caps apply (default buy; audit adds AUDIT_MAX_PER_DAY_USD over the audit sources). */
+  capScope?: "buy" | "audit";
+  /** Per-run limits of a scheduled run (per run, per seller per run, scheduled-buy day budget). */
+  runLimits?: RunLimits;
 }
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
@@ -197,14 +206,19 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
     }
   };
   const parkedSellers = new Set<number>();
-  const parkSeller = (sellerId: number, details: unknown) => {
+  // A seller's per-run cap parks it for the rest of this run the same way.
+  const parkSeller = (sellerId: number, details: unknown, reason: "cap_per_seller_per_day" | "cap_per_seller_per_run" = "cap_per_seller_per_day") => {
     const until = utcDayStart(realNow()) + 24 * 3_600_000;
     backoffUntil.set(sellerId, until);
     parkedSellers.add(sellerId);
-    stats.backoffs.push({ sellerId, until, reason: "cap_per_seller_per_day" });
-    if (!o.dryRun) insertHalt(db, runId, "cap_per_seller_per_day", { ...(details as object), action: "seller parked until next UTC day", until }, realNow());
-    L.warn(`seller ${sellerId} reached its daily cap; parked until ${new Date(until).toISOString()}`, details);
+    stats.backoffs.push({ sellerId, until, reason });
+    const action = reason === "cap_per_seller_per_run" ? "seller parked for the rest of this run" : "seller parked until next UTC day";
+    if (!o.dryRun) insertHalt(db, runId, reason, { ...(details as object), action, until }, realNow());
+    L.warn(`seller ${sellerId} reached its ${reason === "cap_per_seller_per_run" ? "per-run" : "daily"} cap; parked`, details);
   };
+  const isPark = (r: CapBreach["reason"]) => r === "cap_per_seller_per_day" || r === "cap_per_seller_per_run";
+  const source = o.source ?? CALL_SOURCES.BUY;
+  const capScope = o.capScope ?? "buy";
   const halt = (reason: string, details: unknown) => {
     stats.halted = true;
     stats.haltReason = reason;
@@ -292,11 +306,14 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         continue;
       }
 
-      // Cap check before anything is quoted, using the expected price.
+      // Cap check before anything is quoted, using the expected price. An allocation may carry its own per-call cap
+      // (config/expensive-sellers.yaml); every other cap is unchanged.
+      const caps = a.perCallCapAtomic !== undefined ? { ...o.caps, perCallAtomic: a.perCallCapAtomic } : o.caps;
+      const capInput = { caps, sellerId: a.sellerId, scope: capScope, ...(o.runLimits ? { run: o.runLimits } : {}) };
       const expected = BigInt(reference?.amountAtomic ?? a.priceAtomic.toString());
-      const pre = checkCaps(db, { caps: o.caps, sellerId: a.sellerId, amountAtomic: expected, now: realNow(), scope: "buy" });
-      if (pre && pre.reason === "cap_per_seller_per_day") {
-        parkSeller(a.sellerId, { ...pre.details, resourceId: a.resourceId, stage: "before_quote" });
+      const pre = checkCaps(db, { ...capInput, amountAtomic: expected, now: realNow() });
+      if (pre && isPark(pre.reason)) {
+        parkSeller(a.sellerId, { ...pre.details, resourceId: a.resourceId, stage: "before_quote" }, pre.reason as "cap_per_seller_per_day");
         continue;
       }
       if (pre && pre.reason !== "cap_per_call") {
@@ -306,8 +323,8 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
 
       let breach: CapBreach | null = null;
       const guarded = guardPayer(payer, {
-        perCallCapAtomic: o.caps.perCallAtomic,
-        guard: (amount) => checkCaps(db, { caps: o.caps, sellerId: a.sellerId, amountAtomic: amount, now: realNow(), scope: "buy" }),
+        perCallCapAtomic: caps.perCallAtomic,
+        guard: (amount) => checkCaps(db, { ...capInput, amountAtomic: amount, now: realNow() }),
         onBreach: (b) => (breach = b),
       });
       const base = o.settlementLookupFactory ? await o.settlementLookupFactory() : o.settlementLookup!;
@@ -316,10 +333,10 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         db,
         payer: guarded.payer,
         runId,
-        source: "buy",
+        source,
         resource: { id: a.resourceId, sellerId: a.sellerId, url: urlWithExampleQuery(a.url, a.inputJson ?? null), method: a.method, ...requestBodyFor(a.method, a.inputJson ?? null) },
         ...(reference ? { reference } : {}),
-        perCallCapAtomic: o.caps.perCallAtomic,
+        perCallCapAtomic: caps.perCallAtomic,
         ...(service ? { service } : {}),
         defaultMaxTimeoutSeconds,
         // A resource that already delivered 2xx with no settlement visible to us (free delivery, or a settlement
@@ -347,8 +364,8 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
 
       if (breach) {
         const b = breach as CapBreach;
-        if (b.reason === "cap_per_seller_per_day") {
-          parkSeller(a.sellerId, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" });
+        if (isPark(b.reason)) {
+          parkSeller(a.sellerId, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" }, b.reason as "cap_per_seller_per_day");
         } else {
           halt(b.reason, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" });
           return;

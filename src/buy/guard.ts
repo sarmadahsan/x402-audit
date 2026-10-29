@@ -5,7 +5,7 @@
 import type { Db } from "../db/index.js";
 import { atomicToUsd, type Caps } from "../config/index.js";
 import type { SettlementFact, SettlementLookup } from "../pipeline/paidCall.js";
-import type { CallSource } from "../taxonomy.js";
+import { AUDIT_SOURCES, CALL_SOURCES, MEASURED_SOURCES, type CallSource } from "../taxonomy.js";
 import type { PaidResult, Payer, PayHooks } from "../x402/pay.js";
 import { confirmWithTimeout } from "../chain/confirm.js";
 
@@ -63,7 +63,16 @@ export function spentAtomic(db: Db, f: SpendFilter = {}): bigint {
 }
 
 export interface CapBreach {
-  reason: "cap_per_call" | "cap_per_seller_per_day" | "cap_per_day" | "cap_total" | "cap_stress_total";
+  reason:
+    | "cap_per_call"
+    | "cap_per_seller_per_day"
+    | "cap_per_day"
+    | "cap_total"
+    | "cap_stress_total"
+    | "cap_audit_per_day"
+    | "cap_per_run"
+    | "cap_per_seller_per_run"
+    | "cap_buy_day_budget";
   details: Record<string, string | number>;
 }
 
@@ -72,8 +81,23 @@ export interface CapCheckInput {
   sellerId: number;
   amountAtomic: bigint;
   now: number;
-  /** Which total applies: buy -> caps.totalAtomic over source 'buy'; stress -> caps.stressTotalAtomic over stress sources. */
-  scope: "buy" | "stress";
+  /** Which total applies: buy and audit -> caps.totalAtomic over buy and audit sources; stress -> caps.stressTotalAtomic
+   * over stress sources. audit also checks caps.auditPerDayAtomic over the audit sources since 00:00 UTC. */
+  scope: "buy" | "stress" | "audit";
+  /** Limits of one scheduled run (docs/PLAN.md "Schedule"), counted over this scope's own source since `since`. */
+  run?: RunLimits;
+}
+
+export interface RunLimits {
+  /** Start of this run (unix ms). */
+  since: number;
+  /** Source the run writes (default buy). */
+  source?: CallSource;
+  perRunAtomic?: bigint;
+  perSellerPerRunAtomic?: bigint;
+  /** Scheduled-buy budget for the UTC day, counted over source `buy` only (LOOP_DAILY_USD). The all-sources
+   * per-day cap (MAX_PER_DAY_USD) stays the backstop. */
+  dayBudgetAtomic?: bigint;
 }
 
 /**
@@ -90,13 +114,35 @@ export function checkCaps(db: Db, i: CapCheckInput): CapBreach | null {
     return { reason: "cap_per_seller_per_day", details: { sellerId: i.sellerId, spentToday: fmt(seller), next: fmt(a), cap: fmt(i.caps.perSellerPerDayAtomic) } };
   const today = spentAtomic(db, { since: day });
   if (today + a > i.caps.perDayAtomic) return { reason: "cap_per_day", details: { spentToday: fmt(today), next: fmt(a), cap: fmt(i.caps.perDayAtomic) } };
-  if (i.scope === "buy") {
-    const total = spentAtomic(db, { sources: ["buy"] });
+  if (i.scope === "buy" || i.scope === "audit") {
+    const total = spentAtomic(db, { sources: MEASURED_SOURCES });
     if (total + a > i.caps.totalAtomic) return { reason: "cap_total", details: { spent: fmt(total), next: fmt(a), cap: fmt(i.caps.totalAtomic) } };
+    if (i.scope === "audit") {
+      const audit = spentAtomic(db, { since: day, sources: AUDIT_SOURCES });
+      if (audit + a > i.caps.auditPerDayAtomic)
+        return { reason: "cap_audit_per_day", details: { spentToday: fmt(audit), next: fmt(a), cap: fmt(i.caps.auditPerDayAtomic) } };
+    }
   } else {
     const total = spentAtomic(db, { sources: ["stress_duplicate", "stress_timeout"] });
     if (total + a > i.caps.stressTotalAtomic)
       return { reason: "cap_stress_total", details: { spent: fmt(total), next: fmt(a), cap: fmt(i.caps.stressTotalAtomic) } };
+  }
+  const r = i.run;
+  if (r) {
+    const src = [r.source ?? CALL_SOURCES.BUY];
+    if (r.perSellerPerRunAtomic !== undefined) {
+      const s = spentAtomic(db, { since: r.since, sellerId: i.sellerId, sources: src });
+      if (s + a > r.perSellerPerRunAtomic)
+        return { reason: "cap_per_seller_per_run", details: { sellerId: i.sellerId, spentThisRun: fmt(s), next: fmt(a), cap: fmt(r.perSellerPerRunAtomic) } };
+    }
+    if (r.perRunAtomic !== undefined) {
+      const s = spentAtomic(db, { since: r.since, sources: src });
+      if (s + a > r.perRunAtomic) return { reason: "cap_per_run", details: { spentThisRun: fmt(s), next: fmt(a), cap: fmt(r.perRunAtomic) } };
+    }
+    if (r.dayBudgetAtomic !== undefined) {
+      const s = spentAtomic(db, { since: day, sources: [CALL_SOURCES.BUY] });
+      if (s + a > r.dayBudgetAtomic) return { reason: "cap_buy_day_budget", details: { spentToday: fmt(s), next: fmt(a), cap: fmt(r.dayBudgetAtomic) } };
+    }
   }
   return null;
 }

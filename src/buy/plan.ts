@@ -15,10 +15,13 @@ export interface PlanAllocation {
   method: string;
   /** resources.input_json (Bazaar input info) so POST bodies can be built from the seller's own example. */
   inputJson: string | null;
-  tier: Tier;
+  /** Stratified tier, or the lane an extra allocation came from (audit, user candidate, expensive-sellers list). */
+  tier: Tier | "audit" | "candidate" | "expensive";
   category: string;
   priceAtomic: bigint;
   calls: number;
+  /** Per-call cap for this allocation when it differs from MAX_PER_CALL_USD (config/expensive-sellers.yaml). */
+  perCallCapAtomic?: bigint;
 }
 
 export interface PlanStratum {
@@ -320,7 +323,8 @@ export function assertPlanWithinCaps(plan: BuyPlan, caps: Caps): void {
   if (plan.totalSpendAtomic > plan.sampleMaxTotalAtomic)
     throw new Error(`planned spend ${atomicToUsd(plan.totalSpendAtomic)} USD exceeds sample.max_total_usd ${atomicToUsd(plan.sampleMaxTotalAtomic)} USD`);
   for (const a of plan.allocations)
-    if (a.priceAtomic > caps.perCallAtomic) throw new Error(`resource ${a.resourceId} price ${atomicToUsd(a.priceAtomic)} USD exceeds MAX_PER_CALL_USD`);
+    if (a.priceAtomic > (a.perCallCapAtomic ?? caps.perCallAtomic))
+      throw new Error(`resource ${a.resourceId} price ${atomicToUsd(a.priceAtomic)} USD exceeds ${a.perCallCapAtomic !== undefined ? "its own per-call cap" : "MAX_PER_CALL_USD"}`);
 }
 
 const usd = (a: bigint) => {

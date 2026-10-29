@@ -11,6 +11,7 @@ import { registerTelemetry } from "./cli/telemetry.js";
 import { registerReport } from "./cli/report.js";
 import { registerExport } from "./cli/export.js";
 import { registerBuy, registerStress } from "./cli/buy.js";
+import { registerAudit } from "./cli/audit.js";
 
 export interface GlobalOpts {
   dryRun: boolean;
@@ -101,6 +102,7 @@ export function buildProgram(): Command {
   registerProbe(program, (cmd) => globalOpts(cmd));
   registerBuy(program, (cmd) => globalOpts(cmd), requireLiveOrDryRun);
   registerStress(program, (cmd) => globalOpts(cmd), requireLiveOrDryRun);
+  registerAudit(program, (cmd) => globalOpts(cmd), requireLiveOrDryRun);
   registerChain(program, (cmd) => globalOpts(cmd));
   registerTelemetry(program, (cmd) => globalOpts(cmd));
   registerReport(program, (cmd) => globalOpts(cmd));
