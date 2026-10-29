@@ -125,7 +125,7 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
       `SELECT r.id resource_id, r.seller_id, s.domain, r.url, r.method, r.input_json, r.declared_price_atomic price, s.category seller_category, s.rank_30d
        FROM resources r JOIN sellers s ON s.id = r.seller_id
        WHERE r.network = ? AND r.scheme = 'exact' AND COALESCE(r.transfer_method, 'eip3009') != 'permit2'
-         AND r.declared_price_atomic IS NOT NULL AND s.excluded = 0
+         AND r.declared_price_atomic IS NOT NULL AND s.excluded = 0 AND r.source != 'user' -- user candidates have their own gated lane
          ${requireProbe ? "AND EXISTS (SELECT 1 FROM probes p JOIN resources pr ON pr.id = p.resource_id WHERE pr.seller_id = r.seller_id AND p.status = 402)" : ""}
        ORDER BY r.seller_id, CAST(r.declared_price_atomic AS INTEGER) ASC, r.id`,
     )

@@ -13,6 +13,8 @@ import { runQuery, type QueryParams } from "../report/queries.js";
 import { probeReport } from "../probe/report.js";
 import { stressReport } from "../stress/index.js";
 import { AUDIT_SOURCES, HEADLINE_FAILURE_OUTCOMES } from "../taxonomy.js";
+import { listCandidates } from "../discover/candidates.js";
+import { listTooExpensive } from "../buy/states.js";
 
 export const SELLER_MIN_CALLS = 30;
 export const SELLER_LOW_SAMPLE_MIN_CALLS = 5;
@@ -276,6 +278,38 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   const stressJson = { ...header, summary: report.stress, tables: stressMd.sections };
   const probeJson = { ...header, summary: report.probes, report_summary: probeMd.summary, tables: probeMd.sections };
 
+  // ------------------------------------------------- candidates / too_expensive
+  // A queued candidate whose first purchase has landed reads as `measuring` (computed here; the export writes nothing).
+  const boughtResources = new Set((db.prepare("SELECT DISTINCT resource_id FROM calls WHERE paid = 1").all() as { resource_id: number }[]).map((r) => r.resource_id));
+  const candRes = new Map((db.prepare("SELECT url, resource_id FROM candidates").all() as { url: string; resource_id: number | null }[]).map((r) => [r.url, r.resource_id]));
+  const candidatesJson = {
+    ...header,
+    note: "Resources users checked or paid through the index that we had never measured, imported from GET /v1/candidates and probed once without paying.",
+    states: { queued: "queued for measurement", too_expensive: "quotes above the per-call cap; never bought", not_x402: "did not answer 402 with a Base exact option", measuring: "first purchase landed; in the seller's own series" },
+    candidates: listCandidates(db).map((c) => {
+      const rid = candRes.get(c.url);
+      const state = c.state === "queued" && rid != null && boughtResources.has(rid) ? "measuring" : c.state;
+      return {
+        url: c.url,
+        host: c.host,
+        state: state ?? "pending_probe",
+        quoted_usdc: usdc(c.quoted_atomic),
+        checks: c.checks,
+        payments: c.payments,
+        first_seen: c.first_seen,
+        last_seen: c.last_seen,
+        imported_at: iso(c.imported_at),
+        probed_at: iso(c.probed_at),
+        new_seller: c.seller_new === 1,
+      };
+    }),
+  };
+  const tooExpensiveJson = {
+    ...header,
+    note: "Resources whose quote is above the per-call cap that applies to them (scheduled runs, audits, or the seller's own cap in config/expensive-sellers.yaml). Recorded and never bought.",
+    resources: listTooExpensive(db).map((r) => ({ url: r.url, method: r.method, seller: r.domain, quoted_usdc: usdc(r.quoted_atomic), cap_usdc: usdc(r.cap_atomic), basis: r.basis, recorded_at: iso(r.updated_at) })),
+  };
+
   // ------------------------------------------------------------ write
   const out = resolve(o.outDir);
   const files: Record<string, unknown> = {
@@ -284,6 +318,8 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
     "resources.json": resourcesJson,
     "stress.json": stressJson,
     "probe.json": probeJson,
+    "candidates.json": candidatesJson,
+    "too_expensive.json": tooExpensiveJson,
   };
   const safeName = (d: string) => d.toLowerCase().replace(/[^a-z0-9.-]/g, "_");
   for (const s of [...main, ...low]) {
@@ -370,6 +406,21 @@ One file per seller in sellers.json (both arrays); up to 25 most recent failures
 - \`http_status\`: status of the paid response (null if none arrived).
 - \`validator_failures\`: validators that failed, with their reason code.
 - \`settlement_tx_hash\` / \`basescan_url\`: on-chain settlement of the payment, if one was matched.
+
+## candidates.json
+Resources users checked or paid through the index (GET /v1/candidates) that we had never measured, each probed once without paying.
+- \`url\` / \`host\`: scheme, host and path (never a query string).
+- \`state\`: \`queued\` (402 at or under the scheduled per-call cap; enters the next scheduled run), \`too_expensive\` (quotes above it; never bought), \`not_x402\` (no 402 with a Base exact option), \`measuring\` (first purchase landed), or \`pending_probe\`.
+- \`quoted_usdc\`: the quote seen by the probe, if any.
+- \`checks\` / \`payments\`: the index's counts at the last import; \`first_seen\` / \`last_seen\` from the index.
+- \`imported_at\` / \`probed_at\`: when we imported and probed it; \`new_seller\`: the host was new to us.
+Candidate sellers count in their own figures and evidence like any seller and stay out of the headline, \`by_tier\` and \`by_category\` until their first scheduled purchase is 7 days old.
+
+## too_expensive.json
+Resources whose quote is above the per-call cap that applies to them (0.10 USDC in scheduled runs, MAX_PER_CALL_USD in audits, a seller's own cap from config/expensive-sellers.yaml). Recorded and never bought.
+- \`url\` / \`method\` / \`seller\`: the resource.
+- \`quoted_usdc\` / \`cap_usdc\`: what it quoted and the cap it exceeded; \`basis\`: probe, declared (listing) or quote (seen while buying).
+- \`recorded_at\`: last time it was seen above the cap.
 
 ## stress.json
 - \`summary\`: duplicate test (intents, intents settled twice, rate, Wilson interval) and timeout test (intents, settled despite abort, retried, second settlement on retry).

@@ -106,6 +106,19 @@ the tier and category tables, because triggered sampling deliberately
 oversamples contested and popular sellers. The export marks each seller's
 `audit_purchases` and each evidence sample's `source`.
 
+### Candidate sellers
+
+A candidate is a resource users checked or paid through the index that we
+had never measured (`discover import-candidates`, from the index's
+`GET /v1/candidates`). It enters `resources` with `source = user` and is
+probed once without paying: `queued` (402 at or under the scheduled per-call
+cap), `too_expensive` (above it; recorded with the quote, never bought) or
+`not_x402` (no 402 with a Base `exact` option). Calls to candidate sellers use
+the ordinary taxonomy and count in that seller's own series and evidence.
+Sellers that entered this way are kept out of the headline, tier and
+category tables until their first scheduled purchase is 7 days old, because
+they joined the sample by user interest rather than by the stratified design.
+
 ## Secondary flags
 
 | Constant | Meaning |

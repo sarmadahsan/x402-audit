@@ -352,6 +352,11 @@ than a clean overcharge rate.
   evidence but never in the headline, tier or category rates, since sampling
   by trigger over-represents contested and popular sellers; a seller's own
   rate after an audit therefore mixes routine and targeted sampling.
+- Also since 2026-10-29, sellers users checked or paid through the index can
+  enter the sample as candidates (one free probe, then scheduled purchases
+  under the normal caps once enabled). They are self-selected by interest, so
+  they join the headline, tier and category rates only after 7 days in the
+  sample; until then they appear only in their own figures.
 - Operational restarts (gated, with resume) and 63 audited re-classifications
   happened during the run; all are in the database and the git history.
 
