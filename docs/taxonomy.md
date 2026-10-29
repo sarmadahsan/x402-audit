@@ -93,6 +93,19 @@ Stress rows (module 4) use the same outcomes but carry `source =
 stress_duplicate` or `stress_timeout` and are never mixed into the headline
 rate. The stress report counts "second settlement observed" directly.
 
+### Audit purchases
+
+Audit rows (`audit-triggers`, 2026-10-29) use the same outcomes, validators and
+settlement matching but carry `source = audit_disagreement` (the index's
+operator-reported series disagrees with ours, is mature while ours is thin, or
+reports failures on a seller we mark ok) or `audit_demand` (people are checking
+the seller and our data is thin or stale). They count in that seller's own
+measured series and evidence file, because a seller's failure rate is its rate
+whatever made us sample it. They are kept out of the headline market rate and
+the tier and category tables, because triggered sampling deliberately
+oversamples contested and popular sellers. The export marks each seller's
+`audit_purchases` and each evidence sample's `source`.
+
 ## Secondary flags
 
 | Constant | Meaning |

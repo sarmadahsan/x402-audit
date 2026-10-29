@@ -308,7 +308,7 @@ export const QUERIES = {
 
   /** Headline failure rows, newest first, with the public evidence fields only (no request or response bodies, no wallet). */
   buy_failure_samples: `${SELLER_CTE}
-    SELECT b.id AS call_id, b.seller_id AS seller_id, b.outcome AS outcome, c.ts AS ts, r.url AS url, r.method AS method,
+    SELECT b.id AS call_id, b.seller_id AS seller_id, b.outcome AS outcome, c.ts AS ts, r.url AS url, r.method AS method, c.source AS source,
       b.quote_amount_atomic AS quote_atomic, b.reference_price_atomic AS reference_atomic, c.reference_source AS reference_source,
       c.response_status AS http_status,
       COALESCE(c.settlement_tx_hash, (SELECT s.tx_hash FROM settlements s WHERE s.call_id = c.id ORDER BY s.id LIMIT 1)) AS tx_hash
@@ -366,6 +366,10 @@ export const QUERIES = {
     FROM calls c WHERE c.source IN (${AUDIT_LIST}) AND c.paid = 1 AND ${CALL_WINDOW} GROUP BY c.source ORDER BY c.source`,
   audit_purchases_by_seller: `SELECT c.seller_id AS seller_id, c.source AS source, COUNT(*) AS paid_calls
     FROM calls c WHERE c.source IN (${AUDIT_LIST}) AND c.paid = 1 AND ${CALL_WINDOW} GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  /** Sellers that entered through the user-candidate import, with the index's counts at import time. */
+  candidate_sellers: `SELECT k.seller_id AS seller_id, MIN(k.imported_at) AS imported_at, SUM(k.checks) AS checks, SUM(k.payments) AS payments
+    FROM candidates k WHERE k.seller_new = 1 AND k.seller_id IS NOT NULL GROUP BY k.seller_id ORDER BY k.seller_id`,
 
   /** Every wallet we ever used; the export refuses to write a file that contains one. */
   our_wallets: `SELECT DISTINCT lower(wallet) AS wallet FROM (SELECT wallet FROM calls WHERE wallet IS NOT NULL UNION SELECT wallet FROM attempts)`,

@@ -12,7 +12,7 @@ import { computeReport, countRate, dollarRate, modeOf } from "../report/compute.
 import { runQuery, type QueryParams } from "../report/queries.js";
 import { probeReport } from "../probe/report.js";
 import { stressReport } from "../stress/index.js";
-import { HEADLINE_FAILURE_OUTCOMES } from "../taxonomy.js";
+import { AUDIT_SOURCES, HEADLINE_FAILURE_OUTCOMES } from "../taxonomy.js";
 
 export const SELLER_MIN_CALLS = 30;
 export const SELLER_LOW_SAMPLE_MIN_CALLS = 5;
@@ -126,6 +126,12 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
     overcharge_sensitivity: h.sensitivity.map((r) => ({ min_ratio: r.min_ratio, overcharge_kept: r.overcharge_kept, overcharge_dropped: r.overcharge_dropped, rate: r.count.rate, wilson_low: r.count.lo, wilson_high: r.count.hi, dollar_rate: r.dollar_rate })),
     by_tier: report.by_tier.map((g) => ({ tier: g.key, n: g.n, failures: g.failures, rate: g.count.rate, wilson_low: g.count.lo, wilson_high: g.count.hi, dollar_rate: g.dollar.rate })),
     by_category: report.by_category.map((g) => ({ category: g.key, n: g.n, failures: g.failures, rate: g.count.rate, wilson_low: g.count.lo, wilson_high: g.count.hi, dollar_rate: g.dollar.rate })),
+    audit_purchases: Object.fromEntries(
+      AUDIT_SOURCES.map((src) => {
+        const r = q<{ source: string; paid_calls: number; sellers: number }>("audit_purchases_by_source").find((x) => x.source === src);
+        return [src, { paid_calls: num(r?.paid_calls), sellers: num(r?.sellers) }];
+      }),
+    ) as Record<string, { paid_calls: number; sellers: number }>,
   };
 
   // ------------------------------------------------------------ sellers.json
@@ -151,6 +157,13 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
     return m;
   };
   const sellerHist = histBy((r) => num(r.seller_id));
+  const auditBySeller = new Map<number, Record<string, number>>();
+  for (const r of q<{ seller_id: number; source: string; paid_calls: number }>("audit_purchases_by_seller")) {
+    const m = auditBySeller.get(num(r.seller_id)) ?? {};
+    m[r.source] = num(r.paid_calls);
+    auditBySeller.set(num(r.seller_id), m);
+  }
+  const candidateSellers = new Map(q<{ seller_id: number; imported_at: number; checks: number; payments: number }>("candidate_sellers").map((r) => [num(r.seller_id), r]));
 
   const sellerRows = sellerRates.map((r) => {
     const id = num(r.seller_id);
@@ -177,6 +190,14 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
       onchain_inflow_computed_at: m.volume_30d_source === "chain" ? iso(num(m.volume_30d_computed_at)) : null,
       pay_to_addresses: payTos.get(id) ?? [],
       bazaar_listing_count: num(m.bazaar_listings),
+      audit_purchases: Object.values(auditBySeller.get(id) ?? {}).reduce((a, n) => a + n, 0),
+      audit_purchases_by_source: Object.fromEntries(AUDIT_SOURCES.map((src) => [src, auditBySeller.get(id)?.[src] ?? 0])),
+      ...(() => {
+        const c = candidateSellers.get(id);
+        return c
+          ? { source: "user" as const, entered_at: iso(num(c.imported_at)), entered_after_checks: num(c.checks), entered_after_payments: num(c.payments) }
+          : { source: "discovery" as const };
+      })(),
     };
   });
   const bySort = (a: (typeof sellerRows)[number], b: (typeof sellerRows)[number]) => b.failure_rate - a.failure_rate || b.denominator_calls - a.denominator_calls || a.domain.localeCompare(b.domain);
@@ -227,13 +248,14 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
     vf.set(num(v.call_id), l);
   }
   const samples = new Map<number, unknown[]>();
-  for (const s of q<{ call_id: number; seller_id: number; outcome: string; ts: number; url: string; method: string; quote_atomic: string | null; reference_atomic: string | null; reference_source: string | null; http_status: number | null; tx_hash: string | null }>("buy_failure_samples")) {
+  for (const s of q<{ call_id: number; seller_id: number; outcome: string; ts: number; url: string; method: string; source: string; quote_atomic: string | null; reference_atomic: string | null; reference_source: string | null; http_status: number | null; tx_hash: string | null }>("buy_failure_samples")) {
     if (!HEADLINE_FAILURE_OUTCOMES.has(s.outcome as never)) continue;
     const l = samples.get(num(s.seller_id)) ?? [];
     if (l.length >= EVIDENCE_PER_SELLER) continue;
     const tx = s.tx_hash && /^0x[0-9a-fA-F]{64}$/.test(s.tx_hash) ? s.tx_hash : null;
     l.push({
       outcome: s.outcome,
+      source: s.source,
       timestamp: iso(num(s.ts)),
       resource: s.url,
       method: s.method,
@@ -306,6 +328,7 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`flagged_injection\`: denominator rows flagged for possible prompt injection, not counted as failures.
 - \`overcharge_sensitivity\`: headline rate if overcharges below a quote/reference ratio of 1.1 or 2.0 were not counted.
 - \`by_tier\` / \`by_category\`: denominator calls, failures, rate, Wilson interval and dollar-weighted rate per seller tier and category.
+- \`audit_purchases\`: paid audit calls and sellers audited, by source (\`audit_disagreement\`, \`audit_demand\`). Audit purchases count in each seller's own figures and evidence, never in the headline (\`count_weighted\`, \`dollar_weighted\`, \`failures_by_type\`), \`by_tier\` or \`by_category\`: triggered sampling oversamples contested and popular sellers. Sellers that entered through the user-candidate import stay out of those three until their first scheduled purchase is 7 days old.
 
 ## sellers.json
 \`sellers\` holds sellers with at least 30 denominator calls; \`low_sample\` holds sellers with 5 to 29, each marked \`low_sample: true\`. Both are sorted by failure rate descending, then by calls descending.
@@ -322,6 +345,8 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`onchain_inflow_30d_usdc\`: USDC transferred to the seller's pay-to addresses in the 30-day chain scan; \`onchain_inflow_computed_at\` is when that scan ran.
 - \`pay_to_addresses\`: addresses the seller listed or quoted for payment (lowercase).
 - \`bazaar_listing_count\`: resources the seller lists in the Coinbase Bazaar discovery API.
+- \`audit_purchases\` / \`audit_purchases_by_source\`: paid audit calls included in this seller's figures ("includes N audit purchases").
+- \`source\`: \`discovery\` (Bazaar, chain scan or our own list) or \`user\` (entered through the user-candidate import); a \`user\` seller also has \`entered_at\`, \`entered_after_checks\` and \`entered_after_payments\` (the index's counts at import).
 
 ## resources.json
 Resources with at least 10 denominator calls, sorted by failure rate descending.
@@ -337,6 +362,7 @@ Resources with at least 10 denominator calls, sorted by failure rate descending.
 One file per seller in sellers.json (both arrays); up to 25 most recent failures.
 - \`failures_total\` / \`shown\`: failures for the seller and how many samples follow.
 - \`outcome\`: failure type.
+- \`source\`: \`buy\` (scheduled purchase), \`audit_disagreement\` or \`audit_demand\` (triggered audit purchase).
 - \`timestamp\`: when the call was made.
 - \`resource\` / \`method\`: resource called.
 - \`quote_usdc\`: price the seller quoted in its 402 response.

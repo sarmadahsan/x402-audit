@@ -345,6 +345,13 @@ than a clean overcharge rate.
 - Two client identities differed only by User-Agent and Accept headers.
 - 15 `indeterminate` rows remain open at the time of writing and resolve to
   `not_paid` after 24 hours; they do not touch the denominator either way.
+- Since 2026-10-29 the loop can add triggered audit purchases (sources
+  `audit_disagreement`, `audit_demand`): up to 10 calls on a seller whose
+  operator-reported series disagrees with ours or that people are checking
+  while our data is thin. Those rows are in the seller's own figures and
+  evidence but never in the headline, tier or category rates, since sampling
+  by trigger over-represents contested and popular sellers; a seller's own
+  rate after an audit therefore mixes routine and targeted sampling.
 - Operational restarts (gated, with resume) and 63 audited re-classifications
   happened during the run; all are in the database and the git history.
 
