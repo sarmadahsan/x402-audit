@@ -77,8 +77,10 @@ describe("expensive-sellers lane", () => {
     ];
     for (let k = 0; k < 3; k++) paid(d, { seller: 2, usd: 0.2, ts: now - (k + 1) * 86_400_000 });
     for (let k = 0; k < 5; k++) paid(d, { seller: 1, usd: 0.001, ts: now - 3_600_000 }); // cheap calls do not count
+    d.prepare("INSERT INTO resources (id, seller_id, url, source, network, scheme, declared_price_atomic, raw_json, first_seen_at, last_seen_at) VALUES (4, 1, 'https://a.example/mid', 'bazaar', ?, 'exact', '250000', '{}', 0, 0)").run(NET);
     const lane = expensiveAllocations(d, list, { network: NET, now, scheduledCapAtomic: usdToAtomic(0.1) });
-    expect(lane.allocations.map((a) => [a.sellerDomain, a.calls, a.perCallCapAtomic])).toEqual([["a.example", 1, usdToAtomic(0.29)]]);
+    // The 0.10 resource belongs to the stratified plan; the lane takes the 0.25 one, within the 0.29 cap.
+    expect(lane.allocations.map((a) => [a.url, a.calls, a.perCallCapAtomic])).toEqual([["https://a.example/mid", 1, usdToAtomic(0.29)]]);
     expect(lane.skipped.map((s) => s.domain)).toEqual(["b.example", "missing.example"]);
     expect(listTooExpensive(d).map((r) => [r.url, r.quoted_atomic, r.cap_atomic])).toEqual([["https://a.example/big", "900000", "290000"]]);
   });

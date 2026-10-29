@@ -33,7 +33,8 @@ export interface ExpensiveLaneResult {
   skipped: { domain: string; reason: string }[];
 }
 
-/** One call per listed seller that is under its weekly frequency, on its cheapest resource within its own cap. */
+/** One call per listed seller that is under its weekly frequency, on its cheapest resource above the scheduled cap and
+ * within its own cap. */
 export function expensiveAllocations(db: Db, list: readonly ExpensiveSeller[], o: { network: string; now: number; scheduledCapAtomic: bigint }): ExpensiveLaneResult {
   const out: ExpensiveLaneResult = { allocations: [], skipped: [] };
   const findSeller = db.prepare<[string], { id: number; excluded: number }>("SELECT id, excluded FROM sellers WHERE domain = ?");
@@ -63,9 +64,16 @@ export function expensiveAllocations(db: Db, list: readonly ExpensiveSeller[], o
       if (r.price > cap) recordTooExpensive(db, { resourceId: r.resource_id, quotedAtomic: r.price, capAtomic: cap, basis: r.basis, now: o.now });
       else clearTooExpensive(db, r.resource_id);
     }
-    const pick = res.filter((r) => r.price <= cap).sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : a.resource_id - b.resource_id))[0];
+    // Only the resources this list exists for: above the scheduled cap (cheaper ones are in the stratified plan).
+    const pick = res
+      .filter((r) => r.price > o.scheduledCapAtomic && r.price <= cap)
+      .sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : a.resource_id - b.resource_id))[0];
     if (!pick) {
-      out.skipped.push({ domain: e.domain, reason: res.length ? "every resource quotes above its own cap (recorded too_expensive)" : "no buyable resource" });
+      const above = res.filter((r) => r.price > o.scheduledCapAtomic);
+      out.skipped.push({
+        domain: e.domain,
+        reason: !res.length ? "no buyable resource" : !above.length ? "no resource above the scheduled cap" : "every resource above the scheduled cap quotes above its own cap (recorded too_expensive)",
+      });
       continue;
     }
     out.allocations.push({ resourceId: pick.resource_id, sellerId: s.id, sellerDomain: pick.domain, url: pick.url, method: pick.method, inputJson: pick.input_json, tier: "expensive", category: "expensive", priceAtomic: pick.price, calls: 1, perCallCapAtomic: cap });
