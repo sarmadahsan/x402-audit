@@ -415,6 +415,14 @@ export function buildCoveragePlan(db: Db, o: CoverageOptions): CoveragePlan {
       }
       for (const r of s.eligible) clearTooExpensive(db, r.resourceId);
     }
+    // Rows the planner can no longer see: every resource of a seller that has an eligible endpoint (including ones with
+    // no quote), and listing-based rows of resources nothing ever quoted (a listing is not evidence of a price).
+    const cheapSellers = universe.filter((s) => s.eligible.length > 0 && !own.has(s.domain.toLowerCase())).map((s) => s.sellerId);
+    const quoted = new Set(universe.flatMap((s) => [...s.eligible, ...s.over].map((r) => r.resourceId)));
+    const stale = (db
+      .prepare("SELECT rs.resource_id id, r.seller_id sid, rs.basis, s.domain FROM resource_states rs JOIN resources r ON r.id = rs.resource_id JOIN sellers s ON s.id = r.seller_id WHERE rs.state = 'too_expensive'")
+      .all() as { id: number; sid: number; basis: string | null; domain: string }[]).filter((r) => !own.has(r.domain.toLowerCase()) && (cheapSellers.includes(r.sid) || (r.basis === "declared" && !quoted.has(r.id))));
+    for (const r of stale) clearTooExpensive(db, r.id);
   }
 
   const backoffs = [...backoffMap.values()];

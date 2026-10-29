@@ -117,6 +117,10 @@ describe("buildCoveragePlan", () => {
   it("keeps too_expensive only for sellers with no endpoint at or under the cap", () => {
     const d = universe();
     d.prepare("INSERT INTO resource_states (resource_id, state, quoted_atomic, cap_atomic, basis, updated_at) VALUES (71, 'too_expensive', '5000000', '100000', 'probe', 0)").run();
+    // Listing-only rows: one on a seller with a cheap endpoint, one on a seller nothing ever quoted.
+    seller(d, 12, { prices: ["900000"], calls: 0, probe: false });
+    d.prepare("INSERT INTO resources (id, seller_id, url, source, network, scheme, declared_price_atomic, raw_json, first_seen_at, last_seen_at) VALUES (25, 2, 'https://s2.example/listed', 'bazaar', ?, 'exact', '900000', '{}', 0, 0)").run(NET);
+    for (const id of [25, 120]) d.prepare("INSERT INTO resource_states (resource_id, state, quoted_atomic, cap_atomic, basis, updated_at) VALUES (?, 'too_expensive', '900000', '100000', 'declared', 0)").run(id);
     buildCoveragePlan(d, opts(usdToAtomic(1), { recordTooExpensive: true }));
     expect(listTooExpensive(d).map((r) => r.domain).sort()).toEqual(["s6.example", "s6.example"]);
   });
