@@ -44,6 +44,8 @@ export interface ReportedHost {
 export interface DemandHost {
   host: string;
   checks: number;
+  /** checks split by the caller's X-Paidfor-Client channel (skill/<rev>, mcp/<ver>, x402-audit, api, ...), if served. */
+  byChannel?: Record<string, number>;
 }
 export interface MeasuredSeller {
   sellerId: number;
@@ -192,7 +194,12 @@ export async function fetchDemand(index: string, fetchImpl: FetchImpl = fetch, d
   if (!Array.isArray(hosts)) throw new Error("GET /v1/demand: no hosts array");
   return hosts
     .filter((h): h is Record<string, unknown> => !!h && typeof h === "object" && typeof (h as { host?: unknown }).host === "string")
-    .map((h) => ({ host: String(h.host), checks: Number(h.checks ?? 0) }));
+    .map((h) => {
+      // Per-host checks by X-Paidfor-Client channel, when the index provides them (lets the harness drop its own).
+      const by = h.checks_by_channel && typeof h.checks_by_channel === "object" ? (h.checks_by_channel as Record<string, unknown>) : null;
+      const byChannel = by ? Object.fromEntries(Object.entries(by).map(([k, v]) => [k, Number(v) || 0])) : undefined;
+      return { host: String(h.host), checks: Number(h.checks ?? 0), ...(byChannel ? { byChannel } : {}) };
+    });
 }
 
 export { getJson };

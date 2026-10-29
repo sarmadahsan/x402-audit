@@ -189,13 +189,17 @@ the measured count for nobody.
   target, closest to the target first, at most 4 calls per seller per run.
   This is what makes `sellers_with_min_calls` rise within a day.
 - Admit lane (30% of coverage, plus whatever finish leaves): zero-call
-  sellers, ranked by checks on the index this week (`/v1/demand`), then
-  30-day on-chain inflow, then price (cheapest first), then a seeded random
-  key.
+  sellers, ranked by external demand this week (checks from the skill, MCP
+  and client-library channels only, so our own harness and bare API calls
+  never rank a seller), then price ascending, then 30-day on-chain inflow,
+  then a seeded random key. One call in five is reserved for the
+  highest-inflow seller not yet admitted, so volume sellers are not starved by
+  the cheap breadth. Each admitted seller takes at most 2 calls a run. Until
+  `/v1/demand` splits each host's checks by channel, demand is not used.
 - Targets: 30 calls for sellers first bought before 18:00 UTC on 2026-10-29
   (`COVERAGE_TIERS_SINCE`), sellers in the top 50 by 30-day inflow, sellers
   in demand this week, sellers on `config/expensive-sellers.yaml` and user
-  candidates; 5 calls for every other newly admitted seller, enough to
+  candidates (demand here is external demand too); 5 calls for every other newly admitted seller, enough to
   appear as `low_sample` with an honest interval.
 - Maintenance (the rest): sellers at or past their target, a weighted draw
   without replacement by 30-day inflow with a floor

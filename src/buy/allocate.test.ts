@@ -93,6 +93,26 @@ describe("buildCoveragePlan", () => {
     expect(c3.plan.allocations.filter((a) => a.sellerId === 1).reduce((n, a) => n + a.calls, 0)).toBe(2);
   });
 
+  it("admit lane: demand, then cheapest, then inflow; one call in five for the highest-inflow seller not yet admitted", () => {
+    const d = openDb(":memory:");
+    for (let i = 1; i <= 8; i++) seller(d, i, { prices: ["1000"], calls: 0, inflowUsd: i }); // cheap, low inflow
+    seller(d, 20, { prices: ["50000"], calls: 0, inflowUsd: 90_000 }); // pricey volume seller
+    seller(d, 21, { prices: ["40000"], calls: 0, inflowUsd: 80_000 });
+    seller(d, 22, { prices: ["2000"], calls: 0, inflowUsd: 0 }); // in demand
+    // A tight budget (admit gets 0.14): without the reserve the volume sellers would not be reached at all.
+    const c = buildCoveragePlan(d, opts(usdToAtomic(0.2), { demand: new Map([["s22.example", 3]]) }));
+    const admit = c.plan.allocations.filter((a) => a.tier === "admit");
+    // Plan order is the order calls were placed: demand first, then the cheap queue.
+    expect(admit[0]!.sellerId).toBe(22);
+    // Cheap queue by price, then inflow (seller 8 has the most inflow of the 0.001 sellers).
+    expect(admit[1]!.sellerId).toBe(8);
+    // Both volume sellers got their reserved single call although they quote 0.04 and 0.05.
+    expect(admit.filter((a) => a.sellerId === 20 || a.sellerId === 21).map((a) => a.calls)).toEqual([1, 1]);
+    // 11 sellers admitted; nobody above 2 calls.
+    expect(new Set(admit.map((a) => a.sellerId)).size).toBe(11);
+    expect(Math.max(...admit.map((a) => a.calls))).toBe(2);
+  });
+
   it("no seller plans more than 15% of the run", () => {
     const d = universe();
     seller(d, 11, { prices: ["60000"], calls: 0, inflowUsd: 1_000_000 }); // top of the admit order by inflow

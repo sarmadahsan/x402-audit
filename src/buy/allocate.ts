@@ -295,7 +295,11 @@ export function selectCoverage(sellers: readonly SellerFacts[], o: SelectOptions
   const demandOf = (s: SellerFacts) => o.targets.demand.get(s.domain.toLowerCase()) ?? 0;
   const admit = buyable
     .filter((s) => s.calls === 0)
-    .sort((a, b) => demandOf(b) - demandOf(a) || cmpBig(b.inflowAtomic, a.inflowAtomic) || cmpBig(cheapest(a), cheapest(b)) || tie.get(a.sellerId)! - tie.get(b.sellerId)!);
+    .sort((a, b) => demandOf(b) - demandOf(a) || cmpBig(cheapest(a), cheapest(b)) || cmpBig(b.inflowAtomic, a.inflowAtomic) || tie.get(a.sellerId)! - tie.get(b.sellerId)!);
+  // The inflow reserve: highest 30-day inflow first, so volume sellers are not starved by the cheap breadth.
+  const byInflow = buyable
+    .filter((s) => s.calls === 0 && s.inflowAtomic > 0n)
+    .sort((a, b) => cmpBig(b.inflowAtomic, a.inflowAtomic) || cmpBig(cheapest(a), cheapest(b)) || tie.get(a.sellerId)! - tie.get(b.sellerId)!);
   const maint = buyable
     .filter((s) => s.calls >= tgt.get(s.sellerId)!)
     .map((s) => ({ s, key: Math.pow(o.rnd(), 1 / (Number(s.inflowAtomic > o.inflowFloorAtomic ? s.inflowAtomic : o.inflowFloorAtomic) / 1e6)) }))
@@ -335,13 +339,65 @@ export function selectCoverage(sellers: readonly SellerFacts[], o: SelectOptions
     sel.spent[pool] += spent;
     return spent;
   };
+  /**
+   * Admit lane, call by call: four calls from the price queue (external demand, then cheapest, then inflow; each seller up
+   * to its per-run limit before the next), then one call for the highest-inflow seller not yet admitted, and so on. A call
+   * that does not fit the budget or the seller's limit is skipped; when one queue is spent the other takes every slot.
+   */
+  const fillAdmit = (priceQ: SellerFacts[], inflowQ: SellerFacts[], budget: bigint): bigint => {
+    let spent = 0n;
+    let placed = 0;
+    const callsIn = (s: SellerFacts) => [...(sel.counts.get(s.sellerId)?.byResource.values() ?? [])].reduce((a, n) => a + n, 0);
+    const tryOne = (s: SellerFacts): boolean => {
+      const entry = sel.counts.get(s.sellerId);
+      if (entry && entry.pool !== "admit") return false;
+      const k = callsIn(s);
+      if (k >= maxCov(s)) return false;
+      const r = rotationFor(s)[k % rotationFor(s).length]!;
+      const p = planned.get(s.sellerId) ?? 0n;
+      if (spent + r.planAtomic > budget || p + r.planAtomic > o.sellerCapAtomic) return false;
+      const e = entry ?? { pool: "admit" as const, byResource: new Map<number, number>() };
+      e.byResource.set(r.resourceId, (e.byResource.get(r.resourceId) ?? 0) + 1);
+      sel.counts.set(s.sellerId, e);
+      planned.set(s.sellerId, p + r.planAtomic);
+      spent += r.planAtomic;
+      placed++;
+      reserved.add(s.sellerId);
+      return true;
+    };
+    const reserved = new Set<number>();
+    let pi = 0;
+    let ii = 0;
+    const nextPrice = (): boolean => {
+      for (; pi < priceQ.length; pi++) if (tryOne(priceQ[pi]!)) return true;
+      return false;
+    };
+    const nextInflow = (): boolean => {
+      for (; ii < inflowQ.length; ii++) {
+        const s = inflowQ[ii]!;
+        if (reserved.has(s.sellerId) || sel.counts.has(s.sellerId)) continue; // "not yet admitted"
+        if (tryOne(s)) {
+          ii++;
+          return true;
+        }
+      }
+      return false;
+    };
+    for (;;) {
+      const reserveSlot = placed % 5 === 4;
+      const ok = reserveSlot ? nextInflow() || nextPrice() : nextPrice() || nextInflow();
+      if (!ok) break;
+    }
+    sel.spent.admit += spent;
+    return spent;
+  };
   const maxCov = (s: SellerFacts) => {
     const t = tgt.get(s.sellerId)!;
     const per = s.calls === 0 || t === ADMIT_TARGET ? ADMIT_MAX_PER_RUN : COVERAGE_MAX_PER_SELLER;
     return Math.min(per, t - s.calls);
   };
   const f1 = fill("finish", finish, maxCov, sel.budgets.finish);
-  const a1 = fill("admit", admit, maxCov, sel.budgets.admit + (sel.budgets.finish - f1));
+  const a1 = fillAdmit(admit, byInflow, sel.budgets.admit + (sel.budgets.finish - f1));
   const f2 = fill("finish", finish, maxCov, coverage - f1 - a1);
   fill("maintenance", maint, () => MAINTENANCE_MAX_PER_SELLER, o.budgetAtomic - (f1 + a1 + f2));
   return sel;

@@ -31,12 +31,28 @@ export function runStatus(s: { halted: boolean; haltReason?: string }): "ok" | "
   return s.haltReason && ROUTINE_CAPS.has(s.haltReason) ? "cap_reached" : "halted";
 }
 
-/** This week's index demand (host -> checks), for the admit lane; empty (and logged) when the index cannot be read. */
+/** Channels that are other people: the skill, the MCP server and the client libraries. Our own harness (`x402-audit`),
+ * bare API calls (`api`, which includes our curl checks) and unknown values (`other`) never rank a seller. */
+export const EXTERNAL_CHANNELS = ["skill", "mcp", "x402-safe-fetch", "paidfor-client"] as const;
+
+/** This week's external demand (host -> checks from external channels), for the admit lane and the 30-call target.
+ * Until /v1/demand splits each host's checks by channel, demand cannot be told apart from our own checks, so it is
+ * empty (logged) rather than trusted. */
 async function demandMap(index: string): Promise<Map<string, number>> {
   try {
-    return new Map((await fetchDemand(index)).filter((d) => d.checks > 0).map((d) => [d.host.toLowerCase().replace(/^www\./, ""), d.checks]));
+    const hosts = await fetchDemand(index);
+    if (!hosts.some((d) => d.byChannel)) {
+      log.warn("demand: /v1/demand has no per-host channel split yet; demand is not used, so our own checks rank nobody");
+      return new Map();
+    }
+    const out = new Map<string, number>();
+    for (const d of hosts) {
+      const ext = Object.entries(d.byChannel ?? {}).reduce((a, [ch, n]) => a + ((EXTERNAL_CHANNELS as readonly string[]).includes(ch.split("/")[0]!) ? n : 0), 0);
+      if (ext > 0) out.set(d.host.toLowerCase().replace(/^www\./, ""), ext);
+    }
+    return out;
   } catch (e) {
-    log.warn(`demand: ${(e as Error).message}; the admit lane ranks by inflow and price only`);
+    log.warn(`demand: ${(e as Error).message}; the admit lane ranks by price and inflow only`);
     return new Map();
   }
 }

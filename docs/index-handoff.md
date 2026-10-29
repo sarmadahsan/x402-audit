@@ -50,3 +50,16 @@ study-window figure (6.6%, 2026-10-24 to 2026-10-26), it is a separate, frozen l
 `summary.json` `last_buy_run.status` can now be `cap_reached`: the run ended on its own budget (per-run or daily
 scheduled budget), which is routine and should not alarm. `halted` now means only the halt file, an error, or a
 backstop cap (`MAX_PER_DAY_USD`, `MAX_TOTAL_USD`). `ok`/`completed` as before.
+
+## Needed from the index: per-host demand by channel
+
+The harness ranks admit-lane sellers by **external** demand: checks from the `skill`, `mcp`, `x402-safe-fetch` and
+`paidfor-client` channels only. Our own harness (`x402-audit`), bare API calls (`api`, which includes our own curl
+checks) and `other` must never rank a seller. `/v1/demand` today gives one `checks` number per host, so the harness
+cannot tell these apart and **does not use demand at all** until the index serves the split.
+
+Wanted, additive: on every `/v1/demand` host row, `checks_by_channel`, an object from channel name (the same strings
+`channelOf` produces in `lib/channels.ts`, version suffix included or not) to checks over the requested window, summing
+to `checks`. That means recording the channel with each `recordCheck(host)` (per host, per UTC day, per channel).
+The harness reads the field as soon as it appears (`fetchDemand` in `src/audit/triggers.ts`, `demandMap` in
+`src/cli/buy.ts`) and needs no change.
