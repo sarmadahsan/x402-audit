@@ -35,7 +35,8 @@ import {
   type Logger,
   type RunLimits,
   utcDayStart } from "./guard.js";
-import { CALL_SOURCES, type CallSource } from "../taxonomy.js";
+import { CALL_SOURCES, FLAGS, type CallSource } from "../taxonomy.js";
+import { recordTooExpensive } from "./states.js";
 
 export const RATE_LIMIT_BACKOFF_MS = 5 * 60_000;
 
@@ -349,6 +350,11 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       });
       stats.calls++;
       stats.callIds.push(out.callId);
+      if (out.classification.flags.includes(FLAGS.UNPAID_OVERCHARGE)) {
+        // Quoted above the cap that applies to this allocation: recorded too_expensive, never silently skipped.
+        const q = db.prepare("SELECT quote_amount_atomic q FROM calls WHERE id = ?").get(out.callId) as { q: string | null } | undefined;
+        if (q?.q && /^\d+$/.test(q.q)) recordTooExpensive(db, { resourceId: a.resourceId, quotedAtomic: BigInt(q.q), capAtomic: caps.perCallAtomic, basis: "quote", now: realNow() });
+      }
       stats.byOutcome[out.classification.outcome] = (stats.byOutcome[out.classification.outcome] ?? 0) + 1;
       if (out.result.signed) stats.spentAtomic += BigInt(out.result.signed.value);
 

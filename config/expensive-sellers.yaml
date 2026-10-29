@@ -1,0 +1,30 @@
+# Sellers worth measuring above the scheduled-run per-call cap (0.10 USDC) because of their volume
+# (docs/PLAN.md "Caps for continuous running"). Chosen 2026-10-29 from the audit host's database: the top five
+# pay-to inflows over 30 days (chain scan) whose modal 402 quote in the last 7 days of probes is above 0.10 USDC
+# (sellers that only share another seller's pay-to were skipped).
+#
+# per_call_usd is that modal quote. The run clamps it to MAX_PER_CALL_USD (0.50 on the audit host), so this file
+# can never raise a cap: a seller whose own cap is above MAX_PER_CALL_USD is recorded too_expensive with its quote
+# and exported, never bought, until the operator raises MAX_PER_CALL_USD. max_per_week counts paid calls in any
+# 7 days (scheduled and audit together); a run adds at most one call per seller, so purchases spread across runs.
+sellers:
+  - domain: x402.dtelecom.org
+    per_call_usd: 5.00
+    max_per_week: 3
+    reason: "30-day inflow 36,596 USDC; modal quote 5.00"
+  - domain: api.locus.report
+    per_call_usd: 0.29
+    max_per_week: 3
+    reason: "30-day inflow 4,205 USDC; modal quote 0.29"
+  - domain: cheaptokens.ai
+    per_call_usd: 1.00
+    max_per_week: 3
+    reason: "30-day inflow 2,657 USDC; modal quote 1.00"
+  - domain: chat-api.memchat.io
+    per_call_usd: 0.98
+    max_per_week: 3
+    reason: "30-day inflow 751 USDC; modal quote 0.98"
+  - domain: api.apify.com
+    per_call_usd: 1.00
+    max_per_week: 3
+    reason: "30-day inflow 597 USDC; modal quote 1.00"

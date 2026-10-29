@@ -113,6 +113,49 @@ cap `MAX_PER_CALL_USD` default 0.50.
 `MAX_TOTAL_USD`. Any breach halts the run and writes a `halts` row. The `halt`
 file in the repo root stops every loop within one iteration.
 
+### Caps for continuous running (2026-10-29)
+
+The mechanism is unchanged (every cap is read from the database and checked
+before every signature); values and granularity change:
+
+- Scheduled runs pass `--per-call-usd 0.10`. A run may lower
+  `MAX_PER_CALL_USD` (0.50 on the audit host), never raise it.
+- `config/expensive-sellers.yaml` lists five high-volume sellers whose modal
+  quote is above 0.10 (top five by 30-day inflow), each with its own per-call
+  cap and at most three purchases a week. A run adds at most one call per
+  listed seller; its cap is clamped to `MAX_PER_CALL_USD`, so the list can
+  never raise a cap.
+- Any resource that quotes above the cap that applies to it is recorded
+  `too_expensive` with the amount (`resource_states`, exported as
+  `too_expensive.json`), whether seen in a listing, a probe or a live quote.
+- Audits keep their own caps: 5 USDC and 10 sellers per UTC day over the audit
+  sources, 10 calls per seller, per-call cap `MAX_PER_CALL_USD` unchanged.
+- `MAX_TOTAL_USD` counts scheduled buys and audits together.
+
+### Audits (2026-10-29)
+
+`audit-triggers` runs after the 12:00 UTC scheduled run. It reads the index's
+`/v1/reported` and `/v1/demand` and triggers a seller when (a) the reported
+series is mature and the two 95% intervals do not overlap, (b) the reported
+series is mature and we have under 30 measured calls, (c) operators report
+above 10% failures on a seller we mark ok, or (d) the seller is in the top 20
+of 7-day demand with under 30 measured calls or none in 14 days.
+Disagreements go first, then demand, then the rest. Every decision is written
+to `audit_triggers` with its inputs before any spend. A planned audit is up to
+10 paid calls round-robin over the seller's known resources and wallets,
+source `audit_disagreement` or `audit_demand`, no retries; the result is
+posted to the index (`docs/audit-callback.md`). Nothing is bought unless
+`AUDIT_TRIGGERS_ENABLED=1` as well as `--live` and `X402_AUDIT_LIVE=1`.
+
+### Candidates (2026-10-29)
+
+`discover import-candidates` reads the index's `/v1/candidates` (a logged
+no-op while it answers 404), adds unknown resource URLs with `source = user`,
+probes each once without paying and classifies `queued`, `too_expensive` or
+`not_x402`. Queued candidates get one call per scheduled run in their own lane
+(`buy run --candidates`), only when `CANDIDATE_BUYS_ENABLED=1`; they never
+enter the stratified plan.
+
 ### Settlement confirmation
 
 After every call: look for the USDC `Transfer` from our wallet to the pay-to

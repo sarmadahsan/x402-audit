@@ -6,7 +6,9 @@ import { runBuy } from "../buy/run.js";
 import { loadServiceConfigs, serviceLookup } from "../buy/services.js";
 import { blockAtTimestamp, makeChainClient, usdcFor } from "../chain/client.js";
 import { makeChainLookupFactory, makeChainSettlementLookup, resolvePendingIndeterminate, resolveUnconfirmedSettlements } from "../chain/confirm.js";
-import { atomicToUsd, capsFromEnv, loadEnv, loadFileConfigs, MAINNET, type Env, type Network } from "../config/index.js";
+import { atomicToUsd, capsFromEnv, loadEnv, loadFileConfigs, MAINNET, usdToAtomic, type Env, type Network } from "../config/index.js";
+import { candidateAllocations, expensiveAllocations } from "../buy/lanes.js";
+import type { RunLimits } from "../buy/guard.js";
 import { openDb, type Db } from "../db/index.js";
 import { log } from "../log.js";
 import { runStressDuplicate, runStressTimeout, stressReport, selectStressResources } from "../stress/index.js";
@@ -92,24 +94,56 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .option("--concurrency <n>", "concurrent calls, each to a different seller (default 1)", (v) => parseInt(v, 10), 1)
     .option("--no-persist-tiers", "do not rewrite sellers.tier from this plan's seed (keeps the published tiers stable across daily reseeds)")
     .option("--budget-usd <usd>", "size this run's plan to this budget: overrides sample.max_total_usd, scales target_calls to match, and trims the plan to fit (the MAX_* caps still apply)", parseFloat)
-    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean }) {
+    .option("--per-call-usd <usd>", "this run's per-call cap (scheduled runs: 0.10); may lower MAX_PER_CALL_USD, never raise it", parseFloat)
+    .option("--run-usd <usd>", "per-run cap, checked before every signature (scheduled runs: 0.75)", parseFloat)
+    .option("--runs-per-day <n>", "scale MAX_PER_SELLER_PER_DAY_USD to a per-seller cap for this run (scheduled runs: 4)", (v) => parseInt(v, 10))
+    .option("--day-budget-usd <usd>", "scheduled-buy budget for the UTC day over source buy (LOOP_DAILY_USD); MAX_PER_DAY_USD stays the all-sources backstop", parseFloat)
+    .option("--expensive", "add config/expensive-sellers.yaml: one call per listed seller under its weekly frequency, at its own cap clamped to MAX_PER_CALL_USD", false)
+    .option("--candidates", "add one call per queued user candidate (only when CANDIDATE_BUYS_ENABLED=1; otherwise they are listed and skipped)", false)
+    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean; perCallUsd?: number; runUsd?: number; runsPerDay?: number; dayBudgetUsd?: number; expensive: boolean; candidates: boolean }) {
       const g = globals(this);
       const { live } = moneyGate(g, requireLive);
       const env = loadEnv();
       const files = loadFileConfigs();
-      const caps = capsFromEnv(env);
+      const envCaps = capsFromEnv(env);
+      if (o.perCallUsd !== undefined && !(o.perCallUsd > 0)) throw new Error(`--per-call-usd must be > 0, got ${o.perCallUsd}`);
+      if (o.perCallUsd !== undefined && usdToAtomic(o.perCallUsd) > envCaps.perCallAtomic)
+        throw new Error(`--per-call-usd ${o.perCallUsd} is above MAX_PER_CALL_USD ${env.MAX_PER_CALL_USD}; a run may lower the cap, never raise it`);
+      const caps = o.perCallUsd !== undefined ? { ...envCaps, perCallAtomic: usdToAtomic(o.perCallUsd) } : envCaps;
       const db = openDb(g.db);
+      const runStart = Date.now();
       let sample = files.sample;
       if (o.budgetUsd !== undefined) {
         if (!(o.budgetUsd > 0)) throw new Error(`--budget-usd must be > 0, got ${o.budgetUsd}`);
         const target = Math.max(1, Math.round((files.sample.target_calls * o.budgetUsd) / files.sample.max_total_usd));
         sample = { ...files.sample, max_total_usd: o.budgetUsd, target_calls: target };
       }
-      const plan = buildBuyPlan(db, { sample, caps, network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: o.persistTiers });
+      const plan = buildBuyPlan(db, { sample, caps, network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: o.persistTiers, ...(live ? { recordTooExpensive: true } : {}) });
+      const addLane = (allocs: typeof plan.allocations, label: string) => {
+        for (const a of allocs) {
+          plan.allocations.push(a);
+          plan.totalCalls += a.calls;
+          plan.totalSpendAtomic += a.priceAtomic * BigInt(a.calls);
+        }
+        if (allocs.length) plan.notes.push(`${label}: ${allocs.length} call(s) added (${allocs.map((a) => a.sellerDomain).join(", ")}).`);
+      };
+      if (o.expensive) {
+        // Each listed seller's own cap, clamped to MAX_PER_CALL_USD: this list can never raise a cap.
+        const list = files.expensive.sellers.map((e) => ({ ...e, per_call_usd: Math.min(e.per_call_usd, env.MAX_PER_CALL_USD) }));
+        const lane = expensiveAllocations(db, list, { network: g.network, now: runStart });
+        addLane(lane.allocations, "expensive-sellers lane");
+        for (const sk of lane.skipped) plan.notes.push(`expensive-sellers lane: ${sk.domain} skipped, ${sk.reason}.`);
+      }
+      if (o.candidates) {
+        const lane = candidateAllocations(db, { perCallCapAtomic: caps.perCallAtomic, network: g.network });
+        if (env.CANDIDATE_BUYS_ENABLED === "1") addLane(lane, "candidate lane");
+        else if (lane.length) plan.notes.push(`candidate lane: ${lane.length} queued candidate(s) not bought, CANDIDATE_BUYS_ENABLED is not 1 (${lane.map((a) => a.url).join(", ")}).`);
+      }
       if (o.budgetUsd !== undefined && plan.totalSpendAtomic > plan.sampleMaxTotalAtomic) {
-        // Trim one call at a time from the largest allocations until the plan fits the budget.
+        // Trim one call at a time from the largest stratified allocations until the plan fits the budget; the
+        // expensive and candidate lanes keep their single call.
         while (plan.totalSpendAtomic > plan.sampleMaxTotalAtomic) {
-          const a = [...plan.allocations].filter((x) => x.calls > 0).sort((x, y) => y.calls - x.calls || (y.priceAtomic > x.priceAtomic ? 1 : -1))[0];
+          const a = [...plan.allocations].filter((x) => x.calls > 0 && (x.tier === "top" || x.tier === "tail")).sort((x, y) => y.calls - x.calls || (y.priceAtomic > x.priceAtomic ? 1 : -1))[0];
           if (!a) break;
           a.calls -= 1;
           plan.totalCalls -= 1;
@@ -151,8 +185,19 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         if (plan.totalCalls !== before) log.info(`resume: ${before - plan.totalCalls} call(s) already made in earlier runs are subtracted from the plan`);
       }
       console.log(renderPlan(plan));
-      const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, budgetUsd: o.budgetUsd, live }, g.network, !live);
-      const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : ephemeralPayers(g.network, caps.perCallAtomic);
+      const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, budgetUsd: o.budgetUsd, perCallUsd: o.perCallUsd, runUsd: o.runUsd, runsPerDay: o.runsPerDay, dayBudgetUsd: o.dayBudgetUsd, expensive: o.expensive, candidates: o.candidates, live }, g.network, !live);
+      // The payer refuses anything above the largest cap any allocation in this plan carries (never above MAX_PER_CALL_USD).
+      const payerCap = plan.allocations.reduce((m, a) => (a.perCallCapAtomic !== undefined && a.perCallCapAtomic > m ? a.perCallCapAtomic : m), caps.perCallAtomic);
+      const payers = live ? payersFromEnv(env, g.network, payerCap) : ephemeralPayers(g.network, payerCap);
+      const runLimits: RunLimits | undefined =
+        o.runUsd !== undefined || o.runsPerDay !== undefined || o.dayBudgetUsd !== undefined
+          ? {
+              since: runStart,
+              ...(o.runUsd !== undefined ? { perRunAtomic: usdToAtomic(o.runUsd) } : {}),
+              ...(o.runsPerDay !== undefined && o.runsPerDay > 0 ? { perSellerPerRunAtomic: caps.perSellerPerDayAtomic / BigInt(o.runsPerDay) } : {}),
+              ...(o.dayBudgetUsd !== undefined ? { dayBudgetAtomic: usdToAtomic(o.dayBudgetUsd) } : {}),
+            }
+          : undefined;
       const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
       // Receipts for seller-reported tx hashes come from the canonical-head RPC (BASE_RPC_URL); logs from the logs RPC.
       const receiptClient = g.network === MAINNET && env.BASE_RPC_URL !== env.BASE_LOGS_RPC_URL ? makeChainClient({ rpcUrl: env.BASE_RPC_URL, network: g.network }) : undefined;
@@ -170,6 +215,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
           confirmTimeoutMs: o.confirmMinutes * 60_000,
           confirmIntervalMs: o.confirmIntervalSeconds * 1_000,
           concurrency: o.concurrency,
+          ...(runLimits ? { runLimits } : {}),
           runId,
           configHash: files.configHash,
           log,

@@ -4,6 +4,7 @@
  */
 import type { Db } from "../db/index.js";
 import { atomicToUsd, isExcluded, usdToAtomic, type Caps, type ExcludeConfig, type SampleConfig } from "../config/index.js";
+import { clearTooExpensive, recordTooExpensive } from "./states.js";
 
 export type Tier = "top" | "tail";
 
@@ -59,6 +60,8 @@ export interface BuildPlanOptions {
   exclude?: ExcludeConfig;
   /** Persist sellers.tier for the chosen sellers (default true). */
   persistTiers?: boolean;
+  /** Record resources priced above the per-call cap as too_expensive (resource_states); live runs only. */
+  recordTooExpensive?: boolean;
 }
 
 /** mulberry32: small seeded PRNG, so the tail sample is reproducible from the recorded seed. */
@@ -142,8 +145,10 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
     }
     if (!/^\d+$/.test(r.price) || BigInt(r.price) > caps.perCallAtomic) {
       overCap++;
+      if (o.recordTooExpensive && /^\d+$/.test(r.price)) recordTooExpensive(db, { resourceId: r.resource_id, quotedAtomic: BigInt(r.price), capAtomic: caps.perCallAtomic, basis: "declared", now });
       return false;
     }
+    if (o.recordTooExpensive) clearTooExpensive(db, r.resource_id);
     if (o.exclude && isExcluded(o.exclude, r.domain, r.url)) {
       excludedByConfig++;
       return false;

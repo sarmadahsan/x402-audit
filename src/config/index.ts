@@ -134,6 +134,18 @@ const ManualResource = z.object({
   description: z.string().default(""),
 });
 const ManualSchema = z.object({ resources: z.array(ManualResource).default([]) });
+
+/** config/expensive-sellers.yaml: sellers worth measuring above the scheduled per-call cap because of their volume. */
+const ExpensiveSellerSchema = z.object({
+  domain: z.string(),
+  /** This seller's own per-call cap; never above MAX_PER_CALL_USD. */
+  per_call_usd: z.number().positive(),
+  /** Purchases in any 7 days, all measured sources together; at most 3. */
+  max_per_week: z.number().int().positive().max(3),
+  reason: z.string().default(""),
+});
+const ExpensiveSchema = z.object({ sellers: z.array(ExpensiveSellerSchema).default([]) });
+export type ExpensiveSeller = z.infer<typeof ExpensiveSellerSchema>;
 export type ManualResourceConfig = z.infer<typeof ManualResource>;
 
 export interface FileConfigs {
@@ -141,6 +153,7 @@ export interface FileConfigs {
   exclude: ExcludeConfig;
   sample: SampleConfig;
   manual: z.infer<typeof ManualSchema>;
+  expensive: z.infer<typeof ExpensiveSchema>;
   /** SHA-256 over the raw bytes of every config file and config/schemas/*, sorted by path. */
   configHash: string;
 }
@@ -156,12 +169,15 @@ export function loadFileConfigs(root = process.cwd()): FileConfigs {
   const exclude = readYaml(resolve(cfg, "exclude.yaml"), ExcludeSchema);
   const sample = readYaml(resolve(cfg, "sample.yaml"), SampleSchema);
   const manual = readYaml(resolve(cfg, "manual-sellers.yaml"), ManualSchema);
+  const expensive = readYaml(resolve(cfg, "expensive-sellers.yaml"), ExpensiveSchema);
   const h = createHash("sha256");
   const parts: [string, string][] = [
     ["config/exclude.yaml", exclude.raw],
     ["config/sample.yaml", sample.raw],
     ["config/manual-sellers.yaml", manual.raw],
   ];
+  // Hashed only when present, so configs from before the file existed keep their recorded hash.
+  if (expensive.raw) parts.push(["config/expensive-sellers.yaml", expensive.raw]);
   const schemasDir = resolve(cfg, "schemas");
   if (existsSync(schemasDir)) {
     for (const f of readdirSync(schemasDir).filter((f) => f.endsWith(".json")).sort()) {
@@ -169,7 +185,7 @@ export function loadFileConfigs(root = process.cwd()): FileConfigs {
     }
   }
   for (const [p, raw] of parts.sort((a, b) => a[0].localeCompare(b[0]))) h.update(p).update("\0").update(raw).update("\0");
-  return { root, exclude: exclude.value, sample: sample.value, manual: manual.value, configHash: h.digest("hex") };
+  return { root, exclude: exclude.value, sample: sample.value, manual: manual.value, expensive: expensive.value, configHash: h.digest("hex") };
 }
 
 export function isExcluded(exclude: ExcludeConfig, sellerDomain: string, resourceUrl?: string): string | null {
