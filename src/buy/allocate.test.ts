@@ -59,8 +59,8 @@ describe("buildCoveragePlan", () => {
     const poolOf = (id: number) => c.plan.allocations.find((a) => a.sellerId === id)?.tier;
     expect([poolOf(3), callsBy(3)]).toEqual(["finish", 1]); // 29 -> 30
     expect([poolOf(2), callsBy(2)]).toEqual(["finish", 4]);
-    expect([poolOf(1), callsBy(1)]).toEqual(["admit", 4]);
-    expect([poolOf(7), callsBy(7)]).toEqual(["admit", 4]); // bought on its cheap endpoint
+    expect([poolOf(1), callsBy(1)]).toEqual(["admit", 2]); // admitted sellers: at most 2 a run
+    expect([poolOf(7), callsBy(7)]).toEqual(["admit", 2]); // bought on its cheap endpoint
     expect(callsBy(6)).toBe(0); // nothing under the cap: breadth material
     expect(callsBy(8)).toBe(0); // never answered a probe
     expect([poolOf(4), callsBy(4)]).toEqual(["maintenance", 2]);
@@ -83,9 +83,14 @@ describe("buildCoveragePlan", () => {
     const s1 = c.plan.allocations.filter((a) => a.sellerId === 1);
     expect(s1.reduce((n, a) => n + a.calls, 0)).toBe(2);
     expect(s1[0]!.reason).toMatch(/3 of 5 call/);
-    // In demand: the same seller keeps the 30-call target and takes 4.
+    // In demand: the same seller keeps the 30-call target, so it is a finish seller and takes 4.
     const c2 = buildCoveragePlan(d, opts(usdToAtomic(1), { now: NOW + 10, demand: new Map([["s1.example", 7]]) }));
     expect(c2.plan.allocations.filter((a) => a.sellerId === 1).reduce((n, a) => n + a.calls, 0)).toBe(4);
+    // A 5-target seller at 1 call takes 2 a run, not 4.
+    const d3 = universe();
+    call(d3, { seller: 1, resource: 10, outcome: "ok", ts: NOW });
+    const c3 = buildCoveragePlan(d3, opts(usdToAtomic(1), { now: NOW + 10 }));
+    expect(c3.plan.allocations.filter((a) => a.sellerId === 1).reduce((n, a) => n + a.calls, 0)).toBe(2);
   });
 
   it("no seller plans more than 15% of the run", () => {
@@ -93,7 +98,7 @@ describe("buildCoveragePlan", () => {
     seller(d, 11, { prices: ["60000"], calls: 0, inflowUsd: 1_000_000 }); // top of the admit order by inflow
     const c = buildCoveragePlan(d, opts(usdToAtomic(1)));
     const s11 = c.plan.allocations.filter((a) => a.sellerId === 11).reduce((n, a) => n + (a.planAtomic ?? 0n) * BigInt(a.calls), 0n);
-    expect(s11).toBe(144000n); // two calls at 0.072; a third would pass 0.15
+    expect(s11).toBe(144000n); // two calls at 0.072 (the admit limit; a third would also pass 0.15)
   });
 
   it("backs off a resource whose last three attempts were not_paid or our_error, for 48 hours", () => {

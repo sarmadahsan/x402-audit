@@ -32,6 +32,9 @@
 # Env:   LOOP_RUN_USD (1.00)  LOOP_RUN_HOURS_UTC ("0 6 12 18")  LOOP_AUDIT_HOUR_UTC (12)  LOOP_DAILY_USD (4.00)
 #        LOOP_PER_CALL_USD (0.10)  LOOP_BUY_CONCURRENCY (4)  (LOOP_BUY_HOUR_UTC is no longer used)
 #        LOOP_REFRESH_HOUR_UTC (0)  LOOP_BREADTH_WEEKDAY_UTC (1 = Monday, `date -u +%u`)
+#        LOOP_CAP_OVERRIDE_UNTIL_UTC + LOOP_CAP_OVERRIDE_RUN_USD + LOOP_CAP_OVERRIDE_DAILY_USD: a dated, operator-approved
+#        override of LOOP_RUN_USD and LOOP_DAILY_USD, honoured only while now is before the until time (evaluated at every
+#        scheduled run, so the revert is automatic); `scripts/loop.sh caps [epoch]` prints what applies at a moment.
 #        COVERAGE_SHARE, BREADTH_RUN_ENABLED, BREADTH_MAX_PER_CALL_USD, BREADTH_WEEKLY_USD are read by the CLI.
 #        LOOP_PUBLISH (1; 0 = export but do not commit or push)  BACKUP_BUCKET (unset = no backup)
 #        LOOP_PUBLISH_URL (https://github.com/sarmadahsan/paidfor-data.git; the server uses the SSH alias
@@ -141,11 +144,28 @@ backup() {
 
 runs_per_day() { set -- $LOOP_RUN_HOURS_UTC; echo "$#"; }
 
+# Effective per-run and daily budget at epoch $1 (default now): the dated override while it is in force, else the base
+# LOOP_RUN_USD / LOOP_DAILY_USD. Sets RUN_USD, DAILY_USD and CAP_NOTE. An unreadable until time means no override.
+effective_caps() {
+  local at="${1:-$(date -u +%s)}" until_s=""
+  RUN_USD="$LOOP_RUN_USD"; DAILY_USD="$LOOP_DAILY_USD"; CAP_NOTE="base"
+  [ -z "${LOOP_CAP_OVERRIDE_UNTIL_UTC:-}" ] && return 0
+  until_s="$(node -e 'const t=Date.parse(process.argv[1]);process.stdout.write(Number.isFinite(t)?String(Math.floor(t/1000)):"")' "$LOOP_CAP_OVERRIDE_UNTIL_UTC")"
+  if [ -z "$until_s" ]; then CAP_NOTE="base (override until '$LOOP_CAP_OVERRIDE_UNTIL_UTC' is not a date; ignored)"; return 0; fi
+  if [ "$at" -lt "$until_s" ]; then
+    RUN_USD="${LOOP_CAP_OVERRIDE_RUN_USD:-$LOOP_RUN_USD}"; DAILY_USD="${LOOP_CAP_OVERRIDE_DAILY_USD:-$LOOP_DAILY_USD}"
+    CAP_NOTE="override until $LOOP_CAP_OVERRIDE_UNTIL_UTC"
+  else
+    CAP_NOTE="base (override ended $LOOP_CAP_OVERRIDE_UNTIL_UTC)"
+  fi
+}
+
 # The scheduled buy for one run slot. `live` = 1 spends (every gate below must pass); 0 prints the plan (dry run).
 buy_args() {
   local seed="$1" since="$2"
-  echo --seed "$seed" --no-persist-tiers --budget-usd "$LOOP_RUN_USD" --run-usd "$LOOP_RUN_USD" --per-call-usd "$LOOP_PER_CALL_USD" \
-    --runs-per-day "$(runs_per_day)" --day-budget-usd "$LOOP_DAILY_USD" --resume-since "$since" --concurrency "$LOOP_BUY_CONCURRENCY" --expensive --candidates \
+  effective_caps
+  echo --seed "$seed" --no-persist-tiers --budget-usd "$RUN_USD" --run-usd "$RUN_USD" --per-call-usd "$LOOP_PER_CALL_USD" \
+    --runs-per-day "$(runs_per_day)" --day-budget-usd "$DAILY_USD" --resume-since "$since" --concurrency "$LOOP_BUY_CONCURRENCY" --expensive --candidates \
     --allocation coverage
 }
 
@@ -160,7 +180,8 @@ scheduled_buy() {
   since="${today}T${hh}:00:00Z"
   seed="$(date -u +%Y%m%d)${hh}"   # a fresh seed per run, so the tail sample and each seller's calls spread across runs
   sh -c 'echo $PPID' > "$STATE/buy.pid"
-  log "scheduled buy $today $hh:00: start (run cap $LOOP_RUN_USD USDC, per-call $LOOP_PER_CALL_USD, day budget $LOOP_DAILY_USD)"
+  effective_caps
+  log "scheduled buy $today $hh:00: start (run cap $RUN_USD USDC, per-call $LOOP_PER_CALL_USD, day budget $DAILY_USD; $CAP_NOTE)"
   if [ -e halt ] || [ -e halt-buy ]; then log "scheduled buy $today $hh:00: skipped, halt or halt-buy file present"; return 0; fi
   live="${X402_AUDIT_LIVE:-$(grep -E '^X402_AUDIT_LIVE=' .env 2>/dev/null | tail -1 | cut -d= -f2)}"
   if [ "$live" != 1 ]; then log "scheduled buy $today $hh:00: skipped, X402_AUDIT_LIVE is not 1"; return 0; fi
@@ -168,8 +189,8 @@ scheduled_buy() {
   if ! run pnpm gate; then log "scheduled buy $today $hh:00: skipped, pnpm gate failed"; return 0; fi
   pool="$(wallet_pool_usd)"
   if [ -z "$pool" ]; then log "scheduled buy $today $hh:00: skipped, could not read wallet balances"; return 0; fi
-  if awk -v b="$pool" -v n="$LOOP_RUN_USD" 'BEGIN { exit !(b + 0 < n + 0) }'; then
-    log "scheduled buy $today $hh:00: skipped, wallet pool holds $pool USDC, less than the run cap $LOOP_RUN_USD"; return 0
+  if awk -v b="$pool" -v n="$RUN_USD" 'BEGIN { exit !(b + 0 < n + 0) }'; then
+    log "scheduled buy $today $hh:00: skipped, wallet pool holds $pool USDC, less than the run cap $RUN_USD"; return 0
   fi
   log "scheduled buy $today $hh:00: wallet pool $pool USDC, seed $seed"
   # shellcheck disable=SC2046
@@ -249,7 +270,8 @@ EOU
 case "${1:-loop}" in
   loop)
     rm -rf "$STATE"/*.lock
-    log "loop: start (runs at ($LOOP_RUN_HOURS_UTC) UTC, $LOOP_RUN_USD USDC per run, day budget $LOOP_DAILY_USD, per-call $LOOP_PER_CALL_USD, audits after ${LOOP_AUDIT_HOUR_UTC}:00, publish=$LOOP_PUBLISH)"
+    effective_caps
+    log "loop: start (runs at ($LOOP_RUN_HOURS_UTC) UTC, $RUN_USD USDC per run, day budget $DAILY_USD ($CAP_NOTE), per-call $LOOP_PER_CALL_USD, audits after ${LOOP_AUDIT_HOUR_UTC}:00, publish=$LOOP_PUBLISH)"
     trap 'log "loop: stopping"; kill $(jobs -p) 2>/dev/null; exit 0' INT TERM
     while true; do
       hourly
@@ -266,6 +288,9 @@ case "${1:-loop}" in
   dry-run-audit)
     # Planned audits from the live index, recorded as dry_run decisions; spends nothing.
     "${CLI[@]}" audit-triggers ;;
+  caps)
+    # What applies at epoch $2 (default now): `scripts/loop.sh caps 1793750400` (2026-11-05 00:00 UTC).
+    effective_caps "${2:-}"; echo "run_usd=$RUN_USD daily_usd=$DAILY_USD ($CAP_NOTE)" ;;
   dry-run-breadth)
     # shellcheck disable=SC2046
     "${CLI[@]}" buy run $(breadth_args) ;;
@@ -316,5 +341,5 @@ EOP
   unit)
     # Print the systemd unit for a given user and checkout (used by infra/aws/user-data.sh).
     write_unit "${2:-audit}" "${3:-/home/audit/x402-audit}" ;;
-  *) echo "usage: $0 [loop|once|dry-run-buy|dry-run-audit|dry-run-breadth|install|uninstall|status|unit]" >&2; exit 2 ;;
+  *) echo "usage: $0 [loop|once|caps|dry-run-buy|dry-run-audit|dry-run-breadth|install|uninstall|status|unit]" >&2; exit 2 ;;
 esac

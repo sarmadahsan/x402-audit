@@ -223,6 +223,9 @@ export const ADMIT_TARGET = 5;
 export const TOP_INFLOW_RANK = 50;
 export const FINISH_SHARE = 0.7;
 export const SELLER_SHARE_OF_RUN = 0.15;
+/** Admitted sellers take at most this many calls a run (zero-call sellers, and 5-target sellers until they reach 5), so
+ * the admit lane reaches many sellers instead of a few pricey ones (operator, 2026-10-29). */
+export const ADMIT_MAX_PER_RUN = 2;
 
 export interface TargetContext {
   /** Hosts with checks on the index this week (GET /v1/demand), lowercase, with their checks. */
@@ -278,8 +281,8 @@ const cmpBig = (a: bigint, b: bigint) => (a < b ? -1 : a > b ? 1 : 0);
 /**
  * The lanes, in order: finish (FINISH_SHARE of coverage; sellers with 1+ calls below their target, closest to it first),
  * admit (the rest of coverage; zero-call sellers by demand this week, then 30-day inflow, then price), then maintenance
- * (sellers at or past their target, inflow-weighted with a floor). Coverage sellers take up to 4 calls a run, maintenance
- * 2; each seller's plan stays under `sellerCapAtomic`. Unused budget flows on: finish -> admit -> finish -> maintenance.
+ * (sellers at or past their target, inflow-weighted with a floor). Finish sellers take up to 4 calls a run, admitted
+ * sellers (zero calls, or a 5-call target not yet reached) 2, maintenance 2; each seller's plan stays under `sellerCapAtomic`. Unused budget flows on: finish -> admit -> finish -> maintenance.
  */
 export function selectCoverage(sellers: readonly SellerFacts[], o: SelectOptions): Selection {
   const buyable = sellers.filter((s) => s.eligible.length > 0);
@@ -332,7 +335,11 @@ export function selectCoverage(sellers: readonly SellerFacts[], o: SelectOptions
     sel.spent[pool] += spent;
     return spent;
   };
-  const maxCov = (s: SellerFacts) => Math.min(COVERAGE_MAX_PER_SELLER, tgt.get(s.sellerId)! - s.calls);
+  const maxCov = (s: SellerFacts) => {
+    const t = tgt.get(s.sellerId)!;
+    const per = s.calls === 0 || t === ADMIT_TARGET ? ADMIT_MAX_PER_RUN : COVERAGE_MAX_PER_SELLER;
+    return Math.min(per, t - s.calls);
+  };
   const f1 = fill("finish", finish, maxCov, sel.budgets.finish);
   const a1 = fill("admit", admit, maxCov, sel.budgets.admit + (sel.budgets.finish - f1));
   const f2 = fill("finish", finish, maxCov, coverage - f1 - a1);
