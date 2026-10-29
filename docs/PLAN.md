@@ -192,9 +192,11 @@ the measured count for nobody.
   sellers, ranked by external demand this week (checks from the skill, MCP
   and client-library channels only, so our own harness and bare API calls
   never rank a seller), then price ascending, then 30-day on-chain inflow,
-  then a seeded random key. One call in five is reserved for the
-  highest-inflow seller not yet admitted, so volume sellers are not starved by
-  the cheap breadth. Each admitted seller takes at most 2 calls a run. Until
+  then a seeded random key. A fifth of the lane's budget is reserved for the
+  highest-inflow sellers not yet admitted (one call each, in inflow order,
+  skipping any that do not fit), so volume sellers are not starved by the
+  cheap breadth; what the reserve leaves goes to the price queue. (Reserved by
+  calls, one in five, the volume sellers' quotes took 88% of the lane.) Each admitted seller takes at most 2 calls a run. Until
   `/v1/demand` splits each host's checks by channel, demand is not used.
 - Targets: 30 calls for sellers first bought before 18:00 UTC on 2026-10-29
   (`COVERAGE_TIERS_SINCE`), sellers in the top 50 by 30-day inflow, sellers

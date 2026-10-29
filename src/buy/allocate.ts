@@ -340,13 +340,13 @@ export function selectCoverage(sellers: readonly SellerFacts[], o: SelectOptions
     return spent;
   };
   /**
-   * Admit lane, call by call: four calls from the price queue (external demand, then cheapest, then inflow; each seller up
-   * to its per-run limit before the next), then one call for the highest-inflow seller not yet admitted, and so on. A call
-   * that does not fit the budget or the seller's limit is skipped; when one queue is spent the other takes every slot.
+   * Admit lane: a fifth of its budget is reserved for the highest-inflow sellers not yet admitted (one call each, in
+   * inflow order, skipping any that do not fit), then the price queue (external demand, then cheapest, then inflow; each
+   * seller up to its per-run limit before the next) takes the rest, including whatever the reserve left.
    */
-  const fillAdmit = (priceQ: SellerFacts[], inflowQ: SellerFacts[], budget: bigint): bigint => {
+  const fillAdmit = (priceQ: SellerFacts[], inflowQ: SellerFacts[], laneBudget: bigint): bigint => {
+    let budget = laneBudget;
     let spent = 0n;
-    let placed = 0;
     const callsIn = (s: SellerFacts) => [...(sel.counts.get(s.sellerId)?.byResource.values() ?? [])].reduce((a, n) => a + n, 0);
     const tryOne = (s: SellerFacts): boolean => {
       const entry = sel.counts.get(s.sellerId);
@@ -361,7 +361,6 @@ export function selectCoverage(sellers: readonly SellerFacts[], o: SelectOptions
       sel.counts.set(s.sellerId, e);
       planned.set(s.sellerId, p + r.planAtomic);
       spent += r.planAtomic;
-      placed++;
       reserved.add(s.sellerId);
       return true;
     };
@@ -383,11 +382,14 @@ export function selectCoverage(sellers: readonly SellerFacts[], o: SelectOptions
       }
       return false;
     };
-    for (;;) {
-      const reserveSlot = placed % 5 === 4;
-      const ok = reserveSlot ? nextInflow() || nextPrice() : nextPrice() || nextInflow();
-      if (!ok) break;
-    }
+    // A fifth of the lane's budget goes first to the highest-inflow sellers not yet admitted, one call each; what it does
+    // not use, and the other four fifths, go to the price queue.
+    const reserveBudget = budget / 5n;
+    const priceBudget = budget;
+    budget = reserveBudget;
+    while (nextInflow());
+    budget = priceBudget;
+    while (nextPrice());
     sel.spent.admit += spent;
     return spent;
   };
