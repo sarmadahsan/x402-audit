@@ -12,6 +12,7 @@ import { registerReport } from "./cli/report.js";
 import { registerExport } from "./cli/export.js";
 import { registerBuy, registerStress } from "./cli/buy.js";
 import { registerAudit } from "./cli/audit.js";
+import { registerHealth } from "./cli/health.js";
 
 export interface GlobalOpts {
   dryRun: boolean;
@@ -107,6 +108,7 @@ export function buildProgram(): Command {
   registerTelemetry(program, (cmd) => globalOpts(cmd));
   registerReport(program, (cmd) => globalOpts(cmd));
   registerExport(program, (cmd) => globalOpts(cmd));
+  registerHealth(program, (cmd) => globalOpts(cmd));
   return program;
 }
 
