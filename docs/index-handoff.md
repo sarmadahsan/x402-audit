@@ -44,3 +44,9 @@ endpoint is bought on it and leaves the file. Evidence samples can carry `source
 
 The headline is a rolling figure over the current sample and moves as the sample widens. If the index shows the report's
 study-window figure (6.6%, 2026-10-24 to 2026-10-26), it is a separate, frozen line with its dates, never recomputed.
+
+## Run status (changed meaning, same field)
+
+`summary.json` `last_buy_run.status` can now be `cap_reached`: the run ended on its own budget (per-run or daily
+scheduled budget), which is routine and should not alarm. `halted` now means only the halt file, an error, or a
+backstop cap (`MAX_PER_DAY_USD`, `MAX_TOTAL_USD`). `ok`/`completed` as before.

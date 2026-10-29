@@ -172,42 +172,60 @@ probes each once without paying and classifies `queued`, `too_expensive` or
 (`buy run --candidates`), only when `CANDIDATE_BUYS_ENABLED=1`; they never
 enter the stratified plan.
 
-### Coverage-first allocation (2026-10-29)
+### Coverage-first allocation (2026-10-29): finish and admit lanes
 
 The per-run random draw kept landing on sellers we already knew (after the
 first day of six-hourly runs: 363 sellers reached, 95 at 30 or more
 denominator calls, the top ten taking a third of all calls). Scheduled runs
-now pass `--allocation coverage` (`src/buy/allocate.ts`):
+now pass `--allocation coverage` (`src/buy/allocate.ts`). First deployed the
+same day as fewest-first; replaced within hours (operator's decision,
+2026-10-29) because with 646 sellers below 30, 401 of them never bought,
+fewest-first spread one call each over sellers nobody asks about and raised
+the measured count for nobody.
 
-- The run budget (`--budget-usd`, 1.00) less the expensive and candidate
-  lanes, with 5% headroom for quotes that move between the last probe and the
-  call, splits into two pools.
-- Coverage (`COVERAGE_SHARE`, default 0.7): sellers below 30 denominator
-  calls (their own measured series), fewest first, ties seeded-random, one
-  call per seller per pass and at most 4 per seller per run, so a seller
-  reaches 30 across several runs and times of day.
-- Maintenance (the rest, plus anything coverage could not place): sellers at
-  30 or more, a weighted draw without replacement by 30-day on-chain inflow
-  with a floor (`MAINTENANCE_INFLOW_FLOOR_USD`, 100) so the tail keeps being
-  sampled, at most 2 calls per seller per run.
-- A seller is eligible while it has one resource priced at or under the
-  scheduled cap (latest 402 probe quote, else the modal quote of the last 7
-  days, else the listing); calls rotate over its cheapest resources (those
-  within twice the cheapest price), so a seller is never excluded while it
-  has one affordable endpoint. Only sellers with no such resource keep
-  `too_expensive` rows.
+- Budget: the run budget (`--budget-usd`, 1.00) with 5% headroom, less the
+  expensive and candidate lanes. `COVERAGE_SHARE` (0.7) of it is coverage.
+- Finish lane (70% of coverage): sellers with 1 or more calls below their
+  target, closest to the target first, at most 4 calls per seller per run.
+  This is what makes `sellers_with_min_calls` rise within a day.
+- Admit lane (30% of coverage, plus whatever finish leaves): zero-call
+  sellers, ranked by checks on the index this week (`/v1/demand`), then
+  30-day on-chain inflow, then price (cheapest first), then a seeded random
+  key.
+- Targets: 30 calls for sellers first bought before 18:00 UTC on 2026-10-29
+  (`COVERAGE_TIERS_SINCE`), sellers in the top 50 by 30-day inflow, sellers
+  in demand this week, sellers on `config/expensive-sellers.yaml` and user
+  candidates; 5 calls for every other newly admitted seller, enough to
+  appear as `low_sample` with an honest interval.
+- Maintenance (the rest): sellers at or past their target, a weighted draw
+  without replacement by 30-day inflow with a floor
+  (`MAINTENANCE_INFLOW_FLOOR_USD`, 100), at most 2 calls per seller per run.
+- Plan sizing: every call is priced at its quote, the modal paid quote of the
+  last 7 days or else the latest 402 probe, and budgeted at that quote x1.2.
+  The listing price is never used: sellers quoting above their listing is the
+  overcharge behaviour we measure, and trusting listings is what ended the
+  12:17 UTC run of 2026-10-29 on its cap. A seller with no quote at all is
+  not planned. No seller plans more than 15% of the run, and the per-seller
+  per-run limit checked before every signature is the lower of
+  `MAX_PER_SELLER_PER_DAY_USD`/4 and 15% of `LOOP_RUN_USD`.
+- A seller is eligible while one resource quotes at or under the scheduled
+  cap; calls rotate over its cheapest resources (within twice the cheapest
+  quote). Only sellers with no such resource keep `too_expensive` rows.
 - A resource whose last three attempts were `not_paid` or `our_error` sits
-  out 48 hours; the back-off is logged and written as a `backoff` row, the
-  resource is never deleted.
-- Every planned call and back-off is a `run_allocations` row (run id,
-  seller, resource, pool, planned calls, reason, estimated USDC) written
-  before the first signature, dry runs included.
-- Calls are dispatched in plan order (coverage first), so a cap that ends a
-  run early cuts maintenance, not coverage. No cap changed.
+  out 48 hours (logged, a `backoff` row, never deleted).
+- Every planned call and back-off is a `run_allocations` row (run, seller,
+  resource, pool `finish|admit|maintenance|expensive|candidate|breadth|backoff`,
+  planned calls, reason, planned USDC) written before the first signature,
+  dry runs included. Calls go out in plan order: finish, admit, maintenance.
+- A run ended by its own budget (`cap_per_run`, `cap_buy_day_budget`,
+  `cap_audit_per_day`) finishes with status `cap_reached`; `halted` keeps
+  meaning the halt file, an error, or a backstop cap (`MAX_PER_DAY_USD`,
+  `MAX_TOTAL_USD`).
 
-`buy projection` prints the USDC and runs it takes to bring every eligible
-seller to 30 at the current caps. `buy plan` and `buy run` without
-`--allocation` keep the stratified study design.
+`buy projection` costs the tiered targets and simulates the lanes run by run
+at today's caps and at a second daily budget (`--alt-day-budget-usd`).
+`buy plan` and `buy run` without `--allocation` keep the stratified study
+design.
 
 ### Breadth run (2026-10-29)
 

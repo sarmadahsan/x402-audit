@@ -8,7 +8,8 @@ import { blockAtTimestamp, makeChainClient, usdcFor } from "../chain/client.js";
 import { makeChainLookupFactory, makeChainSettlementLookup, resolvePendingIndeterminate, resolveUnconfirmedSettlements } from "../chain/confirm.js";
 import { atomicToUsd, capsFromEnv, loadEnv, loadFileConfigs, MAINNET, usdToAtomic, type Env, type Network } from "../config/index.js";
 import { breadthAllocations, candidateAllocations, expensiveAllocations } from "../buy/lanes.js";
-import { buildCoveragePlan, projectCoverage, renderCoverage, rowsFromAllocations, sellerUniverse, writeRunAllocations, type AllocationRow } from "../buy/allocate.js";
+import { fetchDemand } from "../audit/triggers.js";
+import { buildCoveragePlan, planPrice, projectCoverage, renderCoverage, rowsFromAllocations, sellerUniverse, writeRunAllocations, type AllocationRow } from "../buy/allocate.js";
 import { CALL_SOURCES } from "../taxonomy.js";
 import type { RunLimits } from "../buy/guard.js";
 import { openDb, type Db } from "../db/index.js";
@@ -19,6 +20,26 @@ import { finishRun, startRun } from "./runs.js";
 import { reclassifyCalls } from "../pipeline/reclassify.js";
 import { reconcileOrphans } from "../pipeline/reconcile.js";
 import { assertGate } from "../gate.js";
+
+const minBig = (a: bigint, b: bigint) => (a < b ? a : b);
+
+/** A run's budget caps ending it is the plan working, not an alarm: `cap_reached`. `halted` keeps meaning the halt file,
+ * an error, or a cap that should never be reached in routine running (MAX_PER_DAY_USD, MAX_TOTAL_USD). */
+export const ROUTINE_CAPS = new Set(["cap_per_run", "cap_buy_day_budget", "cap_audit_per_day"]);
+export function runStatus(s: { halted: boolean; haltReason?: string }): "ok" | "cap_reached" | "halted" {
+  if (!s.halted) return "ok";
+  return s.haltReason && ROUTINE_CAPS.has(s.haltReason) ? "cap_reached" : "halted";
+}
+
+/** This week's index demand (host -> checks), for the admit lane; empty (and logged) when the index cannot be read. */
+async function demandMap(index: string): Promise<Map<string, number>> {
+  try {
+    return new Map((await fetchDemand(index)).filter((d) => d.checks > 0).map((d) => [d.host.toLowerCase().replace(/^www\./, ""), d.checks]));
+  } catch (e) {
+    log.warn(`demand: ${(e as Error).message}; the admit lane ranks by inflow and price only`);
+    return new Map();
+  }
+}
 
 export interface MoneyGlobals { network: Network; db: string; live: boolean; dryRun: boolean }
 
@@ -71,12 +92,14 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     });
 
   b.command("projection")
-    .description("what it takes to bring every seller below 30 calls to 30 under the current caps; reads only")
+    .description("tiered targets (30 for measured or important sellers, 5 for the rest) costed at quote x1.2, and a run-by-run simulation at today's caps and at a given daily budget; reads only")
     .option("--per-call-usd <usd>", "scheduled per-call cap (default LOOP_PER_CALL_USD, else 0.10)", parseFloat)
     .option("--run-usd <usd>", "per-run cap (default LOOP_RUN_USD, else 1.00)", parseFloat)
     .option("--day-budget-usd <usd>", "scheduled-buy day budget (default LOOP_DAILY_USD, else 4.00)", parseFloat)
+    .option("--alt-day-budget-usd <usd>", "a second scenario: this daily budget (per-run budget scaled to it) for --alt-days days", parseFloat, 8)
+    .option("--alt-days <n>", "days in the second scenario", (v) => parseInt(v, 10), 7)
     .option("--json", "print JSON", false)
-    .action(function (this: Command, o: { perCallUsd?: number; runUsd?: number; dayBudgetUsd?: number; json: boolean }) {
+    .action(async function (this: Command, o: { perCallUsd?: number; runUsd?: number; dayBudgetUsd?: number; altDayBudgetUsd: number; altDays: number; json: boolean }) {
       const g = globals(this);
       const env = loadEnv();
       const files = loadFileConfigs();
@@ -85,22 +108,32 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       const cap = usdToAtomic(o.perCallUsd ?? Number(process.env.LOOP_PER_CALL_USD ?? "0.10"));
       const runAtomic = usdToAtomic(o.runUsd ?? Number(process.env.LOOP_RUN_USD ?? "1.00"));
       const dailyAtomic = usdToAtomic(o.dayBudgetUsd ?? Number(process.env.LOOP_DAILY_USD ?? "4.00"));
-      const p = projectCoverage(db, { network: g.network, capAtomic: cap, now, exclude: files.exclude, runAtomic, dailyAtomic, coverageShare: env.COVERAGE_SHARE });
-      // Sellers with a too_expensive row today that also have an endpoint at or under the cap: they re-enter coverage.
+      const runsPerDay = Math.max(1, Number(dailyAtomic / (runAtomic > 0n ? runAtomic : 1n)));
+      const demand = await demandMap(env.PAIDFOR_INDEX_URL);
+      const lane = expensiveAllocations(db, files.expensive.sellers.map((e) => ({ ...e, per_call_usd: Math.min(e.per_call_usd, env.MAX_PER_CALL_USD) })), { network: g.network, now, scheduledCapAtomic: cap });
+      const laneAtomicPerRun = lane.allocations.reduce((a, x) => a + planPrice(x.priceAtomic), 0n);
+      const p = projectCoverage(db, {
+        network: g.network, capAtomic: cap, now, exclude: files.exclude, coverageShare: env.COVERAGE_SHARE, demand, expensiveDomains: files.expensive.sellers.map((e) => e.domain), tiersSince: Date.parse(env.COVERAGE_TIERS_SINCE), laneAtomicPerRun,
+        scenarios: [
+          { label: `today's caps (${atomicToUsd(runAtomic)} per run, ${atomicToUsd(dailyAtomic)} per day)`, runAtomic, runsPerDay, days: 7 },
+          { label: `${o.altDayBudgetUsd.toFixed(2)} per day for ${o.altDays} days (${(o.altDayBudgetUsd / runsPerDay).toFixed(2)} per run)`, runAtomic: usdToAtomic(o.altDayBudgetUsd / runsPerDay), runsPerDay, days: o.altDays },
+        ],
+      });
       const teSellers = new Set((db.prepare("SELECT DISTINCT r.seller_id s FROM resource_states rs JOIN resources r ON r.id = rs.resource_id WHERE rs.state = 'too_expensive'").all() as { s: number }[]).map((r) => r.s));
       const uni = sellerUniverse(db, { network: g.network, capAtomic: cap, now, exclude: files.exclude });
       const reenter = uni.filter((s) => teSellers.has(s.sellerId) && s.eligible.length > 0);
-      const out = { ...p, tooExpensiveSellers: teSellers.size, tooExpensiveSellersWithEligible: reenter.length, tooExpensiveResources: (db.prepare("SELECT COUNT(*) n FROM resource_states WHERE state = 'too_expensive'").get() as { n: number }).n };
-      if (o.json) return void console.log(JSON.stringify(out, null, 2));
-      console.log(`# Coverage projection (${new Date(now).toISOString()})\n`);
-      console.log(`- sellers below 30 denominator calls with an eligible resource: ${p.sellersBelow}`);
-      console.log(`- calls to bring each to 30: ${p.callsToTarget}; USDC at each seller's cheapest eligible quote: ${p.usdcToTarget}`);
-      console.log(`- runs at the current per-run cap (${atomicToUsd(runAtomic)} USDC, coverage share ${env.COVERAGE_SHARE}, at most 4 calls per seller per run): ${p.runsAtCurrentCap}; days at the current daily cap (${atomicToUsd(dailyAtomic)}): ${p.daysAtCurrentDailyCap}`);
-      console.log(`- exceeds seven days of the daily cap: ${p.exceedsSevenDays ? "yes" : "no"}`);
-      console.log(`- too_expensive today: ${out.tooExpensiveResources} resource(s) across ${teSellers.size} seller(s); ${reenter.length} of those sellers have an endpoint at or under ${atomicToUsd(cap)} and re-enter coverage`);
-      console.log(`\n| seller | calls | to go | cheapest eligible | USDC to 30 |\n|---|---:|---:|---:|---:|`);
-      for (const r of p.bySeller.slice(0, 40)) console.log(`| ${r.domain} | ${r.calls} | ${r.need} | ${r.modalUsdc} | ${r.usdc} |`);
-      if (p.bySeller.length > 40) console.log(`| ... ${p.bySeller.length - 40} more | | | | |`);
+      const out = { ...p, demandHosts: demand.size, tooExpensiveSellers: teSellers.size, tooExpensiveSellersWithEligible: reenter.length };
+      if (o.json) return void console.log(JSON.stringify(out, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2));
+      console.log(`# Tiered projection (${new Date(now).toISOString()}; demand hosts read: ${demand.size})\n`);
+      console.log(`- sellers below their target: ${p.sellersBelowTarget} (${p.fullTarget} at the 30-call target, ${p.admitTarget} at the 5-call target)`);
+      console.log(`- calls to reach every target: ${p.callsToTargets}; USDC at each seller's cheapest quote x1.2: ${p.usdcToTargets}`);
+      for (const sc of p.scenarios) {
+        console.log(`\n## ${sc.label}\n`);
+        console.log(`- sellers at target, start then end of each day: ${sc.atTargetByDay.join(", ")}`);
+        console.log(`- sellers at 30+ (sellers_with_min_calls, upper bound): ${sc.at30ByDay.join(", ")}`);
+        console.log(`- every target reached after: ${sc.daysToAllTargets === null ? "more than the simulated horizon" : `${sc.daysToAllTargets} day(s)`}`);
+      }
+      console.log(`\n- too_expensive today: ${teSellers.size} seller(s); ${reenter.length} have an endpoint quoting at or under ${atomicToUsd(cap)} and are bought on it`);
     });
 
   b.command("balances")
@@ -192,9 +225,12 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         // Lanes first; coverage and maintenance plan what is left of the run budget, with 5% headroom for quotes that
         // move between the last probe and the call (the per-run cap is still checked before every signature).
         const runBudget = usdToAtomic(o.budgetUsd ?? files.sample.max_total_usd);
-        const laneSpend = lanes.reduce((a, x) => a + x.priceAtomic * BigInt(x.calls), 0n);
+        // Lanes are planned at their quote x1.2 too.
+        for (const a of lanes) a.planAtomic = planPrice(a.priceAtomic);
+        const laneSpend = lanes.reduce((a, x) => a + (x.planAtomic ?? x.priceAtomic) * BigInt(x.calls), 0n);
         const budget = (runBudget * 95n) / 100n - laneSpend;
-        const cov = buildCoveragePlan(db, { network: g.network, caps, budgetAtomic: budget > 0n ? budget : 0n, coverageShare: env.COVERAGE_SHARE, ties: env.COVERAGE_TIES, seed: o.seed ?? files.sample.seed, now: runStart, exclude: files.exclude, inflowFloorUsd: env.MAINTENANCE_INFLOW_FLOOR_USD, ownCapDomains, ...(live ? { recordTooExpensive: true } : {}) });
+        const demand = await demandMap(env.PAIDFOR_INDEX_URL);
+        const cov = buildCoveragePlan(db, { network: g.network, caps, budgetAtomic: budget > 0n ? budget : 0n, runBudgetAtomic: runBudget, coverageShare: env.COVERAGE_SHARE, seed: o.seed ?? files.sample.seed, now: runStart, exclude: files.exclude, inflowFloorUsd: env.MAINTENANCE_INFLOW_FLOOR_USD, ownCapDomains, demand, tiersSince: Date.parse(env.COVERAGE_TIERS_SINCE), ...(live ? { recordTooExpensive: true } : {}) });
         for (const b of cov.backoffs) log.info(`back-off: resource ${b.resourceId} ${b.url} (${b.outcomes.join(", ")}) until ${new Date(b.until).toISOString()}`);
         backoffRows = cov.rows.filter((r) => r.pool === "backoff");
         coverageText = renderCoverage(cov, { lanes, runBudgetAtomic: runBudget });
@@ -207,7 +243,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       for (const a of lanes) {
         plan.allocations.push(a);
         plan.totalCalls += a.calls;
-        plan.totalSpendAtomic += a.priceAtomic * BigInt(a.calls);
+        plan.totalSpendAtomic += (a.planAtomic ?? a.priceAtomic) * BigInt(a.calls);
       }
       plan.notes.push(...laneNotes);
       if (o.budgetUsd !== undefined && plan.totalSpendAtomic > plan.sampleMaxTotalAtomic) {
@@ -271,7 +307,11 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
           ? {
               since: runStart,
               ...(o.runUsd !== undefined ? { perRunAtomic: usdToAtomic(o.runUsd) } : {}),
-              ...(o.runsPerDay !== undefined && o.runsPerDay > 0 ? { perSellerPerRunAtomic: caps.perSellerPerDayAtomic / BigInt(o.runsPerDay) } : {}),
+              // Per seller per run: the daily per-seller cap over the runs, and never more than 15% of this run (a quote
+              // above the plan cannot let one seller take the run, as keyring-agent did at 12:17 on 2026-10-29).
+              ...(o.runsPerDay !== undefined && o.runsPerDay > 0
+                ? { perSellerPerRunAtomic: minBig(caps.perSellerPerDayAtomic / BigInt(o.runsPerDay), o.runUsd !== undefined ? (usdToAtomic(o.runUsd) * 15n) / 100n : caps.perSellerPerDayAtomic) }
+                : {}),
               ...(o.dayBudgetUsd !== undefined ? { dayBudgetAtomic: usdToAtomic(o.dayBudgetUsd) } : {}),
             }
           : undefined;
@@ -299,7 +339,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
           log,
           dryRun: !live,
         });
-        finishRun(db, runId, stats.halted ? "halted" : "ok", { ...stats, callIds: undefined, schedule: undefined });
+        finishRun(db, runId, runStatus(stats), { ...stats, callIds: undefined, schedule: undefined });
         console.log(JSON.stringify({ ...stats, spentUsdc: atomicToUsd(stats.spentAtomic), callIds: undefined, schedule: undefined }, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
       } catch (e) {
         finishRun(db, runId, "error", { error: (e as Error).message });

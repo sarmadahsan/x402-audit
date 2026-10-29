@@ -59,8 +59,8 @@ const EnvSchema = z.object({
   AUDIT_SECRET: z.string().default(""),
   /** Share of a scheduled run's budget for sellers below 30 denominator calls (docs/PLAN.md "Coverage-first allocation"). */
   COVERAGE_SHARE: z.coerce.number().min(0).max(1).default(0.7),
-  /** Order of coverage sellers with equal call counts: random (default) or price (cheapest first, then random). */
-  COVERAGE_TIES: z.enum(["random", "price"]).default("random"),
+  /** Sellers first bought from this time on get the 5-call target unless they matter (docs/PLAN.md "Finish and admit"). */
+  COVERAGE_TIERS_SINCE: z.string().default("2026-10-29T18:00:00Z"),
   /** Maintenance draws weight sellers by 30-day inflow, never below this many USDC (so the tail keeps being sampled). */
   MAINTENANCE_INFLOW_FLOOR_USD: usd.default(100),
   /** The weekly breadth run (one call per seller the scheduled cap excludes) buys only when this is 1. */

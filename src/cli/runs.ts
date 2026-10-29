@@ -11,6 +11,6 @@ export function startRun(db: Db, subcommand: string, args: unknown, network: str
   return Number(r.lastInsertRowid);
 }
 
-export function finishRun(db: Db, runId: number, status: "ok" | "halted" | "error", notes?: unknown): void {
+export function finishRun(db: Db, runId: number, status: "ok" | "halted" | "cap_reached" | "error", notes?: unknown): void {
   db.prepare("UPDATE runs SET finished_at = ?, status = ?, notes = ? WHERE id = ?").run(Date.now(), status, notes === undefined ? null : safeJson(notes), runId);
 }

@@ -133,7 +133,7 @@ interface Slot {
 }
 
 /** Interleaved order: each seller's 1st resource, then each seller's 2nd, ... Sellers keep plan order when the plan is
- * coverage-first (coverage sellers, fewest calls first, are reached before maintenance if a cap ends the run), else by id. */
+ * coverage-first (finish and admit sellers are reached before maintenance if a cap ends the run), else by id. */
 function interleave(allocs: PlanAllocation[]): { slots: Slot[]; sellerOrder: number[] } {
   const bySeller = new Map<number, PlanAllocation[]>();
   for (const a of allocs.filter((a) => a.calls > 0)) {
@@ -141,7 +141,7 @@ function interleave(allocs: PlanAllocation[]): { slots: Slot[]; sellerOrder: num
     if (l) l.push(a);
     else bySeller.set(a.sellerId, [a]);
   }
-  const planOrder = allocs.some((a) => a.tier === "coverage" || a.tier === "maintenance" || a.tier === "breadth");
+  const planOrder = allocs.some((a) => a.tier === "finish" || a.tier === "admit" || a.tier === "maintenance" || a.tier === "breadth");
   const sellerOrder = planOrder ? [...bySeller.keys()] : [...bySeller.keys()].sort((a, b) => a - b);
   for (const l of bySeller.values()) l.sort((a, b) => a.resourceId - b.resourceId);
   const slots: Slot[] = [];
@@ -411,7 +411,7 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
   finishRun(
     db,
     runId,
-    stats.halted ? "halted" : "completed",
+    stats.halted ? (stats.haltReason && ["cap_per_run", "cap_buy_day_budget", "cap_audit_per_day"].includes(stats.haltReason) ? "cap_reached" : "halted") : "completed",
     JSON.stringify({ calls: stats.calls, planned: stats.schedule.length, byOutcome: stats.byOutcome, spentAtomic: stats.spentAtomic.toString(), haltReason: stats.haltReason ?? null }),
     realNow(),
   );

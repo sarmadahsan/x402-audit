@@ -48,85 +48,94 @@ function universe(): Db {
   return d;
 }
 
+const TIERS = NOW - 1; // every existing call predates the tiers
+const opts = (budget: bigint, extra: Partial<Parameters<typeof buildCoveragePlan>[1]> = {}) => ({ network: NET, caps, budgetAtomic: budget, runBudgetAtomic: usdToAtomic(1), coverageShare: 0.7, seed: 1, now: NOW, tiersSince: TIERS, ...extra });
+
 describe("buildCoveragePlan", () => {
-  it("gives the coverage pool to sellers below 30, fewest first, at most 4 calls each, and maintenance at most 2", () => {
+  it("finish lane: closest to target first, at most 4 a run; admit lane takes zero-call sellers; maintenance at most 2", () => {
     const d = universe();
-    const c = buildCoveragePlan(d, { network: NET, caps, budgetAtomic: usdToAtomic(1), coverageShare: 0.7, seed: 1, now: NOW });
+    const c = buildCoveragePlan(d, opts(usdToAtomic(1)));
     const callsBy = (id: number) => c.plan.allocations.filter((a) => a.sellerId === id).reduce((s, a) => s + a.calls, 0);
-    expect(callsBy(1)).toBe(4);
-    expect(callsBy(2)).toBe(4);
-    expect(callsBy(3)).toBe(1); // capped at 30 - 29
-    expect(callsBy(7)).toBe(4); // bought on its cheap endpoint
-    expect(callsBy(6)).toBe(0); // breadth material
-    expect(callsBy(4)).toBe(2);
-    expect(callsBy(5)).toBe(2);
-    // Seller 8 has no probe of its own, but the eligibility rule is per seller: it has none, so it is left out.
-    expect(callsBy(8)).toBe(0);
-    expect(c.plan.allocations.filter((a) => a.tier === "coverage").every((a) => a.priceAtomic <= caps.perCallAtomic)).toBe(true);
-    // Seller 2 rotates over its two cheap endpoints (1000 and 1500), never the 0.09 one.
-    const s2 = c.plan.allocations.filter((a) => a.sellerId === 2).map((a) => a.resourceId).sort();
-    expect(s2).toEqual([20, 21]);
-    expect(c.stats.sellersAllAboveCap).toBe(1);
-    // Coverage allocations come first in plan order, fewest calls first.
-    expect(c.plan.allocations[0]!.tier).toBe("coverage");
+    const poolOf = (id: number) => c.plan.allocations.find((a) => a.sellerId === id)?.tier;
+    expect([poolOf(3), callsBy(3)]).toEqual(["finish", 1]); // 29 -> 30
+    expect([poolOf(2), callsBy(2)]).toEqual(["finish", 4]);
+    expect([poolOf(1), callsBy(1)]).toEqual(["admit", 4]);
+    expect([poolOf(7), callsBy(7)]).toEqual(["admit", 4]); // bought on its cheap endpoint
+    expect(callsBy(6)).toBe(0); // nothing under the cap: breadth material
+    expect(callsBy(8)).toBe(0); // never answered a probe
+    expect([poolOf(4), callsBy(4)]).toEqual(["maintenance", 2]);
+    // Finish allocations first (seller 3 is closest to 30), then admit, then maintenance.
+    expect(c.plan.allocations[0]!.sellerId).toBe(3);
     expect(c.plan.allocations.at(-1)!.tier).toBe("maintenance");
+    // Planned at quote x1.2, never the listing.
+    const a = c.plan.allocations.find((x) => x.sellerId === 1)!;
+    expect([a.priceAtomic, a.planAtomic]).toEqual([1000n, 1200n]);
+    // Seller 2 rotates over its two cheap endpoints, never the 0.09 one.
+    expect(c.plan.allocations.filter((x) => x.sellerId === 2).map((x) => x.resourceId).sort()).toEqual([20, 21]);
+    expect(c.stats.sellersAllAboveCap).toBe(1);
   });
 
-  it("spreads a thin budget one call per seller per pass", () => {
+  it("new zero-call sellers get the 5-call target unless they matter", () => {
     const d = universe();
-    const c = buildCoveragePlan(d, { network: NET, caps, budgetAtomic: 5000n, coverageShare: 0.7, seed: 1, now: NOW });
-    // 3,500 atomic of coverage at 1,000 each: three sellers get one call each, nobody gets two.
-    expect(c.stats.coverageCalls).toBe(3);
-    expect(new Set(c.plan.allocations.filter((a) => a.tier === "coverage").map((a) => a.sellerId)).size).toBe(3);
-    // What coverage could not place (500) rolls into maintenance with its own 1,500: two calls.
-    expect(c.stats.maintenanceCalls).toBe(2);
-    expect(c.plan.totalSpendAtomic).toBeLessThanOrEqual(5000n);
+    // Seller 1 was first bought after the tiers began, with 3 calls: 2 to go to 5, so it is in the finish lane.
+    for (let k = 0; k < 3; k++) call(d, { seller: 1, resource: 10, outcome: "ok", ts: NOW + k });
+    const c = buildCoveragePlan(d, opts(usdToAtomic(1), { now: NOW + 10 }));
+    const s1 = c.plan.allocations.filter((a) => a.sellerId === 1);
+    expect(s1.reduce((n, a) => n + a.calls, 0)).toBe(2);
+    expect(s1[0]!.reason).toMatch(/3 of 5 call/);
+    // In demand: the same seller keeps the 30-call target and takes 4.
+    const c2 = buildCoveragePlan(d, opts(usdToAtomic(1), { now: NOW + 10, demand: new Map([["s1.example", 7]]) }));
+    expect(c2.plan.allocations.filter((a) => a.sellerId === 1).reduce((n, a) => n + a.calls, 0)).toBe(4);
+  });
+
+  it("no seller plans more than 15% of the run", () => {
+    const d = universe();
+    seller(d, 11, { prices: ["60000"], calls: 0, inflowUsd: 1_000_000 }); // top of the admit order by inflow
+    const c = buildCoveragePlan(d, opts(usdToAtomic(1)));
+    const s11 = c.plan.allocations.filter((a) => a.sellerId === 11).reduce((n, a) => n + (a.planAtomic ?? 0n) * BigInt(a.calls), 0n);
+    expect(s11).toBe(144000n); // two calls at 0.072; a third would pass 0.15
   });
 
   it("backs off a resource whose last three attempts were not_paid or our_error, for 48 hours", () => {
     const d = universe();
-    call(d, { seller: 1, resource: 10, outcome: "not_paid", ts: NOW - 3 * 3_600_000 });
-    call(d, { seller: 1, resource: 10, outcome: "our_error", ts: NOW - 2 * 3_600_000 });
-    call(d, { seller: 1, resource: 10, outcome: "not_paid", ts: NOW - 3_600_000 });
-    expect([...resourceBackoffs(d, NOW).keys()]).toEqual([10]);
+    call(d, { seller: 2, resource: 20, outcome: "not_paid", ts: NOW - 3 * 3_600_000 });
+    call(d, { seller: 2, resource: 20, outcome: "our_error", ts: NOW - 2 * 3_600_000 });
+    call(d, { seller: 2, resource: 20, outcome: "not_paid", ts: NOW - 3_600_000 });
+    expect([...resourceBackoffs(d, NOW).keys()]).toEqual([20]);
     expect(resourceBackoffs(d, NOW + 48 * 3_600_000).size).toBe(0);
-    const c = buildCoveragePlan(d, { network: NET, caps, budgetAtomic: usdToAtomic(1), coverageShare: 0.7, seed: 1, now: NOW });
-    expect(c.plan.allocations.some((a) => a.resourceId === 10)).toBe(false);
-    expect(c.rows.find((r) => r.pool === "backoff")?.resourceId).toBe(10);
-    // The resource is never deleted.
-    expect(d.prepare("SELECT COUNT(*) n FROM resources WHERE id = 10").get()).toEqual({ n: 1 });
+    const c = buildCoveragePlan(d, opts(usdToAtomic(1)));
+    expect(c.plan.allocations.some((a) => a.resourceId === 20)).toBe(false);
+    expect(c.rows.find((r) => r.pool === "backoff")?.resourceId).toBe(20);
+    expect(d.prepare("SELECT COUNT(*) n FROM resources WHERE id = 20").get()).toEqual({ n: 1 });
   });
 
   it("keeps too_expensive only for sellers with no endpoint at or under the cap", () => {
     const d = universe();
     d.prepare("INSERT INTO resource_states (resource_id, state, quoted_atomic, cap_atomic, basis, updated_at) VALUES (71, 'too_expensive', '5000000', '100000', 'probe', 0)").run();
-    buildCoveragePlan(d, { network: NET, caps, budgetAtomic: usdToAtomic(1), coverageShare: 0.7, seed: 1, now: NOW, recordTooExpensive: true });
+    buildCoveragePlan(d, opts(usdToAtomic(1), { recordTooExpensive: true }));
     expect(listTooExpensive(d).map((r) => r.domain).sort()).toEqual(["s6.example", "s6.example"]);
   });
 
   it("writes one run_allocations row per allocation and back-off", () => {
     const d = universe();
-    const c = buildCoveragePlan(d, { network: NET, caps, budgetAtomic: usdToAtomic(1), coverageShare: 0.7, seed: 1, now: NOW });
+    const c = buildCoveragePlan(d, opts(usdToAtomic(1)));
     const runId = Number(d.prepare("INSERT INTO runs (subcommand, args_json, config_hash, network, dry_run, started_at) VALUES ('buy run', '{}', 'x', ?, 1, ?)").run(NET, NOW).lastInsertRowid);
-    const rows = rowsFromAllocations(c.plan.allocations);
-    writeRunAllocations(d, runId, rows, NOW);
+    writeRunAllocations(d, runId, rowsFromAllocations(c.plan.allocations), NOW);
     const got = d.prepare("SELECT pool, SUM(planned_calls) n FROM run_allocations WHERE run_id = ? GROUP BY pool ORDER BY pool").all(runId);
     expect(got).toEqual([
-      { pool: "coverage", n: c.stats.coverageCalls },
+      { pool: "admit", n: c.stats.admitCalls },
+      { pool: "finish", n: c.stats.finishCalls },
       { pool: "maintenance", n: c.stats.maintenanceCalls },
     ]);
-    expect((d.prepare("SELECT reason FROM run_allocations WHERE pool = 'coverage' LIMIT 1").get() as { reason: string }).reason).toMatch(/to go/);
   });
 
-  it("projects the USDC and runs to bring every seller to 30", () => {
+  it("projects the tiered targets and simulates the runs", () => {
     const d = universe();
-    const p = projectCoverage(d, { network: NET, capAtomic: caps.perCallAtomic, now: NOW, runAtomic: usdToAtomic(1), dailyAtomic: usdToAtomic(4), coverageShare: 0.7 });
-    // Sellers 1, 7 (30 each), 2 (20), 3 (1) at 0.001.
-    expect(p.sellersBelow).toBe(4);
-    expect(p.callsToTarget).toBe(81);
-    expect(p.usdcToTarget).toBe("0.081000");
-    expect(p.runsAtCurrentCap).toBe(8); // 30 calls at 4 per run
-    expect(p.exceedsSevenDays).toBe(false);
+    const p = projectCoverage(d, { network: NET, capAtomic: caps.perCallAtomic, now: NOW, coverageShare: 0.7, tiersSince: TIERS, scenarios: [{ label: "x", runAtomic: usdToAtomic(1), runsPerDay: 4, days: 3 }] });
+    // Sellers 2 (20 to go) and 3 (1) keep 30; zero-call sellers 1 and 7 get 5 each.
+    expect([p.sellersBelowTarget, p.fullTarget, p.admitTarget, p.callsToTargets]).toEqual([4, 2, 2, 31]);
+    expect(p.scenarios[0]!.daysToAllTargets).toBe(2);
+    expect(p.scenarios[0]!.atTargetByDay[0]).toBe(2);
   });
 });
 

@@ -17,12 +17,14 @@ export interface PlanAllocation {
   /** resources.input_json (Bazaar input info) so POST bodies can be built from the seller's own example. */
   inputJson: string | null;
   /** Stratified tier, or the lane an extra allocation came from (audit, user candidate, expensive-sellers list). */
-  tier: Tier | "audit" | "candidate" | "expensive" | "coverage" | "maintenance" | "breadth";
+  tier: Tier | "audit" | "candidate" | "expensive" | "finish" | "admit" | "maintenance" | "breadth";
   category: string;
   priceAtomic: bigint;
   calls: number;
   /** Per-call cap for this allocation when it differs from MAX_PER_CALL_USD (config/expensive-sellers.yaml). */
   perCallCapAtomic?: bigint;
+  /** What the plan budgets per call when it differs from priceAtomic (the quote x1.2, src/buy/allocate.ts). */
+  planAtomic?: bigint;
   /** Why the planner chose it (written to run_allocations). */
   reason?: string;
 }
