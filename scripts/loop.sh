@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Keeps the public index alive without an operator.
 #   hourly : one probe round over the current probe set, settlement re-check (moves no money), export, publish
-#   6-hour : at each hour in LOOP_RUN_HOURS_UTC (00, 06, 12, 18), the free candidate import (discover
-#            import-candidates), then a gated live buy with a fresh seed per run over the wide seller set
-#            (config/sample.yaml) plus the expensive-sellers lane and, when CANDIDATE_BUYS_ENABLED=1, queued candidates:
-#            per-run cap LOOP_RUN_USD, per-call cap LOOP_PER_CALL_USD, per-seller cap MAX_PER_SELLER_PER_DAY_USD / runs,
-#            scheduled-buy day budget LOOP_DAILY_USD (MAX_PER_DAY_USD stays the all-sources backstop); then settlement
-#            confirmation, export, publish. After the LOOP_AUDIT_HOUR_UTC run only: audit-triggers (records its
-#            decisions; buys only with AUDIT_TRIGGERS_ENABLED=1).
+#   6-hour : at each hour in LOOP_RUN_HOURS_UTC (00, 06, 12, 18), a gated live buy with coverage-first allocation
+#            (--allocation coverage: COVERAGE_SHARE of the run to sellers below 30 calls, the rest to maintenance; every
+#            planned call written to run_allocations before signing) plus the expensive-sellers lane and, when
+#            CANDIDATE_BUYS_ENABLED=1, queued candidates: per-run cap LOOP_RUN_USD, per-call cap LOOP_PER_CALL_USD,
+#            per-seller cap MAX_PER_SELLER_PER_DAY_USD / runs, scheduled-buy day budget LOOP_DAILY_USD (MAX_PER_DAY_USD
+#            stays the all-sources backstop); then settlement confirmation and the free candidate import (discover
+#            import-candidates). After the LOOP_AUDIT_HOUR_UTC run only: audit-triggers (records its decisions; buys only
+#            with AUDIT_TRIGGERS_ENABLED=1), and on weekday LOOP_BREADTH_WEEKDAY_UTC the breadth run (buys only with
+#            BREADTH_RUN_ENABLED=1). After the 00:00 run only: discover refresh (free). Then export, publish.
 #   publish: export into the root of a worktree at data/paidfor-data (orphan branch paidfor-data-main), then
 #            git add -A && git commit -m "data: <timestamp>" && git push to main of the public repo
 #            sarmadahsan/paidfor-data (remote "paidfor-data"). The main checkout stays clean for the commit gate.
@@ -19,6 +21,7 @@
 #        scripts/loop.sh once       one hourly cycle now, then exit
 #        scripts/loop.sh dry-run-buy    print what the current slot's scheduled buy would buy; spends nothing
 #        scripts/loop.sh dry-run-audit  print (and record as dry_run) the audits the index would trigger now
+#        scripts/loop.sh dry-run-breadth  print what the weekly breadth run would buy; spends nothing
 #        scripts/loop.sh install    macOS: write and load the launchd agent (com.x402audit.loop)
 #                                   Linux: (sudo) write /etc/systemd/system/paidfor-audit.service and enable it
 #        scripts/loop.sh uninstall  stop and remove the agent or service
@@ -28,6 +31,8 @@
 #          s3://$BACKUP_BUCKET/audit/<date>.sqlite.gz (skipped and logged when BACKUP_BUCKET or the aws CLI is missing).
 # Env:   LOOP_RUN_USD (1.00)  LOOP_RUN_HOURS_UTC ("0 6 12 18")  LOOP_AUDIT_HOUR_UTC (12)  LOOP_DAILY_USD (4.00)
 #        LOOP_PER_CALL_USD (0.10)  LOOP_BUY_CONCURRENCY (4)  (LOOP_BUY_HOUR_UTC is no longer used)
+#        LOOP_REFRESH_HOUR_UTC (0)  LOOP_BREADTH_WEEKDAY_UTC (1 = Monday, `date -u +%u`)
+#        COVERAGE_SHARE, BREADTH_RUN_ENABLED, BREADTH_MAX_PER_CALL_USD, BREADTH_WEEKLY_USD are read by the CLI.
 #        LOOP_PUBLISH (1; 0 = export but do not commit or push)  BACKUP_BUCKET (unset = no backup)
 #        LOOP_PUBLISH_URL (https://github.com/sarmadahsan/paidfor-data.git; the server uses the SSH alias
 #        git@github-data:sarmadahsan/paidfor-data.git so its write deploy key for that repo is offered)
@@ -42,6 +47,8 @@ LOOP_RUN_USD="${LOOP_RUN_USD:-1.00}"
 LOOP_RUN_HOURS_UTC="${LOOP_RUN_HOURS_UTC:-0 6 12 18}"
 LOOP_AUDIT_HOUR_UTC="${LOOP_AUDIT_HOUR_UTC:-12}"
 LOOP_BUY_CONCURRENCY="${LOOP_BUY_CONCURRENCY:-4}"
+LOOP_REFRESH_HOUR_UTC="${LOOP_REFRESH_HOUR_UTC:-0}"
+LOOP_BREADTH_WEEKDAY_UTC="${LOOP_BREADTH_WEEKDAY_UTC:-1}"
 LOOP_PUBLISH="${LOOP_PUBLISH:-1}"
 NETWORK="eip155:8453"
 LOG="$REPO/data/loop.log"
@@ -138,7 +145,14 @@ runs_per_day() { set -- $LOOP_RUN_HOURS_UTC; echo "$#"; }
 buy_args() {
   local seed="$1" since="$2"
   echo --seed "$seed" --no-persist-tiers --budget-usd "$LOOP_RUN_USD" --run-usd "$LOOP_RUN_USD" --per-call-usd "$LOOP_PER_CALL_USD" \
-    --runs-per-day "$(runs_per_day)" --day-budget-usd "$LOOP_DAILY_USD" --resume-since "$since" --concurrency "$LOOP_BUY_CONCURRENCY" --expensive --candidates
+    --runs-per-day "$(runs_per_day)" --day-budget-usd "$LOOP_DAILY_USD" --resume-since "$since" --concurrency "$LOOP_BUY_CONCURRENCY" --expensive --candidates \
+    --allocation coverage
+}
+
+# The weekly breadth run: its own budget (BREADTH_WEEKLY_USD) and per-call cap (BREADTH_MAX_PER_CALL_USD); --per-call-usd is the
+# scheduled cap that decides which sellers it is for. Buys only with BREADTH_RUN_ENABLED=1; otherwise prints its plan.
+breadth_args() {
+  echo --breadth --per-call-usd "$LOOP_PER_CALL_USD" --concurrency "$LOOP_BUY_CONCURRENCY"
 }
 
 scheduled_buy() {
@@ -147,8 +161,6 @@ scheduled_buy() {
   seed="$(date -u +%Y%m%d)${hh}"   # a fresh seed per run, so the tail sample and each seller's calls spread across runs
   sh -c 'echo $PPID' > "$STATE/buy.pid"
   log "scheduled buy $today $hh:00: start (run cap $LOOP_RUN_USD USDC, per-call $LOOP_PER_CALL_USD, day budget $LOOP_DAILY_USD)"
-  # Free: import and probe user candidates so queued ones can enter this run (a no-op until the index serves them).
-  run "${CLI[@]}" discover import-candidates --per-call-usd "$LOOP_PER_CALL_USD" || log "candidate import failed; continuing"
   if [ -e halt ] || [ -e halt-buy ]; then log "scheduled buy $today $hh:00: skipped, halt or halt-buy file present"; return 0; fi
   live="${X402_AUDIT_LIVE:-$(grep -E '^X402_AUDIT_LIVE=' .env 2>/dev/null | tail -1 | cut -d= -f2)}"
   if [ "$live" != 1 ]; then log "scheduled buy $today $hh:00: skipped, X402_AUDIT_LIVE is not 1"; return 0; fi
@@ -166,9 +178,22 @@ scheduled_buy() {
   run "${CLI[@]}" buy resolve || true
   run "${CLI[@]}" buy reconcile --apply || true
   run "${CLI[@]}" buy reclassify --apply --reason "loop: settlement confirmation after scheduled buy $today $hh:00" || true
+  # Free: import and probe user candidates after every run, so queued ones enter the next one.
+  run "${CLI[@]}" discover import-candidates --per-call-usd "$LOOP_PER_CALL_USD" || log "candidate import failed; continuing"
   if [ "$((10#$hh))" -eq "$((10#$LOOP_AUDIT_HOUR_UTC))" ]; then
     # Records every decision; spends only when AUDIT_TRIGGERS_ENABLED=1 (and the live gates above).
     run "${CLI[@]}" --live audit-triggers || log "audit-triggers $today: exited non-zero"
+    if [ "$(date -u +%u)" = "$LOOP_BREADTH_WEEKDAY_UTC" ]; then
+      # Weekly; buys only with BREADTH_RUN_ENABLED=1, otherwise logs its plan.
+      # shellcheck disable=SC2046
+      run "${CLI[@]}" --live buy run $(breadth_args) || log "breadth run $today: exited non-zero"
+      run "${CLI[@]}" buy resolve || true
+      run "${CLI[@]}" buy reclassify --apply --reason "loop: settlement confirmation after breadth run $today" || true
+    fi
+  fi
+  if [ "$((10#$hh))" -eq "$((10#$LOOP_REFRESH_HOUR_UTC))" ]; then
+    # Free: Bazaar recrawl, seed hosts, unmapped facilitator payees; new sellers join the probe set for the next hour.
+    run "${CLI[@]}" discover refresh || log "discover refresh $today: exited non-zero"
   fi
   export_publish || true
   log "scheduled buy $today $hh:00: done"
@@ -200,7 +225,7 @@ maybe_scheduled() {
 write_unit() {
   cat <<EOU
 [Unit]
-Description=paidfor x402-audit loop (hourly probe, six-hourly gated buy, audit triggers, publish, backup)
+Description=paidfor x402-audit loop (hourly probe, six-hourly gated buy, audit triggers, discovery, publish, backup)
 After=network-online.target
 Wants=network-online.target
 
@@ -241,6 +266,9 @@ case "${1:-loop}" in
   dry-run-audit)
     # Planned audits from the live index, recorded as dry_run decisions; spends nothing.
     "${CLI[@]}" audit-triggers ;;
+  dry-run-breadth)
+    # shellcheck disable=SC2046
+    "${CLI[@]}" buy run $(breadth_args) ;;
   install)
     if [ "$(uname -s)" = Linux ]; then
       [ "$(id -u)" -eq 0 ] || { echo "run with sudo on Linux" >&2; exit 1; }
@@ -288,5 +316,5 @@ EOP
   unit)
     # Print the systemd unit for a given user and checkout (used by infra/aws/user-data.sh).
     write_unit "${2:-audit}" "${3:-/home/audit/x402-audit}" ;;
-  *) echo "usage: $0 [loop|once|dry-run-buy|dry-run-audit|install|uninstall|status|unit]" >&2; exit 2 ;;
+  *) echo "usage: $0 [loop|once|dry-run-buy|dry-run-audit|dry-run-breadth|install|uninstall|status|unit]" >&2; exit 2 ;;
 esac

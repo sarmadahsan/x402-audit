@@ -132,7 +132,8 @@ interface Slot {
   lastAt: number;
 }
 
-/** Interleaved order: each seller's 1st resource, then each seller's 2nd, ... */
+/** Interleaved order: each seller's 1st resource, then each seller's 2nd, ... Sellers keep plan order when the plan is
+ * coverage-first (coverage sellers, fewest calls first, are reached before maintenance if a cap ends the run), else by id. */
 function interleave(allocs: PlanAllocation[]): { slots: Slot[]; sellerOrder: number[] } {
   const bySeller = new Map<number, PlanAllocation[]>();
   for (const a of allocs.filter((a) => a.calls > 0)) {
@@ -140,7 +141,8 @@ function interleave(allocs: PlanAllocation[]): { slots: Slot[]; sellerOrder: num
     if (l) l.push(a);
     else bySeller.set(a.sellerId, [a]);
   }
-  const sellerOrder = [...bySeller.keys()].sort((a, b) => a - b);
+  const planOrder = allocs.some((a) => a.tier === "coverage" || a.tier === "maintenance" || a.tier === "breadth");
+  const sellerOrder = planOrder ? [...bySeller.keys()] : [...bySeller.keys()].sort((a, b) => a - b);
   for (const l of bySeller.values()) l.sort((a, b) => a.resourceId - b.resourceId);
   const slots: Slot[] = [];
   const depth = Math.max(0, ...[...bySeller.values()].map((l) => l.length));

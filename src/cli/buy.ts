@@ -1,13 +1,15 @@
 import type { Command } from "commander";
 import { erc20Abi, formatUnits } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { buildBuyPlan, renderPlan, assertPlanWithinCaps, planToJSON } from "../buy/plan.js";
+import { buildBuyPlan, renderPlan, assertPlanWithinCaps, planToJSON, type BuyPlan, type PlanAllocation } from "../buy/plan.js";
 import { runBuy } from "../buy/run.js";
 import { loadServiceConfigs, serviceLookup } from "../buy/services.js";
 import { blockAtTimestamp, makeChainClient, usdcFor } from "../chain/client.js";
 import { makeChainLookupFactory, makeChainSettlementLookup, resolvePendingIndeterminate, resolveUnconfirmedSettlements } from "../chain/confirm.js";
 import { atomicToUsd, capsFromEnv, loadEnv, loadFileConfigs, MAINNET, usdToAtomic, type Env, type Network } from "../config/index.js";
-import { candidateAllocations, expensiveAllocations } from "../buy/lanes.js";
+import { breadthAllocations, candidateAllocations, expensiveAllocations } from "../buy/lanes.js";
+import { buildCoveragePlan, projectCoverage, renderCoverage, rowsFromAllocations, sellerUniverse, writeRunAllocations, type AllocationRow } from "../buy/allocate.js";
+import { CALL_SOURCES } from "../taxonomy.js";
 import type { RunLimits } from "../buy/guard.js";
 import { openDb, type Db } from "../db/index.js";
 import { log } from "../log.js";
@@ -68,6 +70,39 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       console.log(`\nPlanned total: ${plan.totalCalls} calls, ${atomicToUsd(plan.totalSpendAtomic)} USDC (cap MAX_TOTAL_USD=${env.MAX_TOTAL_USD})`);
     });
 
+  b.command("projection")
+    .description("what it takes to bring every seller below 30 calls to 30 under the current caps; reads only")
+    .option("--per-call-usd <usd>", "scheduled per-call cap (default LOOP_PER_CALL_USD, else 0.10)", parseFloat)
+    .option("--run-usd <usd>", "per-run cap (default LOOP_RUN_USD, else 1.00)", parseFloat)
+    .option("--day-budget-usd <usd>", "scheduled-buy day budget (default LOOP_DAILY_USD, else 4.00)", parseFloat)
+    .option("--json", "print JSON", false)
+    .action(function (this: Command, o: { perCallUsd?: number; runUsd?: number; dayBudgetUsd?: number; json: boolean }) {
+      const g = globals(this);
+      const env = loadEnv();
+      const files = loadFileConfigs();
+      const db = openDb(g.db);
+      const now = Date.now();
+      const cap = usdToAtomic(o.perCallUsd ?? Number(process.env.LOOP_PER_CALL_USD ?? "0.10"));
+      const runAtomic = usdToAtomic(o.runUsd ?? Number(process.env.LOOP_RUN_USD ?? "1.00"));
+      const dailyAtomic = usdToAtomic(o.dayBudgetUsd ?? Number(process.env.LOOP_DAILY_USD ?? "4.00"));
+      const p = projectCoverage(db, { network: g.network, capAtomic: cap, now, exclude: files.exclude, runAtomic, dailyAtomic, coverageShare: env.COVERAGE_SHARE });
+      // Sellers with a too_expensive row today that also have an endpoint at or under the cap: they re-enter coverage.
+      const teSellers = new Set((db.prepare("SELECT DISTINCT r.seller_id s FROM resource_states rs JOIN resources r ON r.id = rs.resource_id WHERE rs.state = 'too_expensive'").all() as { s: number }[]).map((r) => r.s));
+      const uni = sellerUniverse(db, { network: g.network, capAtomic: cap, now, exclude: files.exclude });
+      const reenter = uni.filter((s) => teSellers.has(s.sellerId) && s.eligible.length > 0);
+      const out = { ...p, tooExpensiveSellers: teSellers.size, tooExpensiveSellersWithEligible: reenter.length, tooExpensiveResources: (db.prepare("SELECT COUNT(*) n FROM resource_states WHERE state = 'too_expensive'").get() as { n: number }).n };
+      if (o.json) return void console.log(JSON.stringify(out, null, 2));
+      console.log(`# Coverage projection (${new Date(now).toISOString()})\n`);
+      console.log(`- sellers below 30 denominator calls with an eligible resource: ${p.sellersBelow}`);
+      console.log(`- calls to bring each to 30: ${p.callsToTarget}; USDC at each seller's cheapest eligible quote: ${p.usdcToTarget}`);
+      console.log(`- runs at the current per-run cap (${atomicToUsd(runAtomic)} USDC, coverage share ${env.COVERAGE_SHARE}, at most 4 calls per seller per run): ${p.runsAtCurrentCap}; days at the current daily cap (${atomicToUsd(dailyAtomic)}): ${p.daysAtCurrentDailyCap}`);
+      console.log(`- exceeds seven days of the daily cap: ${p.exceedsSevenDays ? "yes" : "no"}`);
+      console.log(`- too_expensive today: ${out.tooExpensiveResources} resource(s) across ${teSellers.size} seller(s); ${reenter.length} of those sellers have an endpoint at or under ${atomicToUsd(cap)} and re-enter coverage`);
+      console.log(`\n| seller | calls | to go | cheapest eligible | USDC to 30 |\n|---|---:|---:|---:|---:|`);
+      for (const r of p.bySeller.slice(0, 40)) console.log(`| ${r.domain} | ${r.calls} | ${r.need} | ${r.modalUsdc} | ${r.usdc} |`);
+      if (p.bySeller.length > 40) console.log(`| ... ${p.bySeller.length - 40} more | | | | |`);
+    });
+
   b.command("balances")
     .description("on-chain USDC balance of every pool wallet (moves nothing)")
     .action(async function (this: Command) {
@@ -100,12 +135,18 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .option("--day-budget-usd <usd>", "scheduled-buy budget for the UTC day over source buy (LOOP_DAILY_USD); MAX_PER_DAY_USD stays the all-sources backstop", parseFloat)
     .option("--expensive", "add config/expensive-sellers.yaml: one call per listed seller under its weekly frequency, at its own cap clamped to MAX_PER_CALL_USD", false)
     .option("--candidates", "add one call per queued user candidate (only when CANDIDATE_BUYS_ENABLED=1; otherwise they are listed and skipped)", false)
-    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean; perCallUsd?: number; runUsd?: number; runsPerDay?: number; dayBudgetUsd?: number; expensive: boolean; candidates: boolean }) {
+    .option("--allocation <mode>", "stratified (the study design) or coverage (scheduled runs: sellers below 30 calls first, then maintenance)", "stratified")
+    .option("--breadth", "the weekly breadth run instead of a scheduled run: one call per seller with no resource under --per-call-usd, at BREADTH_MAX_PER_CALL_USD, under BREADTH_WEEKLY_USD; buys only when BREADTH_RUN_ENABLED=1", false)
+    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean; perCallUsd?: number; runUsd?: number; runsPerDay?: number; dayBudgetUsd?: number; expensive: boolean; candidates: boolean; allocation: string; breadth: boolean }) {
       const g = globals(this);
-      const { live } = moneyGate(g, requireLive);
+      const gate = moneyGate(g, requireLive);
       const env = loadEnv();
       const files = loadFileConfigs();
       const envCaps = capsFromEnv(env);
+      if (o.allocation !== "stratified" && o.allocation !== "coverage") throw new Error(`--allocation must be stratified or coverage, got ${o.allocation}`);
+      // The breadth run buys only with its own flag on top of every live gate; otherwise it prints its plan.
+      const live = gate.live && (!o.breadth || env.BREADTH_RUN_ENABLED === "1");
+      if (gate.live && !live) log.warn("breadth run: BREADTH_RUN_ENABLED is not 1; printing the plan, buying nothing");
       if (o.perCallUsd !== undefined && !(o.perCallUsd > 0)) throw new Error(`--per-call-usd must be > 0, got ${o.perCallUsd}`);
       if (o.perCallUsd !== undefined && usdToAtomic(o.perCallUsd) > envCaps.perCallAtomic)
         throw new Error(`--per-call-usd ${o.perCallUsd} is above MAX_PER_CALL_USD ${env.MAX_PER_CALL_USD}; a run may lower the cap, never raise it`);
@@ -118,32 +159,62 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         const target = Math.max(1, Math.round((files.sample.target_calls * o.budgetUsd) / files.sample.max_total_usd));
         sample = { ...files.sample, max_total_usd: o.budgetUsd, target_calls: target };
       }
-      const plan = buildBuyPlan(db, { sample, caps, network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: o.persistTiers, ...(live ? { recordTooExpensive: true } : {}) });
-      const addLane = (allocs: typeof plan.allocations, label: string) => {
-        for (const a of allocs) {
-          plan.allocations.push(a);
-          plan.totalCalls += a.calls;
-          plan.totalSpendAtomic += a.priceAtomic * BigInt(a.calls);
-        }
-        if (allocs.length) plan.notes.push(`${label}: ${allocs.length} call(s) added (${allocs.map((a) => a.sellerDomain).join(", ")}).`);
-      };
-      if (o.expensive) {
+      const ownCapDomains = files.expensive.sellers.map((e) => e.domain);
+      let backoffRows: AllocationRow[] = [];
+      let coverageText = "";
+      const lanes: PlanAllocation[] = [];
+      const laneNotes: string[] = [];
+      let breadthRemaining: bigint | undefined;
+      if (o.expensive && !o.breadth) {
         // Each listed seller's own cap, clamped to MAX_PER_CALL_USD: this list can never raise a cap.
         const list = files.expensive.sellers.map((e) => ({ ...e, per_call_usd: Math.min(e.per_call_usd, env.MAX_PER_CALL_USD) }));
         const lane = expensiveAllocations(db, list, { network: g.network, now: runStart, scheduledCapAtomic: caps.perCallAtomic });
-        addLane(lane.allocations, "expensive-sellers lane");
-        for (const sk of lane.skipped) plan.notes.push(`expensive-sellers lane: ${sk.domain} skipped, ${sk.reason}.`);
+        lanes.push(...lane.allocations);
+        if (lane.allocations.length) laneNotes.push(`expensive-sellers lane: ${lane.allocations.length} call(s) added (${lane.allocations.map((a) => a.sellerDomain).join(", ")}).`);
+        for (const sk of lane.skipped) laneNotes.push(`expensive-sellers lane: ${sk.domain} skipped, ${sk.reason}.`);
       }
-      if (o.candidates) {
+      if (o.candidates && !o.breadth) {
         const lane = candidateAllocations(db, { perCallCapAtomic: caps.perCallAtomic, network: g.network });
-        if (env.CANDIDATE_BUYS_ENABLED === "1") addLane(lane, "candidate lane");
-        else if (lane.length) plan.notes.push(`candidate lane: ${lane.length} queued candidate(s) not bought, CANDIDATE_BUYS_ENABLED is not 1 (${lane.map((a) => a.url).join(", ")}).`);
+        if (env.CANDIDATE_BUYS_ENABLED === "1") {
+          lanes.push(...lane);
+          if (lane.length) laneNotes.push(`candidate lane: ${lane.length} call(s) added (${lane.map((a) => a.sellerDomain).join(", ")}).`);
+        } else if (lane.length) laneNotes.push(`candidate lane: ${lane.length} queued candidate(s) not bought, CANDIDATE_BUYS_ENABLED is not 1 (${lane.map((a) => a.url).join(", ")}).`);
       }
+      let plan: BuyPlan;
+      if (o.breadth) {
+        const breadthCap = usdToAtomic(Math.min(env.BREADTH_MAX_PER_CALL_USD, env.MAX_PER_CALL_USD));
+        const lane = breadthAllocations(db, { network: g.network, now: runStart, scheduledCapAtomic: caps.perCallAtomic, breadthCapAtomic: breadthCap, weeklyBudgetAtomic: usdToAtomic(env.BREADTH_WEEKLY_USD), exclude: files.exclude, skipDomains: ownCapDomains, recordTooExpensive: live });
+        breadthRemaining = lane.remainingAtomic;
+        const spend = lane.allocations.reduce((a, x) => a + x.priceAtomic, 0n);
+        plan = { network: g.network, seed: o.seed ?? 0, createdAt: runStart, targetCalls: lane.allocations.length, strata: [], totalCalls: lane.allocations.length, totalSpendAtomic: spend, sampleMaxTotalAtomic: lane.remainingAtomic, allocations: lane.allocations, notes: lane.skipped.map((k) => `breadth: ${k.domain} skipped, ${k.reason}.`) };
+        coverageText = `# Breadth run\n\n${lane.universe} seller(s) have no resource at or under ${atomicToUsd(caps.perCallAtomic)} USDC; ${lane.allocations.length} planned, one call each at most ${atomicToUsd(breadthCap)} USDC, ${atomicToUsd(spend)} USDC of the ${atomicToUsd(lane.remainingAtomic)} left this week (BREADTH_WEEKLY_USD ${env.BREADTH_WEEKLY_USD}).\n`;
+      } else if (o.allocation === "coverage") {
+        // Lanes first; coverage and maintenance plan what is left of the run budget, with 5% headroom for quotes that
+        // move between the last probe and the call (the per-run cap is still checked before every signature).
+        const runBudget = usdToAtomic(o.budgetUsd ?? files.sample.max_total_usd);
+        const laneSpend = lanes.reduce((a, x) => a + x.priceAtomic * BigInt(x.calls), 0n);
+        const budget = (runBudget * 95n) / 100n - laneSpend;
+        const cov = buildCoveragePlan(db, { network: g.network, caps, budgetAtomic: budget > 0n ? budget : 0n, coverageShare: env.COVERAGE_SHARE, ties: env.COVERAGE_TIES, seed: o.seed ?? files.sample.seed, now: runStart, exclude: files.exclude, inflowFloorUsd: env.MAINTENANCE_INFLOW_FLOOR_USD, ownCapDomains, ...(live ? { recordTooExpensive: true } : {}) });
+        for (const b of cov.backoffs) log.info(`back-off: resource ${b.resourceId} ${b.url} (${b.outcomes.join(", ")}) until ${new Date(b.until).toISOString()}`);
+        backoffRows = cov.rows.filter((r) => r.pool === "backoff");
+        coverageText = renderCoverage(cov, { lanes, runBudgetAtomic: runBudget });
+        plan = cov.plan;
+        plan.sampleMaxTotalAtomic = runBudget;
+      } else {
+        plan = buildBuyPlan(db, { sample, caps, network: g.network, ...(o.seed !== undefined ? { seed: o.seed } : {}), exclude: files.exclude, persistTiers: o.persistTiers, ...(live ? { recordTooExpensive: true } : {}) });
+      }
+      // The expensive and candidate lanes ride along with every scheduled plan.
+      for (const a of lanes) {
+        plan.allocations.push(a);
+        plan.totalCalls += a.calls;
+        plan.totalSpendAtomic += a.priceAtomic * BigInt(a.calls);
+      }
+      plan.notes.push(...laneNotes);
       if (o.budgetUsd !== undefined && plan.totalSpendAtomic > plan.sampleMaxTotalAtomic) {
         // Trim one call at a time from the largest stratified allocations until the plan fits the budget; the
         // expensive and candidate lanes keep their single call.
         while (plan.totalSpendAtomic > plan.sampleMaxTotalAtomic) {
-          const a = [...plan.allocations].filter((x) => x.calls > 0 && (x.tier === "top" || x.tier === "tail")).sort((x, y) => y.calls - x.calls || (y.priceAtomic > x.priceAtomic ? 1 : -1))[0];
+          const a = [...plan.allocations].filter((x) => x.calls > 0 && x.tier !== "expensive" && x.tier !== "candidate").sort((x, y) => y.calls - x.calls || (y.priceAtomic > x.priceAtomic ? 1 : -1))[0];
           if (!a) break;
           a.calls -= 1;
           plan.totalCalls -= 1;
@@ -172,7 +243,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       }
       // Resume: calls already made for a resource (any earlier live run, any outcome) count against its allocation,
       // so a halted or crashed run can be restarted without resampling the first resources.
-      if (live) {
+      if (live && !o.breadth) {
         const sinceMs = o.resumeSince ? Date.parse(o.resumeSince) : 0;
         if (o.resumeSince && !Number.isFinite(sinceMs)) throw new Error(`--resume-since is not a date: ${o.resumeSince}`);
         const done = new Map(
@@ -184,13 +255,19 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
         if (plan.totalCalls !== before) log.info(`resume: ${before - plan.totalCalls} call(s) already made in earlier runs are subtracted from the plan`);
       }
-      console.log(renderPlan(plan));
-      const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, budgetUsd: o.budgetUsd, perCallUsd: o.perCallUsd, runUsd: o.runUsd, runsPerDay: o.runsPerDay, dayBudgetUsd: o.dayBudgetUsd, expensive: o.expensive, candidates: o.candidates, live }, g.network, !live);
+      console.log(coverageText || renderPlan(plan));
+      if (coverageText && plan.notes.length && o.breadth) console.log(plan.notes.map((n) => `- ${n}`).join("\n"));
+      const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, budgetUsd: o.budgetUsd, perCallUsd: o.perCallUsd, runUsd: o.runUsd, runsPerDay: o.runsPerDay, dayBudgetUsd: o.dayBudgetUsd, expensive: o.expensive, candidates: o.candidates, allocation: o.breadth ? "breadth" : o.allocation, live }, g.network, !live);
+      // Every planned call (and every back-off) is on record before the first signature.
+      const allocRows = [...backoffRows, ...rowsFromAllocations(plan.allocations)];
+      writeRunAllocations(db, runId, allocRows, Date.now());
+      log.info(`run ${runId}: ${allocRows.length} run_allocations row(s) written (${plan.totalCalls} planned call(s), ${atomicToUsd(plan.totalSpendAtomic)} USDC estimated)`);
       // The payer refuses anything above the largest cap any allocation in this plan carries (never above MAX_PER_CALL_USD).
       const payerCap = plan.allocations.reduce((m, a) => (a.perCallCapAtomic !== undefined && a.perCallCapAtomic > m ? a.perCallCapAtomic : m), caps.perCallAtomic);
       const payers = live ? payersFromEnv(env, g.network, payerCap) : ephemeralPayers(g.network, payerCap);
-      const runLimits: RunLimits | undefined =
-        o.runUsd !== undefined || o.runsPerDay !== undefined || o.dayBudgetUsd !== undefined
+      const runLimits: RunLimits | undefined = o.breadth
+        ? { since: runStart, source: CALL_SOURCES.BREADTH, perRunAtomic: breadthRemaining ?? 0n }
+        : o.runUsd !== undefined || o.runsPerDay !== undefined || o.dayBudgetUsd !== undefined
           ? {
               since: runStart,
               ...(o.runUsd !== undefined ? { perRunAtomic: usdToAtomic(o.runUsd) } : {}),
@@ -216,6 +293,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
           confirmIntervalMs: o.confirmIntervalSeconds * 1_000,
           concurrency: o.concurrency,
           ...(runLimits ? { runLimits } : {}),
+          ...(o.breadth ? { source: CALL_SOURCES.BREADTH } : {}),
           runId,
           configHash: files.configHash,
           log,

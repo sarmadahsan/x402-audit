@@ -59,4 +59,23 @@ describe("export: audit and candidate rows", () => {
     const later = exportOf(db, first + 8 * 86_400_000);
     expect(later.summary.denominator_paid_calls).toBe(base.summary.denominator_paid_calls + 6);
   });
+
+  it("breadth purchases count in the headline and the seller's figures, and the growth fields are present", () => {
+    const base = exportOf(seedDb());
+    const db = seedDb();
+    const add = ins(db);
+    for (let k = 0; k < 3; k++) add.run(`br-${k}`, "breadth", 1, 1, T0 + 86_400_000 + k, MAINNET, k === 0 ? "non_delivery" : "ok");
+    const e = exportOf(db);
+    expect(e.summary.denominator_paid_calls).toBe(base.summary.denominator_paid_calls + 3);
+    expect(e.summary.count_weighted.failures).toBe(base.summary.count_weighted.failures + 1);
+    expect(e.summary.breadth_purchases).toEqual({ paid_calls: 3, sellers: 1 });
+    const s1 = e.sellers.sellers.find((s: { domain: string }) => s.domain === "big.example");
+    expect(s1.breadth_purchases).toBe(3);
+    expect(s1.purchases_by_source.breadth).toBe(3);
+    expect(typeof s1.first_buy_at).toBe("string");
+    expect(typeof s1.discovered_at).toBe("string");
+    expect(e.summary.sellers_measured_trend).toHaveLength(7);
+    expect(e.summary.sellers_measured_trend.at(-1).sellers_with_min_calls).toBe(e.summary.sellers_with_min_calls);
+    for (const k of ["sellers_below_30", "sellers_new_7d", "unmapped_payees", "unmapped_payee_inflow_30d_usdc", "discovery_last_run"]) expect(k in e.summary).toBe(true);
+  });
 });

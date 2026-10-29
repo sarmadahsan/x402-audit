@@ -119,6 +119,28 @@ Sellers that entered this way are kept out of the headline, tier and
 category tables until their first scheduled purchase is 7 days old, because
 they joined the sample by user interest rather than by the stratified design.
 
+### Breadth purchases
+
+Breadth rows (`buy run --breadth`, weekly, 2026-10-29) carry `source =
+breadth`: one call per seller whose every resource quotes above the
+scheduled per-call cap (0.10 USDC), at up to 0.50 USDC (the pre-2026-10-29
+scheduled cap), under their own weekly budget. They count in the seller's own
+series and evidence and in the headline, tier and category rates, because
+these sellers were in the original stratified universe and the cap excluded
+them, not the design. At one call a week they sit in `low_sample` for
+weeks. A resource still above the breadth cap stays `too_expensive`.
+
+### Rolling headline and the study window
+
+The published headline (`summary.json`, the index) is a rolling figure over
+the current sample: every scheduled run adds calls, coverage-first allocation
+(2026-10-29) spends most of each run on sellers below 30 calls, and discovery
+adds sellers, so the figure moves as the sample widens and its mix of
+sellers changes. The report's study-window figure (2026-10-24 20:25 to
+2026-10-26 00:19 UTC: 6.6% count-weighted, n = 12,992 after the 2026-10-28
+revision) is a separate, frozen line with its dates, and is never recomputed
+from later data.
+
 ## Secondary flags
 
 | Constant | Meaning |

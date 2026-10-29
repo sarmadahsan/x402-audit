@@ -6,13 +6,15 @@
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { atomicToUsd, MAINNET } from "../config/index.js";
+import { atomicToUsd, MAINNET, usdToAtomic } from "../config/index.js";
 import type { Db } from "../db/index.js";
 import { computeReport, countRate, dollarRate, modeOf } from "../report/compute.js";
 import { runQuery, type QueryParams } from "../report/queries.js";
 import { probeReport } from "../probe/report.js";
 import { stressReport } from "../stress/index.js";
-import { AUDIT_SOURCES, HEADLINE_FAILURE_OUTCOMES } from "../taxonomy.js";
+import { AUDIT_SOURCES, CALL_SOURCES, HEADLINE_FAILURE_OUTCOMES, MEASURED_SOURCES } from "../taxonomy.js";
+import { sellerDenominatorCalls, sellerUniverse, SELLER_TARGET_CALLS } from "../buy/allocate.js";
+import { utcDayStart } from "../buy/guard.js";
 import { listCandidates } from "../discover/candidates.js";
 import { listTooExpensive } from "../buy/states.js";
 
@@ -22,7 +24,16 @@ export const RESOURCE_MIN_CALLS = 10;
 export const EVIDENCE_PER_SELLER = 25;
 const FAILURE_TYPES = ["non_delivery", "overcharge", "duplicate", "wrong_goods"] as const;
 
-export interface ExportOptions { network: string; now: number; outDir: string; gitCommit?: string | null }
+export interface ExportOptions {
+  network: string;
+  now: number;
+  outDir: string;
+  gitCommit?: string | null;
+  /** Scheduled per-call cap that decides which sellers the coverage pool can reach (default LOOP_PER_CALL_USD, else 0.10). */
+  scheduledCapAtomic?: bigint;
+  /** Breadth per-call cap, for too_expensive.json's breadth_eligible (default BREADTH_MAX_PER_CALL_USD, else 0.50). */
+  breadthCapAtomic?: bigint;
+}
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
 const big = (v: unknown): bigint => (v == null || v === "" ? 0n : BigInt(String(v)));
@@ -134,6 +145,7 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
         return [src, { paid_calls: num(r?.paid_calls), sellers: num(r?.sellers) }];
       }),
     ) as Record<string, { paid_calls: number; sellers: number }>,
+    ...growthFields(db, o),
   };
 
   // ------------------------------------------------------------ sellers.json
@@ -166,6 +178,14 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
     auditBySeller.set(num(r.seller_id), m);
   }
   const candidateSellers = new Map(q<{ seller_id: number; imported_at: number; checks: number; payments: number }>("candidate_sellers").map((r) => [num(r.seller_id), r]));
+  const discovery = new Map((db.prepare("SELECT s.id, COALESCE(d.discovered_at, s.first_seen_at) at, d.source FROM sellers s LEFT JOIN seller_discovery d ON d.seller_id = s.id").all() as { id: number; at: number; source: string | null }[]).map((r) => [r.id, r]));
+  const firstBuy = new Map((db.prepare(`SELECT seller_id, MIN(ts) t FROM calls WHERE paid = 1 AND source IN (${MEASURED_SOURCES.map(() => "?").join(",")}) GROUP BY seller_id`).all(...MEASURED_SOURCES) as { seller_id: number; t: number }[]).map((r) => [r.seller_id, r.t]));
+  const bySource = new Map<number, Record<string, number>>();
+  for (const r of db.prepare(`SELECT seller_id, source, COUNT(*) n FROM calls WHERE paid = 1 AND source IN (${MEASURED_SOURCES.map(() => "?").join(",")}) GROUP BY 1, 2`).all(...MEASURED_SOURCES) as { seller_id: number; source: string; n: number }[]) {
+    const m = bySource.get(r.seller_id) ?? {};
+    m[r.source] = r.n;
+    bySource.set(r.seller_id, m);
+  }
 
   const sellerRows = sellerRates.map((r) => {
     const id = num(r.seller_id);
@@ -194,11 +214,15 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
       bazaar_listing_count: num(m.bazaar_listings),
       audit_purchases: Object.values(auditBySeller.get(id) ?? {}).reduce((a, n) => a + n, 0),
       audit_purchases_by_source: Object.fromEntries(AUDIT_SOURCES.map((src) => [src, auditBySeller.get(id)?.[src] ?? 0])),
+      breadth_purchases: bySource.get(id)?.[CALL_SOURCES.BREADTH] ?? 0,
+      purchases_by_source: Object.fromEntries(MEASURED_SOURCES.map((src) => [src, bySource.get(id)?.[src] ?? 0])),
+      discovered_at: iso(discovery.get(id)?.at),
+      first_buy_at: iso(firstBuy.get(id)),
       ...(() => {
         const c = candidateSellers.get(id);
         return c
           ? { source: "user" as const, entered_at: iso(num(c.imported_at)), entered_after_checks: num(c.checks), entered_after_payments: num(c.payments) }
-          : { source: "discovery" as const };
+          : { source: discovery.get(id)?.source === "seed" ? ("seed" as const) : ("discovery" as const) };
       })(),
     };
   });
@@ -206,6 +230,9 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   const main = sellerRows.filter((s) => s.denominator_calls >= SELLER_MIN_CALLS).sort(bySort);
   const low = sellerRows.filter((s) => s.denominator_calls < SELLER_MIN_CALLS).sort(bySort).map((s) => ({ ...s, low_sample: true }));
   summary.sellers_with_min_calls = main.length;
+  // Today's point of the trend is the figure above, so the two never disagree.
+  const trend = summary.sellers_measured_trend;
+  if (trend.length) trend[trend.length - 1]!.sellers_with_min_calls = main.length;
   const sellersJson = { ...header, min_calls: SELLER_MIN_CALLS, low_sample_min_calls: SELLER_LOW_SAMPLE_MIN_CALLS, sellers: main, low_sample: low };
 
   // ---------------------------------------------------------- resources.json
@@ -307,7 +334,16 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   const tooExpensiveJson = {
     ...header,
     note: "Resources whose quote is above the per-call cap that applies to them (scheduled runs, audits, or the seller's own cap in config/expensive-sellers.yaml). Recorded and never bought.",
-    resources: listTooExpensive(db).map((r) => ({ url: r.url, method: r.method, seller: r.domain, quoted_usdc: usdc(r.quoted_atomic), cap_usdc: usdc(r.cap_atomic), basis: r.basis, recorded_at: iso(r.updated_at) })),
+    resources: listTooExpensive(db).map((r) => ({
+      url: r.url,
+      method: r.method,
+      seller: r.domain,
+      quoted_usdc: usdc(r.quoted_atomic),
+      cap_usdc: usdc(r.cap_atomic),
+      basis: r.basis,
+      recorded_at: iso(r.updated_at),
+      breadth_eligible: r.quoted_atomic != null && /^\d+$/.test(r.quoted_atomic) && BigInt(r.quoted_atomic) <= breadthCap(o),
+    })),
   };
 
   // ------------------------------------------------------------ write
@@ -343,11 +379,60 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   return { files: [...Object.keys(texts), "README.md"], sellers: main.length, lowSample: low.length, resources: resources.length, evidenceFiles: main.length + low.length };
 }
 
+const envUsd = (name: string, d: number): bigint => {
+  const v = Number(process.env[name]);
+  return usdToAtomic(Number.isFinite(v) && v > 0 ? v : d);
+};
+const breadthCap = (o: ExportOptions): bigint => o.breadthCapAtomic ?? envUsd("BREADTH_MAX_PER_CALL_USD", 0.5);
+
+/** The growth fields of summary.json (Prompt 0e): coverage pool, new sellers, the measured trend, discovery, breadth. */
+function growthFields(db: Db, o: ExportOptions) {
+  const now = o.now;
+  const cap = o.scheduledCapAtomic ?? envUsd("LOOP_PER_CALL_USD", 0.1);
+  const below = sellerUniverse(db, { network: o.network, capAtomic: cap, now }).filter((s) => s.eligible.length > 0 && s.calls < SELLER_TARGET_CALLS).length;
+  // New to the universe: first seen in the last 7 days and after the initial crawl (the first `discover run`).
+  const newSellers = (db
+    .prepare("SELECT COUNT(*) n FROM sellers WHERE first_seen_at >= ? AND first_seen_at > COALESCE((SELECT MIN(finished_at) FROM runs WHERE subcommand = 'discover run' AND status = 'ok'), 0)")
+    .get(now - 7 * 86_400_000) as { n: number }).n;
+  // Sellers at 30 or more denominator calls at the end of each of the last seven UTC days (today: now).
+  const trend: { date: string; sellers_with_min_calls: number }[] = [];
+  for (let k = 6; k >= 0; k--) {
+    const end = k === 0 ? now : utcDayStart(now) - (k - 1) * 86_400_000 - 1;
+    const n = [...sellerDenominatorCalls(db, end).values()].filter((c) => c >= SELLER_TARGET_CALLS).length;
+    trend.push({ date: new Date(end).toISOString().slice(0, 10), sellers_with_min_calls: n });
+  }
+  const last = db.prepare("SELECT value FROM meta WHERE key = 'discover_refresh_last'").get() as { value: string } | undefined;
+  let discovery: Record<string, unknown> | null = null;
+  if (last) {
+    try {
+      const r = JSON.parse(last.value) as { finishedAt: number; newSellers: number; probeSetAdded: number; bazaar: { unique: number } | null; seeds: { added: number }; chain: { newUnmapped: number; facilitators: number; sampled: number } | null; errors: string[] };
+      discovery = { finished_at: iso(r.finishedAt), new_sellers: r.newSellers, probe_set_added: r.probeSetAdded, bazaar_resources: r.bazaar?.unique ?? null, seed_sellers_added: r.seeds.added, new_unmapped_payees: r.chain?.newUnmapped ?? null, facilitators: r.chain?.facilitators ?? null, receipts_sampled: r.chain?.sampled ?? null, errors: r.errors };
+    } catch {
+      discovery = null;
+    }
+  }
+  const breadth = db.prepare(`SELECT COUNT(*) paid_calls, COUNT(DISTINCT seller_id) sellers FROM calls WHERE source = '${CALL_SOURCES.BREADTH}' AND paid = 1`).get() as { paid_calls: number; sellers: number };
+  const unmapped = db.prepare("SELECT COUNT(*) n, COUNT(inflow_30d_atomic) measured FROM unmapped_payees WHERE matched_seller_id IS NULL AND network = ?").get(o.network) as { n: number; measured: number };
+  let inflow = 0n;
+  for (const r of db.prepare("SELECT inflow_30d_atomic a FROM unmapped_payees WHERE matched_seller_id IS NULL AND network = ? AND inflow_30d_atomic GLOB '[0-9]*'").all(o.network) as { a: string }[]) inflow += BigInt(r.a);
+  return {
+    sellers_below_30: below,
+    sellers_new_7d: newSellers,
+    sellers_measured_trend: trend,
+    discovery_last_run: discovery,
+    breadth_purchases: { paid_calls: num(breadth.paid_calls), sellers: num(breadth.sellers) },
+    unmapped_payees: num(unmapped.n),
+    unmapped_payees_with_inflow: num(unmapped.measured),
+    unmapped_payee_inflow_30d_usdc: atomicToUsd(inflow),
+  };
+}
+
 const README = `# paidfor-data
 
 Machine-readable twin of the x402 buyer-failure report, refreshed hourly by the audit loop (\`x402-audit export\` over its SQLite database). Every file below sits at the root of this repository; fetch it from \`https://raw.githubusercontent.com/sarmadahsan/paidfor-data/main/<file>\`.
 
-Schedule: unpaid probes every hour; scheduled purchases four times a day at 00:00, 06:00, 12:00 and 18:00 UTC (at most 1.00 USDC per run and 4.00 per day, 0.10 per call, a fresh seller sample each run so time-of-day behaviour is sampled), each followed by an export, so \`last_buy_run\` is never more than about six hours old. Triggered audits may follow the 12:00 run (see \`audit_purchases\`).
+Schedule: unpaid probes every hour; scheduled purchases four times a day at 00:00, 06:00, 12:00 and 18:00 UTC (at most 1.00 USDC per run and 4.00 per day, 0.10 per call), each followed by an export, so \`last_buy_run\` is never more than about six hours old. Each run spends most of its budget on sellers below 30 denominator calls (fewest first, at most 4 calls each per run, so a seller reaches 30 across several runs and times of day) and the rest on sellers already at 30 or more. Triggered audits may follow the 12:00 run (see \`audit_purchases\`); a weekly breadth run may follow one 12:00 run (see \`breadth_purchases\`). Discovery (\`discover refresh\`) runs daily after the 00:00 run.
+The headline is a rolling figure over the current sample: it moves as the sample widens. The report's study-window figure (2026-10-24 to 2026-10-26) is a separate, frozen line and is never recomputed from these files.
 Every rate uses the report's definitions: the paid denominator is ok, overcharge, non_delivery, wrong_goods, injection and duplicate buy rows;
 a failure is overcharge, non_delivery, wrong_goods or duplicate. Intervals are 95% Wilson. Rates are fractions in [0, 1]. Money is USDC (6 decimals) as decimal strings.
 All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harness commit that wrote them).
@@ -355,11 +440,11 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 ## summary.json
 - \`last_updated\`: when this export ran (ISO 8601 UTC).
 - \`study_window.first_call\` / \`last_call\`: first and last buy or stress call in the database.
-- \`denominator_paid_calls\`: buy calls in the paid denominator.
+- \`denominator_paid_calls\`: scheduled and breadth calls in the paid denominator.
 - \`count_weighted\`: failures, rate and Wilson interval over denominator calls.
 - \`dollar_weighted\`: USDC in the denominator, USDC on failed calls, rate, and approximate Wilson interval using Kish effective n.
 - \`failures_by_type\`: per failure outcome, count, share of denominator calls, share of failures, USDC, and how many were resolved late on-chain.
-- \`sellers_reached\` / \`resources_reached\`: distinct sellers and resources with at least one buy call.
+- \`sellers_reached\` / \`resources_reached\`: distinct sellers and resources with at least one scheduled or breadth call.
 - \`sellers_with_min_calls\`: sellers with at least 30 denominator calls (the rows in sellers.json \`sellers\`).
 - \`usdc_spent\`: USDC settled on-chain for our paid calls, buy and stress; \`usdc_signed\` is the upper bound we authorized (some authorizations were never settled); \`usdc_spent_by_source\` splits both by source.
 - \`outside_denominator\`: rows kept out of the rate (our_error, indeterminate, not_paid, unclassified, unpaid overcharge and its quoted exposure).
@@ -367,6 +452,12 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`overcharge_sensitivity\`: headline rate if overcharges below a quote/reference ratio of 1.1 or 2.0 were not counted.
 - \`by_tier\` / \`by_category\`: denominator calls, failures, rate, Wilson interval and dollar-weighted rate per seller tier and category.
 - \`audit_purchases\`: paid audit calls and sellers audited, by source (\`audit_disagreement\`, \`audit_demand\`). Audit purchases count in each seller's own figures and evidence, never in the headline (\`count_weighted\`, \`dollar_weighted\`, \`failures_by_type\`), \`by_tier\` or \`by_category\`: triggered sampling oversamples contested and popular sellers. Sellers that entered through the user-candidate import stay out of those three until their first scheduled purchase is 7 days old.
+- \`sellers_below_30\`: sellers with at least one resource quoting at or under the scheduled per-call cap and fewer than 30 denominator calls: the coverage pool the next scheduled run draws from (sellers with no calls yet included).
+- \`sellers_new_7d\`: sellers first seen in the last 7 days, through any route (Bazaar recrawl, seed list, user candidates), not counting the initial universe (the first Bazaar crawl, 2026-10-24).
+- \`sellers_measured_trend\`: the last seven daily values of \`sellers_with_min_calls\`, oldest first, as \`{ date, sellers_with_min_calls }\`; each is the count at the end of that UTC day, the last one is now (equal to \`sellers_with_min_calls\`).
+- \`discovery_last_run\`: the last \`discover refresh\`: \`finished_at\`, \`new_sellers\`, \`probe_set_added\`, \`bazaar_resources\`, \`seed_sellers_added\`, \`new_unmapped_payees\`, \`facilitators\`, \`receipts_sampled\`, \`errors\`; null before the first one.
+- \`breadth_purchases\`: paid calls and sellers from the weekly breadth run (source \`breadth\`): one call per seller whose every resource quotes above the scheduled per-call cap, at up to 0.50 USDC. Breadth purchases count in the headline, \`by_tier\`, \`by_category\`, and each seller's own figures and evidence: these sellers were in the original stratified universe and the cap, not the design, excluded them. Most sit in \`low_sample\` for weeks.
+- \`unmapped_payees\` / \`unmapped_payee_inflow_30d_usdc\`: Base addresses that received facilitator settlements in a daily sample and match no pay-to of any seller we know (listing or quote), and the sum of their 30-day non-dust USDC inflow: money flowing to x402 sellers nobody can name. \`unmapped_payees_with_inflow\` says how many of them have a measured inflow so far (at most 20 are measured per day); the sum covers only those. Method in the harness's docs/discovery.md.
 
 ## sellers.json
 \`sellers\` holds sellers with at least 30 denominator calls; \`low_sample\` holds sellers with 5 to 29, each marked \`low_sample: true\`. Both are sorted by failure rate descending, then by calls descending.
@@ -384,7 +475,10 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`pay_to_addresses\`: addresses the seller listed or quoted for payment (lowercase).
 - \`bazaar_listing_count\`: resources the seller lists in the Coinbase Bazaar discovery API.
 - \`audit_purchases\` / \`audit_purchases_by_source\`: paid audit calls included in this seller's figures ("includes N audit purchases").
-- \`source\`: \`discovery\` (Bazaar, chain scan or our own list) or \`user\` (entered through the user-candidate import); a \`user\` seller also has \`entered_at\`, \`entered_after_checks\` and \`entered_after_payments\` (the index's counts at import).
+- \`breadth_purchases\`: paid breadth-run calls included in this seller's figures; \`purchases_by_source\`: paid calls per source (\`buy\`, \`breadth\`, \`audit_disagreement\`, \`audit_demand\`).
+- \`discovered_at\`: when the seller entered our database (the discovery run that found it, else the first time any listing or import named it).
+- \`first_buy_at\`: our first paid call to the seller, any measured source ("measured since").
+- \`source\`: \`discovery\` (Bazaar, chain scan or our own list), \`seed\` (config/seed-sellers.yaml, a hand-kept list of ecosystem hosts) or \`user\` (entered through the user-candidate import); a \`user\` seller also has \`entered_at\`, \`entered_after_checks\` and \`entered_after_payments\` (the index's counts at import).
 
 ## resources.json
 Resources with at least 10 denominator calls, sorted by failure rate descending.
@@ -400,7 +494,7 @@ Resources with at least 10 denominator calls, sorted by failure rate descending.
 One file per seller in sellers.json (both arrays); up to 25 most recent failures.
 - \`failures_total\` / \`shown\`: failures for the seller and how many samples follow.
 - \`outcome\`: failure type.
-- \`source\`: \`buy\` (scheduled purchase), \`audit_disagreement\` or \`audit_demand\` (triggered audit purchase).
+- \`source\`: \`buy\` (scheduled purchase), \`breadth\` (weekly breadth run), \`audit_disagreement\` or \`audit_demand\` (triggered audit purchase).
 - \`timestamp\`: when the call was made.
 - \`resource\` / \`method\`: resource called.
 - \`quote_usdc\`: price the seller quoted in its 402 response.
@@ -419,10 +513,11 @@ Resources users checked or paid through the index (GET /v1/candidates) that we h
 Candidate sellers count in their own figures and evidence like any seller and stay out of the headline, \`by_tier\` and \`by_category\` until their first scheduled purchase is 7 days old.
 
 ## too_expensive.json
-Resources whose quote is above the per-call cap that applies to them (0.10 USDC in scheduled runs, MAX_PER_CALL_USD in audits, a seller's own cap from config/expensive-sellers.yaml). Recorded and never bought.
+Resources whose quote is above the per-call cap that applies to them (0.10 USDC in scheduled runs, MAX_PER_CALL_USD in audits, a seller's own cap from config/expensive-sellers.yaml, 0.50 in the breadth run), for sellers with no endpoint at or under the scheduled cap: a seller with one affordable endpoint is bought on it and leaves this file. Recorded and never bought at the scheduled cap.
 - \`url\` / \`method\` / \`seller\`: the resource.
 - \`quoted_usdc\` / \`cap_usdc\`: what it quoted and the cap it exceeded; \`basis\`: probe, declared (listing) or quote (seen while buying).
 - \`recorded_at\`: last time it was seen above the cap.
+- \`breadth_eligible\`: the quote is at or under the breadth cap (0.50), so the weekly breadth run can buy it once it is enabled.
 
 ## stress.json
 - \`summary\`: duplicate test (intents, intents settled twice, rate, Wilson interval) and timeout test (intents, settled despite abort, retried, second settlement on retry).

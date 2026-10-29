@@ -21,19 +21,21 @@
  *   value. Dust (below the dust floor) is removed in JS before the mode is taken.
  */
 import type { Db } from "../db/index.js";
-import { AUDIT_SOURCES, FLAGS, HEADLINE_FAILURE_OUTCOMES, MEASURED_SOURCES, OUTCOMES, PAID_DENOMINATOR_OUTCOMES } from "../taxonomy.js";
+import { AUDIT_SOURCES, FLAGS, HEADLINE_FAILURE_OUTCOMES, HEADLINE_SOURCES, MEASURED_SOURCES, OUTCOMES, PAID_DENOMINATOR_OUTCOMES } from "../taxonomy.js";
 
 const sqlList = (xs: Iterable<string>): string => [...xs].map((x) => `'${x.replace(/'/g, "''")}'`).join(", ");
 const DENOM_LIST = sqlList(PAID_DENOMINATOR_OUTCOMES);
 const FAIL_LIST = sqlList(HEADLINE_FAILURE_OUTCOMES);
 const MEASURED_LIST = sqlList(MEASURED_SOURCES);
 const AUDIT_LIST = sqlList(AUDIT_SOURCES);
+/** Scheduled buys and breadth purchases: the headline's sources. */
+const HEADLINE_LIST = sqlList(HEADLINE_SOURCES);
 
 /** A seller that entered through the user-candidate import stays out of the headline, by_tier and by_category until
  * its first scheduled purchase is at least this old (docs/taxonomy.md "Candidate sellers"). */
 export const CANDIDATE_SETTLE_MS = 7 * 24 * 60 * 60 * 1000;
 const YOUNG_CANDIDATE = `(EXISTS (SELECT 1 FROM candidates k WHERE k.seller_id = c.seller_id AND k.seller_new = 1)
-    AND COALESCE((SELECT MIN(c2.ts) FROM calls c2 WHERE c2.seller_id = c.seller_id AND c2.source = 'buy'), @until) > @until - ${CANDIDATE_SETTLE_MS})`;
+    AND COALESCE((SELECT MIN(c2.ts) FROM calls c2 WHERE c2.seller_id = c.seller_id AND c2.source IN (${HEADLINE_LIST})), @until) > @until - ${CANDIDATE_SETTLE_MS})`;
 
 /** Exact integer from a TEXT atomic amount; anything malformed counts as 0. */
 const intOf = (e: string): string =>
@@ -83,9 +85,9 @@ const buyCte = (sourceWhere: string): string => `WITH b0 AS (
     CASE WHEN unpaid_oc THEN ${intOf("quote_amount_atomic")} ELSE 0 END AS exposure
   FROM b1
 )`;
-/** Headline, by_tier, by_category and every report aggregate: scheduled buys only, young candidate sellers left out. */
-const BUY_CTE = buyCte(`c.source = 'buy' AND NOT ${YOUNG_CANDIDATE}`);
-/** A seller's (and resource's) own measured series: scheduled buys plus audit purchases, candidates included. */
+/** Headline, by_tier, by_category and every report aggregate: scheduled buys and breadth purchases, young candidate sellers left out. */
+const BUY_CTE = buyCte(`c.source IN (${HEADLINE_LIST}) AND NOT ${YOUNG_CANDIDATE}`);
+/** A seller's (and resource's) own measured series: scheduled buys, breadth and audit purchases, candidates included. */
 const SELLER_CTE = buyCte(`c.source IN (${MEASURED_LIST})`);
 
 /** Columns shared by every grouped rate query over `b` (restricted to in_denom rows). */
@@ -146,12 +148,12 @@ export const QUERIES = {
            THEN substr(c.our_error_reason, instr(c.our_error_reason, 'our_error:') + 10)
            ELSE COALESCE(NULLIF(c.our_error_reason, ''), c.error, '(no reason recorded)') END AS reason,
       COUNT(*) AS n
-    FROM calls c WHERE c.source = 'buy' AND c.outcome = 'our_error' AND ${CALL_WINDOW}
+    FROM calls c WHERE c.source IN (${HEADLINE_LIST}) AND c.outcome = 'our_error' AND ${CALL_WINDOW}
     GROUP BY reason ORDER BY n DESC`,
 
   /** non_delivery rows with no response where OUR client timeout was below the seller's declared maxTimeoutSeconds. */
   buy_timeout_below_declared: `SELECT COUNT(*) AS n FROM calls c
-    WHERE c.source = 'buy' AND c.outcome = 'non_delivery' AND c.response_status IS NULL AND c.error LIKE 'timeout:%'
+    WHERE c.source IN (${HEADLINE_LIST}) AND c.outcome = 'non_delivery' AND c.response_status IS NULL AND c.error LIKE 'timeout:%'
       AND CAST(json_extract(c.quote_requirements_json, '$.maxTimeoutSeconds') AS INTEGER) * 1000 >
           CAST(COALESCE(NULLIF(substr(c.error, instr(c.error, 'after ') + 6, instr(c.error, 'ms') - instr(c.error, 'after ') - 6), ''), '0') AS INTEGER)
       AND ${CALL_WINDOW}`,
@@ -278,7 +280,7 @@ export const QUERIES = {
 
   /** Distinct sellers and resources with at least one buy row in the window ("reached"). */
   buy_reached: `SELECT COUNT(DISTINCT c.seller_id) AS sellers, COUNT(DISTINCT c.resource_id) AS resources
-    FROM calls c WHERE c.source = 'buy' AND ${CALL_WINDOW}`,
+    FROM calls c WHERE c.source IN (${HEADLINE_LIST}) AND ${CALL_WINDOW}`,
 
   /** Headline failures per seller and outcome. */
   buy_seller_failure_types: `${SELLER_CTE}

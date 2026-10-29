@@ -13,6 +13,8 @@ export function openDb(path: string): Db {
   const db = new Database(path);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  // Wait up to a minute for another writer (the daily Bazaar upsert holds the lock for about 30 s) instead of failing.
+  db.pragma("busy_timeout = 60000");
   db.exec(SCHEMA_SQL);
   const v = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
   if (!v) db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', '1')").run();

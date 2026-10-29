@@ -1,0 +1,14 @@
+# Hand-kept hosts that may sell over x402 on Base, from ecosystem pages, directories and partner catalogs
+# (docs/discovery.md). `discover refresh` probes a host it does not know once a day at its root, for free; a 402 with a
+# Base exact option makes it a seller (seller_discovery.source = seed) that enters the probe set and the coverage pool.
+# A host already in the database is skipped. One line of source per host. Started 2026-10-29 from what docs/ names;
+# the operator keeps the rest.
+sellers:
+  - host: api.bitrefill.com
+    source: "docs/PLAN.md and FINAL-REPORT.md: top seller by 30-day USDC volume in the first chain scan"
+  - host: ax1.vc
+    source: "docs/protocol-notes.md: most transfers by count in the first chain scan"
+  - host: blockrun.ai
+    source: "docs/protocol-notes.md: seller named in the Bazaar notes"
+  - host: www.x402scan.com
+    source: "docs/protocol-notes.md: x402scan's own API is paid per call over x402 on Base"

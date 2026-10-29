@@ -392,3 +392,54 @@ CREATE TABLE IF NOT EXISTS resource_states (
   basis         TEXT,                          -- probe|declared|quote
   updated_at    INTEGER NOT NULL
 );
+
+-- ------------------------------------------------------------- allocation
+-- Every scheduled run's plan, one row per seller and pool (and per resource), written BEFORE any signature
+-- (docs/PLAN.md "Coverage-first allocation"), so a run is explainable afterwards. Back-offs are rows with 0 calls.
+CREATE TABLE IF NOT EXISTS run_allocations (
+  id              INTEGER PRIMARY KEY,
+  run_id          INTEGER NOT NULL REFERENCES runs(id),
+  created_at      INTEGER NOT NULL,
+  seller_id       INTEGER NOT NULL REFERENCES sellers(id),
+  resource_id     INTEGER REFERENCES resources(id),
+  pool            TEXT NOT NULL,                -- coverage|maintenance|expensive|candidate|breadth|backoff
+  planned_calls   INTEGER NOT NULL,
+  reason          TEXT NOT NULL,
+  price_atomic    TEXT,                         -- estimated price per call (probe, modal quote, or listing)
+  estimated_atomic TEXT NOT NULL DEFAULT '0'    -- planned_calls x price
+);
+CREATE INDEX IF NOT EXISTS run_allocations_run ON run_allocations(run_id);
+
+-- ---------------------------------------------------------------- discovery
+-- How and when a seller entered the database through `discover refresh` (sellers itself has no source column).
+CREATE TABLE IF NOT EXISTS seller_discovery (
+  seller_id     INTEGER PRIMARY KEY REFERENCES sellers(id),
+  source        TEXT NOT NULL,                  -- discovery (Bazaar recrawl) | seed (config/seed-sellers.yaml)
+  discovered_at INTEGER NOT NULL,
+  note          TEXT
+);
+
+-- Addresses that sent settlement transactions we matched (tx.from of our own settlements): the facilitators.
+CREATE TABLE IF NOT EXISTS facilitators (
+  address        TEXT PRIMARY KEY,              -- lowercase
+  network        TEXT NOT NULL,
+  settlements    INTEGER NOT NULL,              -- our matched settlements this address sent
+  first_seen_at  INTEGER NOT NULL,
+  last_seen_at   INTEGER NOT NULL
+);
+
+-- USDC payees that received facilitator settlements on Base and match no known seller (published as an inflow figure).
+CREATE TABLE IF NOT EXISTS unmapped_payees (
+  pay_to          TEXT PRIMARY KEY,             -- lowercase
+  network         TEXT NOT NULL,
+  first_seen_at   INTEGER NOT NULL,
+  last_seen_at    INTEGER NOT NULL,
+  sample_tx       TEXT,                         -- one facilitator settlement to it
+  facilitator     TEXT,
+  sampled_settlements INTEGER NOT NULL DEFAULT 0, -- settlements to it in the receipt samples so far
+  inflow_30d_atomic TEXT,                       -- non-dust USDC inflow over 30 days (payto_volume)
+  transfers_30d   INTEGER,
+  inflow_computed_at INTEGER,
+  matched_seller_id INTEGER REFERENCES sellers(id), -- set once a later refresh maps it to a seller
+  matched_at      INTEGER
+);

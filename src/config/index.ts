@@ -57,6 +57,18 @@ const EnvSchema = z.object({
   PAIDFOR_INDEX_URL: z.string().url().default("https://paidfor.dev"),
   /** Shared secret for POST /v1/audits (docs/audit-callback.md); empty = results are stored but not posted. */
   AUDIT_SECRET: z.string().default(""),
+  /** Share of a scheduled run's budget for sellers below 30 denominator calls (docs/PLAN.md "Coverage-first allocation"). */
+  COVERAGE_SHARE: z.coerce.number().min(0).max(1).default(0.7),
+  /** Order of coverage sellers with equal call counts: random (default) or price (cheapest first, then random). */
+  COVERAGE_TIES: z.enum(["random", "price"]).default("random"),
+  /** Maintenance draws weight sellers by 30-day inflow, never below this many USDC (so the tail keeps being sampled). */
+  MAINTENANCE_INFLOW_FLOOR_USD: usd.default(100),
+  /** The weekly breadth run (one call per seller the scheduled cap excludes) buys only when this is 1. */
+  BREADTH_RUN_ENABLED: z.string().default("0"),
+  /** Breadth per-call cap (the pre-0c scheduled value); clamped to MAX_PER_CALL_USD, never above it. */
+  BREADTH_MAX_PER_CALL_USD: usd.default(0.5),
+  /** Breadth budget over any 7 days, source breadth only. */
+  BREADTH_WEEKLY_USD: usd.default(10),
 });
 export type Env = z.infer<typeof EnvSchema>;
 
@@ -146,6 +158,8 @@ const ExpensiveSellerSchema = z.object({
 });
 const ExpensiveSchema = z.object({ sellers: z.array(ExpensiveSellerSchema).default([]) });
 export type ExpensiveSeller = z.infer<typeof ExpensiveSellerSchema>;
+/** config/seed-sellers.yaml: hand-kept hosts from ecosystem pages, directories and partner catalogs (discover refresh). */
+const SeedSchema = z.object({ sellers: z.array(z.object({ host: z.string().min(3), source: z.string().default("") })).default([]) });
 export type ManualResourceConfig = z.infer<typeof ManualResource>;
 
 export interface FileConfigs {
@@ -154,6 +168,7 @@ export interface FileConfigs {
   sample: SampleConfig;
   manual: z.infer<typeof ManualSchema>;
   expensive: z.infer<typeof ExpensiveSchema>;
+  seeds: z.infer<typeof SeedSchema>;
   /** SHA-256 over the raw bytes of every config file and config/schemas/*, sorted by path. */
   configHash: string;
 }
@@ -170,6 +185,7 @@ export function loadFileConfigs(root = process.cwd()): FileConfigs {
   const sample = readYaml(resolve(cfg, "sample.yaml"), SampleSchema);
   const manual = readYaml(resolve(cfg, "manual-sellers.yaml"), ManualSchema);
   const expensive = readYaml(resolve(cfg, "expensive-sellers.yaml"), ExpensiveSchema);
+  const seeds = readYaml(resolve(cfg, "seed-sellers.yaml"), SeedSchema);
   const h = createHash("sha256");
   const parts: [string, string][] = [
     ["config/exclude.yaml", exclude.raw],
@@ -178,6 +194,7 @@ export function loadFileConfigs(root = process.cwd()): FileConfigs {
   ];
   // Hashed only when present, so configs from before the file existed keep their recorded hash.
   if (expensive.raw) parts.push(["config/expensive-sellers.yaml", expensive.raw]);
+  if (seeds.raw) parts.push(["config/seed-sellers.yaml", seeds.raw]);
   const schemasDir = resolve(cfg, "schemas");
   if (existsSync(schemasDir)) {
     for (const f of readdirSync(schemasDir).filter((f) => f.endsWith(".json")).sort()) {
@@ -185,7 +202,7 @@ export function loadFileConfigs(root = process.cwd()): FileConfigs {
     }
   }
   for (const [p, raw] of parts.sort((a, b) => a[0].localeCompare(b[0]))) h.update(p).update("\0").update(raw).update("\0");
-  return { root, exclude: exclude.value, sample: sample.value, manual: manual.value, expensive: expensive.value, configHash: h.digest("hex") };
+  return { root, exclude: exclude.value, sample: sample.value, manual: manual.value, expensive: expensive.value, seeds: seeds.value, configHash: h.digest("hex") };
 }
 
 export function isExcluded(exclude: ExcludeConfig, sellerDomain: string, resourceUrl?: string): string | null {

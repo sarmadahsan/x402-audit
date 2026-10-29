@@ -359,6 +359,14 @@ than a clean overcharge rate.
   sample; until then they appear only in their own figures.
 - Operational restarts (gated, with resume) and 63 audited re-classifications
   happened during the run; all are in the database and the git history.
+- The headline published by the index and in `summary.json` is a rolling
+  figure over the current sample, not this report's number. Since 2026-10-29
+  each scheduled run spends most of its budget on sellers below 30 calls,
+  a weekly breadth run (source `breadth`) buys once from sellers the
+  0.10 USDC scheduled cap excludes, and a daily discovery job adds sellers,
+  so the rolling figure moves as the sample widens. This report's
+  study-window figure (2026-10-24 20:25 to 2026-10-26 00:19 UTC, 6.6% on
+  12,992 calls) is frozen with its dates and is never recomputed.
 
 ## 7. Reproducibility
 

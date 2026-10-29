@@ -3,6 +3,9 @@ import { discoverReport, runDiscover } from "../discover/index.js";
 import { loadEnv, loadFileConfigs, usdToAtomic, type Network } from "../config/index.js";
 import { fetchCandidates, importCandidates, probeCandidates } from "../discover/candidates.js";
 import { openDb } from "../db/index.js";
+import { runRefresh } from "../discover/refresh.js";
+import { makeChainClient } from "../chain/client.js";
+import { MAINNET } from "../config/index.js";
 import { log } from "../log.js";
 import { finishRun, startRun } from "./runs.js";
 
@@ -53,6 +56,40 @@ export function registerDiscover(program: Command, globals: (cmd: Command) => { 
       finishRun(db, runId, "ok", { imported, probed: probed.length });
       for (const p of probed) console.log(`${p.state}\t${p.quoted_usdc ?? "-"}\t${p.url}\t${p.note}`);
       console.log(JSON.stringify({ status: "ok", ...imported, probed: probed.length, byState: probed.reduce<Record<string, number>>((a, p) => ((a[p.state] = (a[p.state] ?? 0) + 1), a), {}) }));
+    });
+  d.command("refresh")
+    .description("daily discovery (free): Bazaar recrawl, config/seed-sellers.yaml, and Base payees of facilitator settlements in the last 24 h that no seller claims; new sellers enter the probe set")
+    .option("--throttle-ms <n>", "delay between Bazaar pages", (v) => parseInt(v, 10), 1000)
+    .option("--no-bazaar", "skip the Bazaar crawl")
+    .option("--no-chain", "skip the chain diff")
+    .option("--receipt-sample <n>", "AuthorizationUsed transactions read per refresh", (v) => parseInt(v, 10), 1500)
+    .option("--max-probe-adds <n>", "new sellers added to the probe set per refresh", (v) => parseInt(v, 10), 300)
+    .action(async function (this: Command, o: { throttleMs: number; bazaar: boolean; chain: boolean; receiptSample: number; maxProbeAdds: number }) {
+      const g = globals(this);
+      const env = loadEnv();
+      const files = loadFileConfigs();
+      const db = openDb(g.db);
+      const runId = startRun(db, "discover refresh", o, g.network, false);
+      try {
+        const chain = o.chain ? makeChainClient({ rpcUrl: g.network === MAINNET ? env.BASE_LOGS_RPC_URL : env.BASE_SEPOLIA_RPC_URL, network: g.network }) : undefined;
+        const stats = await runRefresh(db, {
+          network: g.network,
+          log,
+          manual: files.manual.resources,
+          exclude: files.exclude,
+          seeds: files.seeds.sellers,
+          skipBazaar: !o.bazaar,
+          throttleMs: o.throttleMs,
+          receiptSample: o.receiptSample,
+          maxProbeAdds: o.maxProbeAdds,
+          ...(chain ? { chain: chain as never } : {}),
+        });
+        finishRun(db, runId, "ok", stats); // a failed step is in stats.errors; the others still ran
+        console.log(JSON.stringify(stats, null, 2));
+      } catch (e) {
+        finishRun(db, runId, "error", { error: (e as Error).message });
+        throw e;
+      }
     });
   d.command("report")
     .description("top sellers by 30-day volume with resource counts")

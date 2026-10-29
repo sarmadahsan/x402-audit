@@ -1,16 +1,19 @@
 /**
  * Allocations a scheduled run adds next to the stratified plan (docs/PLAN.md "Schedule"):
  *  - candidate lane: one call per `queued` user candidate (src/discover/candidates.ts), only with CANDIDATE_BUYS_ENABLED=1;
+ *  - breadth lane (weekly, its own command): sellers with no resource under the scheduled cap, see breadthAllocations;
  *  - expensive lane: config/expensive-sellers.yaml, each seller at its own per-call cap and at most
  *    `max_per_week` purchases in any 7 days, one call per run so they spread across runs.
  * Neither lane raises a cap: the run's per-run and per-seller caps and every global cap still apply before signing.
  */
 import type { Db } from "../db/index.js";
-import { usdToAtomic, type ExpensiveSeller } from "../config/index.js";
+import { atomicToUsd, usdToAtomic, type ExcludeConfig, type ExpensiveSeller } from "../config/index.js";
 import type { PlanAllocation } from "./plan.js";
 import { buyableResources } from "../audit/run.js";
 import { clearTooExpensive, recordTooExpensive } from "./states.js";
-import { MEASURED_SOURCES } from "../taxonomy.js";
+import { CALL_SOURCES, MEASURED_SOURCES } from "../taxonomy.js";
+import { sellerUniverse, type AllocationRow } from "./allocate.js";
+import { spentAtomic } from "./guard.js";
 
 const WEEK_MS = 7 * 24 * 3_600_000;
 
@@ -78,5 +81,47 @@ export function expensiveAllocations(db: Db, list: readonly ExpensiveSeller[], o
     }
     out.allocations.push({ resourceId: pick.resource_id, sellerId: s.id, sellerDomain: pick.domain, url: pick.url, method: pick.method, inputJson: pick.input_json, tier: "expensive", category: "expensive", priceAtomic: pick.price, calls: 1, perCallCapAtomic: cap });
   }
+  return out;
+}
+
+export interface BreadthLaneResult {
+  allocations: PlanAllocation[];
+  rows: AllocationRow[];
+  skipped: { domain: string; reason: string }[];
+  /** BREADTH_WEEKLY_USD minus breadth spend in the last 7 days. */
+  remainingAtomic: bigint;
+  /** Sellers with every resource above the scheduled cap (the breadth universe). */
+  universe: number;
+}
+
+/**
+ * Weekly breadth run (docs/PLAN.md "Breadth run"): one call per seller that has no resource at or under the scheduled
+ * per-call cap, on its cheapest resource at or under the breadth cap, ordered by 30-day inflow descending then fewest
+ * calls, until the week's breadth budget is used. Sellers on config/expensive-sellers.yaml have their own lane.
+ * A resource above the breadth cap stays too_expensive (recorded when `recordTooExpensive`).
+ */
+export function breadthAllocations(
+  db: Db,
+  o: { network: string; now: number; scheduledCapAtomic: bigint; breadthCapAtomic: bigint; weeklyBudgetAtomic: bigint; exclude?: ExcludeConfig; skipDomains?: readonly string[]; recordTooExpensive?: boolean },
+): BreadthLaneResult {
+  const uni = sellerUniverse(db, { network: o.network, capAtomic: o.scheduledCapAtomic, now: o.now, ...(o.exclude ? { exclude: o.exclude } : {}) }).filter((s) => s.eligible.length === 0 && s.over.length > 0);
+  const skip = new Set((o.skipDomains ?? []).map((d) => d.toLowerCase()));
+  const spent = spentAtomic(db, { since: o.now - WEEK_MS, sources: [CALL_SOURCES.BREADTH] });
+  const recent = db.prepare(`SELECT 1 FROM calls WHERE seller_id = ? AND source = '${CALL_SOURCES.BREADTH}' AND ts >= ? LIMIT 1`);
+  const out: BreadthLaneResult = { allocations: [], rows: [], skipped: [], remainingAtomic: o.weeklyBudgetAtomic > spent ? o.weeklyBudgetAtomic - spent : 0n, universe: uni.length };
+  uni.sort((a, b) => (a.inflowAtomic > b.inflowAtomic ? -1 : a.inflowAtomic < b.inflowAtomic ? 1 : 0) || a.calls - b.calls || a.sellerId - b.sellerId);
+  let left = out.remainingAtomic;
+  uni.forEach((s, rank) => {
+    if (o.recordTooExpensive) for (const r of s.over) if (r.priceAtomic > o.breadthCapAtomic) recordTooExpensive(db, { resourceId: r.resourceId, quotedAtomic: r.priceAtomic, capAtomic: o.breadthCapAtomic, basis: r.basis === "modal" ? "quote" : r.basis, now: o.now });
+    if (skip.has(s.domain.toLowerCase())) return void out.skipped.push({ domain: s.domain, reason: "on config/expensive-sellers.yaml (own lane)" });
+    const pick = s.over.find((r) => r.priceAtomic <= o.breadthCapAtomic);
+    if (!pick) return void out.skipped.push({ domain: s.domain, reason: `every resource quotes above the breadth cap ${atomicToUsd(o.breadthCapAtomic)} USDC (too_expensive)` });
+    if (recent.get(s.sellerId, o.now - 6 * 24 * 3_600_000)) return void out.skipped.push({ domain: s.domain, reason: "breadth purchase in the last 6 days" });
+    if (pick.priceAtomic > left) return void out.skipped.push({ domain: s.domain, reason: `weekly breadth budget has ${atomicToUsd(left)} USDC left` });
+    left -= pick.priceAtomic;
+    const reason = `no resource at or under ${atomicToUsd(o.scheduledCapAtomic)} USDC; ${s.calls} denominator call(s); 30-day inflow ${atomicToUsd(s.inflowAtomic)} USDC; breadth rank ${rank + 1} of ${uni.length}`;
+    out.allocations.push({ resourceId: pick.resourceId, sellerId: s.sellerId, sellerDomain: s.domain, url: pick.url, method: pick.method, inputJson: pick.inputJson, tier: "breadth", category: s.category, priceAtomic: pick.priceAtomic, calls: 1, perCallCapAtomic: o.breadthCapAtomic, reason });
+    out.rows.push({ sellerId: s.sellerId, resourceId: pick.resourceId, pool: "breadth", plannedCalls: 1, reason, priceAtomic: pick.priceAtomic });
+  });
   return out;
 }

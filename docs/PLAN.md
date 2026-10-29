@@ -172,6 +172,65 @@ probes each once without paying and classifies `queued`, `too_expensive` or
 (`buy run --candidates`), only when `CANDIDATE_BUYS_ENABLED=1`; they never
 enter the stratified plan.
 
+### Coverage-first allocation (2026-10-29)
+
+The per-run random draw kept landing on sellers we already knew (after the
+first day of six-hourly runs: 363 sellers reached, 95 at 30 or more
+denominator calls, the top ten taking a third of all calls). Scheduled runs
+now pass `--allocation coverage` (`src/buy/allocate.ts`):
+
+- The run budget (`--budget-usd`, 1.00) less the expensive and candidate
+  lanes, with 5% headroom for quotes that move between the last probe and the
+  call, splits into two pools.
+- Coverage (`COVERAGE_SHARE`, default 0.7): sellers below 30 denominator
+  calls (their own measured series), fewest first, ties seeded-random, one
+  call per seller per pass and at most 4 per seller per run, so a seller
+  reaches 30 across several runs and times of day.
+- Maintenance (the rest, plus anything coverage could not place): sellers at
+  30 or more, a weighted draw without replacement by 30-day on-chain inflow
+  with a floor (`MAINTENANCE_INFLOW_FLOOR_USD`, 100) so the tail keeps being
+  sampled, at most 2 calls per seller per run.
+- A seller is eligible while it has one resource priced at or under the
+  scheduled cap (latest 402 probe quote, else the modal quote of the last 7
+  days, else the listing); calls rotate over its cheapest resources (those
+  within twice the cheapest price), so a seller is never excluded while it
+  has one affordable endpoint. Only sellers with no such resource keep
+  `too_expensive` rows.
+- A resource whose last three attempts were `not_paid` or `our_error` sits
+  out 48 hours; the back-off is logged and written as a `backoff` row, the
+  resource is never deleted.
+- Every planned call and back-off is a `run_allocations` row (run id,
+  seller, resource, pool, planned calls, reason, estimated USDC) written
+  before the first signature, dry runs included.
+- Calls are dispatched in plan order (coverage first), so a cap that ends a
+  run early cuts maintenance, not coverage. No cap changed.
+
+`buy projection` prints the USDC and runs it takes to bring every eligible
+seller to 30 at the current caps. `buy plan` and `buy run` without
+`--allocation` keep the stratified study design.
+
+### Breadth run (2026-10-29)
+
+`buy run --breadth` (`scripts/loop.sh` after the 12:00 run on
+`LOOP_BREADTH_WEEKDAY_UTC`, Monday by default): one call per seller with no
+resource at or under the scheduled cap, on its cheapest resource at or under
+`BREADTH_MAX_PER_CALL_USD` (0.50, clamped to `MAX_PER_CALL_USD`), ordered by
+30-day inflow then fewest calls, under `BREADTH_WEEKLY_USD` (10) over any 7
+days (source `breadth`; the per-run limit is what is left of the week). Sellers
+on `config/expensive-sellers.yaml` keep their own lane. Buys only with
+`BREADTH_RUN_ENABLED=1` on top of every live gate; otherwise it records a dry
+run with its plan. Breadth rows count in the headline (docs/taxonomy.md).
+
+### Discovery (2026-10-29)
+
+`discover refresh` runs after the 00:00 run (docs/discovery.md): Bazaar
+recrawl, `config/seed-sellers.yaml`, and Base payees of facilitator
+settlements in the last 24 hours that no known seller claims
+(`unmapped_payees`, with 30-day inflow). New sellers get tier NULL, one
+resource in the probe set, and the coverage pool of the next run. No purchase
+happens in refresh. `discover import-candidates` now runs after every
+scheduled run.
+
 ### Settlement confirmation
 
 After every call: look for the USDC `Transfer` from our wallet to the pay-to
