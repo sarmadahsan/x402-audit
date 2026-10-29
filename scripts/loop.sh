@@ -26,7 +26,7 @@
 # On Linux every setting and secret comes from /etc/paidfor/audit.env (systemd EnvironmentFile); nothing logs them.
 # backup : after the first scheduled run of the UTC day, a consistent snapshot of data/audit.sqlite is gzipped and copied to
 #          s3://$BACKUP_BUCKET/audit/<date>.sqlite.gz (skipped and logged when BACKUP_BUCKET or the aws CLI is missing).
-# Env:   LOOP_RUN_USD (0.75)  LOOP_RUN_HOURS_UTC ("0 6 12 18")  LOOP_AUDIT_HOUR_UTC (12)  LOOP_DAILY_USD (2.00)
+# Env:   LOOP_RUN_USD (1.00)  LOOP_RUN_HOURS_UTC ("0 6 12 18")  LOOP_AUDIT_HOUR_UTC (12)  LOOP_DAILY_USD (4.00)
 #        LOOP_PER_CALL_USD (0.10)  LOOP_BUY_CONCURRENCY (4)  (LOOP_BUY_HOUR_UTC is no longer used)
 #        LOOP_PUBLISH (1; 0 = export but do not commit or push)  BACKUP_BUCKET (unset = no backup)
 #        LOOP_PUBLISH_URL (https://github.com/sarmadahsan/paidfor-data.git; the server uses the SSH alias
@@ -36,9 +36,9 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO" || exit 1
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
-LOOP_DAILY_USD="${LOOP_DAILY_USD:-2.00}"
+LOOP_DAILY_USD="${LOOP_DAILY_USD:-4.00}"
 LOOP_PER_CALL_USD="${LOOP_PER_CALL_USD:-0.10}"
-LOOP_RUN_USD="${LOOP_RUN_USD:-0.75}"
+LOOP_RUN_USD="${LOOP_RUN_USD:-1.00}"
 LOOP_RUN_HOURS_UTC="${LOOP_RUN_HOURS_UTC:-0 6 12 18}"
 LOOP_AUDIT_HOUR_UTC="${LOOP_AUDIT_HOUR_UTC:-12}"
 LOOP_BUY_CONCURRENCY="${LOOP_BUY_CONCURRENCY:-4}"
