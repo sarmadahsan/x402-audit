@@ -21,11 +21,19 @@
  *   value. Dust (below the dust floor) is removed in JS before the mode is taken.
  */
 import type { Db } from "../db/index.js";
-import { FLAGS, HEADLINE_FAILURE_OUTCOMES, OUTCOMES, PAID_DENOMINATOR_OUTCOMES } from "../taxonomy.js";
+import { AUDIT_SOURCES, FLAGS, HEADLINE_FAILURE_OUTCOMES, MEASURED_SOURCES, OUTCOMES, PAID_DENOMINATOR_OUTCOMES } from "../taxonomy.js";
 
 const sqlList = (xs: Iterable<string>): string => [...xs].map((x) => `'${x.replace(/'/g, "''")}'`).join(", ");
 const DENOM_LIST = sqlList(PAID_DENOMINATOR_OUTCOMES);
 const FAIL_LIST = sqlList(HEADLINE_FAILURE_OUTCOMES);
+const MEASURED_LIST = sqlList(MEASURED_SOURCES);
+const AUDIT_LIST = sqlList(AUDIT_SOURCES);
+
+/** A seller that entered through the user-candidate import stays out of the headline, by_tier and by_category until
+ * its first scheduled purchase is at least this old (docs/taxonomy.md "Candidate sellers"). */
+export const CANDIDATE_SETTLE_MS = 7 * 24 * 60 * 60 * 1000;
+const YOUNG_CANDIDATE = `(EXISTS (SELECT 1 FROM candidates k WHERE k.seller_id = c.seller_id AND k.seller_new = 1)
+    AND COALESCE((SELECT MIN(c2.ts) FROM calls c2 WHERE c2.seller_id = c.seller_id AND c2.source = 'buy'), @until) > @until - ${CANDIDATE_SETTLE_MS})`;
 
 /** Exact integer from a TEXT atomic amount; anything malformed counts as 0. */
 const intOf = (e: string): string =>
@@ -51,14 +59,14 @@ const hasFlag = (flagsCol: string, flag: string): string =>
  * `in_denom` (outcome in the paid denominator and not an unpaid overcharge),
  * and `failed` (outcome is a headline failure).
  */
-const BUY_CTE = `WITH b0 AS (
+const buyCte = (sourceWhere: string): string => `WITH b0 AS (
   SELECT c.id, c.seller_id, c.outcome, c.paid, c.settlement_count, c.amount_paid_atomic,
          c.quote_amount_atomic, c.reference_price_atomic,
          CASE WHEN json_valid(c.flags_json) THEN c.flags_json ELSE '[]' END AS flags,
          CASE WHEN json_valid(c.settlement_header_json)
               THEN CAST(json_extract(c.settlement_header_json, '$.amount') AS TEXT) END AS hdr_amount
   FROM calls c
-  WHERE c.source = 'buy' AND ${CALL_WINDOW}
+  WHERE ${sourceWhere} AND ${CALL_WINDOW}
 ), b1 AS (
   SELECT b0.*,
     CASE WHEN paid = 1 AND settlement_count >= 1 THEN ${intOf("amount_paid_atomic")}
@@ -75,6 +83,10 @@ const BUY_CTE = `WITH b0 AS (
     CASE WHEN unpaid_oc THEN ${intOf("quote_amount_atomic")} ELSE 0 END AS exposure
   FROM b1
 )`;
+/** Headline, by_tier, by_category and every report aggregate: scheduled buys only, young candidate sellers left out. */
+const BUY_CTE = buyCte(`c.source = 'buy' AND NOT ${YOUNG_CANDIDATE}`);
+/** A seller's (and resource's) own measured series: scheduled buys plus audit purchases, candidates included. */
+const SELLER_CTE = buyCte(`c.source IN (${MEASURED_LIST})`);
 
 /** Columns shared by every grouped rate query over `b` (restricted to in_denom rows). */
 const RATE_COLS = `COUNT(*) AS n,
@@ -165,7 +177,7 @@ export const QUERIES = {
     FROM b WHERE in_denom = 1 AND outcome = '${OUTCOMES.OVERCHARGE}' ORDER BY id`,
 
   /** Per seller with at least @min_calls denominator rows. */
-  buy_sellers_min_calls: `${BUY_CTE}
+  buy_sellers_min_calls: `${SELLER_CTE}
     SELECT s.id AS seller_id, s.domain AS domain, s.tier AS tier, s.category AS category, ${RATE_COLS}
     FROM b JOIN sellers s ON s.id = b.seller_id
     WHERE in_denom = 1
@@ -269,12 +281,12 @@ export const QUERIES = {
     FROM calls c WHERE c.source = 'buy' AND ${CALL_WINDOW}`,
 
   /** Headline failures per seller and outcome. */
-  buy_seller_failure_types: `${BUY_CTE}
+  buy_seller_failure_types: `${SELLER_CTE}
     SELECT b.seller_id AS seller_id, b.outcome AS outcome, COUNT(*) AS n
     FROM b WHERE in_denom = 1 AND failed = 1 GROUP BY 1, 2 ORDER BY 1, 2`,
 
   /** Per resource with at least @min_calls denominator rows. */
-  buy_resources_min_calls: `${BUY_CTE}
+  buy_resources_min_calls: `${SELLER_CTE}
     SELECT c.resource_id AS resource_id, ${RATE_COLS}
     FROM b JOIN calls c ON c.id = b.id
     WHERE in_denom = 1
@@ -282,20 +294,20 @@ export const QUERIES = {
     ORDER BY c.resource_id`,
 
   /** Headline failures per resource and outcome. */
-  buy_resource_failure_types: `${BUY_CTE}
+  buy_resource_failure_types: `${SELLER_CTE}
     SELECT c.resource_id AS resource_id, b.outcome AS outcome, COUNT(*) AS n
     FROM b JOIN calls c ON c.id = b.id
     WHERE in_denom = 1 AND failed = 1 GROUP BY 1, 2 ORDER BY 1, 2`,
 
   /** Quote histogram over denominator rows, per seller and resource (median / mode / max computed in JS as bigint). */
-  buy_denominator_quotes: `${BUY_CTE}
+  buy_denominator_quotes: `${SELLER_CTE}
     SELECT b.seller_id AS seller_id, c.resource_id AS resource_id, b.quote_amount_atomic AS quote_atomic, COUNT(*) AS n
     FROM b JOIN calls c ON c.id = b.id
     WHERE in_denom = 1 AND b.quote_amount_atomic IS NOT NULL AND b.quote_amount_atomic GLOB '[0-9]*' AND b.quote_amount_atomic NOT GLOB '*[^0-9]*'
     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
 
   /** Headline failure rows, newest first, with the public evidence fields only (no request or response bodies, no wallet). */
-  buy_failure_samples: `${BUY_CTE}
+  buy_failure_samples: `${SELLER_CTE}
     SELECT b.id AS call_id, b.seller_id AS seller_id, b.outcome AS outcome, c.ts AS ts, r.url AS url, r.method AS method,
       b.quote_amount_atomic AS quote_atomic, b.reference_price_atomic AS reference_atomic, c.reference_source AS reference_source,
       c.response_status AS http_status,
@@ -307,14 +319,14 @@ export const QUERIES = {
   /** Failing validators per call (name and reason code; evidence_json is never exported). */
   validator_failures: `SELECT v.call_id AS call_id, v.validator AS validator, v.reason AS reason
     FROM validator_results v JOIN calls c ON c.id = v.call_id
-    WHERE v.status = 'fail' AND c.source = 'buy' AND ${CALL_WINDOW}
+    WHERE v.status = 'fail' AND c.source IN (${MEASURED_LIST}) AND ${CALL_WINDOW}
     ORDER BY v.call_id, v.validator`,
 
   /** Seller facts from discovery and the chain scan, plus last time we saw the seller (buy row or probe). */
   seller_meta: `SELECT s.id AS seller_id, s.domain AS domain, s.tier AS tier, s.category AS category,
       s.volume_30d_atomic AS volume_30d_atomic, s.volume_30d_source AS volume_30d_source, s.volume_30d_computed_at AS volume_30d_computed_at,
       (SELECT COUNT(*) FROM resources r WHERE r.seller_id = s.id AND r.source = 'bazaar') AS bazaar_listings,
-      MAX(COALESCE((SELECT MAX(c.ts) FROM calls c WHERE c.seller_id = s.id AND c.source = 'buy' AND ${CALL_WINDOW}), 0),
+      MAX(COALESCE((SELECT MAX(c.ts) FROM calls c WHERE c.seller_id = s.id AND c.source IN (${MEASURED_LIST}) AND ${CALL_WINDOW}), 0),
           COALESCE((SELECT MAX(p.ts) FROM probes p JOIN resources r ON r.id = p.resource_id
                     WHERE r.seller_id = s.id AND p.ts >= @since AND p.ts <= @until AND ${netMatch("p.network")}), 0)) AS last_seen_ts
     FROM sellers s ORDER BY s.id`,
@@ -340,6 +352,20 @@ export const QUERIES = {
         ROW_NUMBER() OVER (PARTITION BY r.subcommand ORDER BY COALESCE(r.finished_at, r.started_at) DESC, r.id DESC) AS rn
       FROM runs r WHERE r.network = @network AND r.subcommand IN ('buy run', 'probe run') AND (r.subcommand <> 'buy run' OR r.dry_run = 0)
     ) WHERE rn = 1`,
+
+  /** Every seller's own measured series (no minimum), with its latest measured call: what audit-triggers compares. */
+  seller_measured: `${SELLER_CTE}
+    SELECT s.id AS seller_id, s.domain AS domain, ${RATE_COLS},
+      (SELECT MAX(c.ts) FROM calls c WHERE c.seller_id = s.id AND c.source IN (${MEASURED_LIST}) AND c.paid = 1) AS last_call_ts
+    FROM b JOIN sellers s ON s.id = b.seller_id
+    WHERE in_denom = 1
+    GROUP BY s.id ORDER BY s.id`,
+
+  /** Paid audit purchases by source, and per seller (the export's "includes N audit purchases"). */
+  audit_purchases_by_source: `SELECT c.source AS source, COUNT(*) AS paid_calls, COUNT(DISTINCT c.seller_id) AS sellers
+    FROM calls c WHERE c.source IN (${AUDIT_LIST}) AND c.paid = 1 AND ${CALL_WINDOW} GROUP BY c.source ORDER BY c.source`,
+  audit_purchases_by_seller: `SELECT c.seller_id AS seller_id, c.source AS source, COUNT(*) AS paid_calls
+    FROM calls c WHERE c.source IN (${AUDIT_LIST}) AND c.paid = 1 AND ${CALL_WINDOW} GROUP BY 1, 2 ORDER BY 1, 2`,
 
   /** Every wallet we ever used; the export refuses to write a file that contains one. */
   our_wallets: `SELECT DISTINCT lower(wallet) AS wallet FROM (SELECT wallet FROM calls WHERE wallet IS NOT NULL UNION SELECT wallet FROM attempts)`,

@@ -101,8 +101,16 @@ export const CALL_SOURCES = {
   BUY: "buy",
   STRESS_DUPLICATE: "stress_duplicate",
   STRESS_TIMEOUT: "stress_timeout",
+  /** Triggered audit purchases (docs/taxonomy.md "Audit purchases"): the two series disagree or the reported series is thin. */
+  AUDIT_DISAGREEMENT: "audit_disagreement",
+  /** Triggered audit purchases: people are checking the seller and our measured data is thin or stale. */
+  AUDIT_DEMAND: "audit_demand",
 } as const;
 export type CallSource = (typeof CALL_SOURCES)[keyof typeof CALL_SOURCES];
+export const AUDIT_SOURCES: readonly CallSource[] = [CALL_SOURCES.AUDIT_DISAGREEMENT, CALL_SOURCES.AUDIT_DEMAND];
+/** Sources that count in a seller's own measured series (and its evidence file). The headline, by_tier and
+ * by_category use `buy` only, because triggered sampling oversamples contested and popular sellers. */
+export const MEASURED_SOURCES: readonly CallSource[] = [CALL_SOURCES.BUY, ...AUDIT_SOURCES];
 
 /** Time limits from the spec. */
 export const INDETERMINATE_WINDOW_MS = 10 * 60 * 1000;

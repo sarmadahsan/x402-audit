@@ -326,3 +326,69 @@ CREATE TABLE IF NOT EXISTS reclassifications (
   new_flags_json TEXT,
   code_commit   TEXT
 );
+
+-- ------------------------------------------------------------------ audits
+-- Every audit-trigger decision with its inputs, written BEFORE any audit spend (docs/PLAN.md "Audits").
+CREATE TABLE IF NOT EXISTS audit_triggers (
+  id              INTEGER PRIMARY KEY,
+  evaluated_at    INTEGER NOT NULL,
+  run_id          INTEGER REFERENCES runs(id),
+  host            TEXT NOT NULL,
+  seller_id       INTEGER REFERENCES sellers(id),
+  reasons_json    TEXT NOT NULL,                -- every condition that held: disagreement|thin_measured|reported_above_ok|demand
+  source          TEXT NOT NULL,                -- audit_disagreement|audit_demand
+  priority        INTEGER NOT NULL,             -- 0 first
+  inputs_json     TEXT NOT NULL,                -- reported, measured and demand figures the decision used
+  decision        TEXT NOT NULL,                -- planned|dry_run|disabled|refused
+  decision_reason TEXT,
+  planned_calls   INTEGER NOT NULL DEFAULT 0,
+  planned_atomic  TEXT NOT NULL DEFAULT '0'
+);
+CREATE INDEX IF NOT EXISTS audit_triggers_ts ON audit_triggers(evaluated_at);
+
+-- One row per completed audit (the result posted back to the index).
+CREATE TABLE IF NOT EXISTS audit_results (
+  id            INTEGER PRIMARY KEY,
+  trigger_id    INTEGER NOT NULL REFERENCES audit_triggers(id),
+  run_id        INTEGER REFERENCES runs(id),
+  host          TEXT NOT NULL,
+  source        TEXT NOT NULL,
+  finished_at   INTEGER NOT NULL,
+  calls         INTEGER NOT NULL,              -- paid-denominator calls in this audit
+  failures      INTEGER NOT NULL,
+  rate          REAL,
+  wilson_low    REAL,
+  wilson_high   REAL,
+  post_status   TEXT,                          -- posted|skipped_no_secret|failed:<status>
+  posted_at     INTEGER
+);
+
+-- -------------------------------------------------------------- candidates
+-- Resources users checked or paid that we had never measured (index GET /v1/candidates), and what probing found.
+CREATE TABLE IF NOT EXISTS candidates (
+  id            INTEGER PRIMARY KEY,
+  url           TEXT NOT NULL UNIQUE,          -- scheme, host, path; never a query string
+  host          TEXT NOT NULL,
+  checks        INTEGER NOT NULL DEFAULT 0,
+  payments      INTEGER NOT NULL DEFAULT 0,
+  first_seen    TEXT,
+  last_seen     TEXT,
+  imported_at   INTEGER NOT NULL,
+  seller_id     INTEGER REFERENCES sellers(id),
+  resource_id   INTEGER REFERENCES resources(id),
+  seller_new    INTEGER NOT NULL DEFAULT 0,    -- 1 = the seller entered the database through this import
+  state         TEXT,                          -- NULL until probed; queued|too_expensive|not_x402|measuring
+  quoted_atomic TEXT,
+  probed_at     INTEGER,
+  note          TEXT
+);
+
+-- Resources that quote above their applicable per-call cap: recorded and exported, never bought, never silently skipped.
+CREATE TABLE IF NOT EXISTS resource_states (
+  resource_id   INTEGER PRIMARY KEY REFERENCES resources(id),
+  state         TEXT NOT NULL,                 -- too_expensive
+  quoted_atomic TEXT,
+  cap_atomic    TEXT,
+  basis         TEXT,                          -- probe|declared|quote
+  updated_at    INTEGER NOT NULL
+);

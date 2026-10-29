@@ -46,6 +46,17 @@ const EnvSchema = z.object({
   TELEMETRY_BIND: z.string().default("127.0.0.1:8787"),
   TELEMETRY_INGEST_TOKEN: z.string().default(""),
   LOG_LEVEL: z.string().default("info"),
+  /** Audit purchases (docs/PLAN.md "Audits") spend only when this is 1, on top of --live and X402_AUDIT_LIVE=1. */
+  AUDIT_TRIGGERS_ENABLED: z.string().default("0"),
+  /** Purchases from user-imported candidate sellers happen only when this is 1. */
+  CANDIDATE_BUYS_ENABLED: z.string().default("0"),
+  AUDIT_MAX_PER_DAY_USD: usd.default(5),
+  AUDIT_MAX_SELLERS_PER_DAY: z.coerce.number().int().nonnegative().default(10),
+  AUDIT_MAX_CALLS_PER_SELLER: z.coerce.number().int().nonnegative().default(10),
+  /** The public index the triggers read (/v1/reported, /v1/demand, /v1/candidates) and audits post to (/v1/audits). */
+  PAIDFOR_INDEX_URL: z.string().url().default("https://paidfor.dev"),
+  /** Shared secret for POST /v1/audits (docs/audit-callback.md); empty = results are stored but not posted. */
+  AUDIT_SECRET: z.string().default(""),
 });
 export type Env = z.infer<typeof EnvSchema>;
 
@@ -61,6 +72,8 @@ export interface Caps {
   perDayAtomic: bigint;
   totalAtomic: bigint;
   stressTotalAtomic: bigint;
+  /** Audit purchases per UTC day, all audit sources together (AUDIT_MAX_PER_DAY_USD). */
+  auditPerDayAtomic: bigint;
 }
 export const USDC_DECIMALS = 6;
 export function usdToAtomic(usd: number): bigint {
@@ -81,6 +94,7 @@ export function capsFromEnv(env: Env): Caps {
     perDayAtomic: usdToAtomic(env.MAX_PER_DAY_USD),
     totalAtomic: usdToAtomic(env.MAX_TOTAL_USD),
     stressTotalAtomic: usdToAtomic(env.STRESS_MAX_TOTAL_USD),
+    auditPerDayAtomic: usdToAtomic(env.AUDIT_MAX_PER_DAY_USD),
   };
 }
 
