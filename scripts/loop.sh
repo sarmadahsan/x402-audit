@@ -44,7 +44,7 @@
 #        LOOP_PUBLISH_URL (https://github.com/sarmadahsan/paidfor-data.git; the server uses the SSH alias
 #        git@github-data:sarmadahsan/paidfor-data.git so its write deploy key for that repo is offered)
 set -uo pipefail
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 cd "$REPO" || exit 1
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
@@ -182,6 +182,18 @@ effective_caps() {
   fi
 }
 
+# A scheduled buy that does not go ahead still leaves a `buy run` row (status skipped, the reason in notes), a health
+# post and an export, so `last_buy_run` in the export and the buy tile on the dashboard show the skip instead of the
+# previous run. (2026-10-30 00:00 UTC: `pnpm gate` failed and the slot passed with only a line in this log.)
+skipped_buy() {
+  local today="$1" hh="$2" reason="$3"
+  log "scheduled buy $today $hh:00: skipped, $reason"
+  run "${CLI[@]}" buy skipped --slot "${today}T${hh}" --reason "$reason" || log "scheduled buy $today $hh:00: could not record the skip; continuing"
+  health_post buy
+  export_publish || true
+  log "scheduled buy $today $hh:00: done (skipped)"
+}
+
 # The scheduled buy for one run slot. `live` = 1 spends (every gate below must pass); 0 prints the plan (dry run).
 buy_args() {
   local seed="$1" since="$2"
@@ -204,15 +216,15 @@ scheduled_buy() {
   sh -c 'echo $PPID' > "$STATE/buy.pid"
   effective_caps
   log "scheduled buy $today $hh:00: start (run cap $RUN_USD USDC, per-call $LOOP_PER_CALL_USD, day budget $DAILY_USD; $CAP_NOTE)"
-  if [ -e halt ] || [ -e halt-buy ]; then log "scheduled buy $today $hh:00: skipped, halt or halt-buy file present"; return 0; fi
+  if [ -e halt ] || [ -e halt-buy ]; then skipped_buy "$today" "$hh" "halt or halt-buy file present"; return 0; fi
   live="${X402_AUDIT_LIVE:-$(grep -E '^X402_AUDIT_LIVE=' .env 2>/dev/null | tail -1 | cut -d= -f2)}"
-  if [ "$live" != 1 ]; then log "scheduled buy $today $hh:00: skipped, X402_AUDIT_LIVE is not 1"; return 0; fi
-  if [ -n "$(git status --porcelain)" ]; then log "scheduled buy $today $hh:00: skipped, working tree is dirty (the commit gate needs a clean, committed HEAD)"; return 0; fi
-  if ! run pnpm gate; then log "scheduled buy $today $hh:00: skipped, pnpm gate failed"; return 0; fi
+  if [ "$live" != 1 ]; then skipped_buy "$today" "$hh" "X402_AUDIT_LIVE is not 1"; return 0; fi
+  if [ -n "$(git status --porcelain)" ]; then skipped_buy "$today" "$hh" "working tree is dirty (the commit gate needs a clean, committed HEAD)"; return 0; fi
+  if ! run pnpm gate; then skipped_buy "$today" "$hh" "pnpm gate failed"; return 0; fi
   pool="$(wallet_pool_usd)"
-  if [ -z "$pool" ]; then log "scheduled buy $today $hh:00: skipped, could not read wallet balances"; return 0; fi
+  if [ -z "$pool" ]; then skipped_buy "$today" "$hh" "could not read wallet balances"; return 0; fi
   if awk -v b="$pool" -v n="$RUN_USD" 'BEGIN { exit !(b + 0 < n + 0) }'; then
-    log "scheduled buy $today $hh:00: skipped, wallet pool holds $pool USDC, less than the run cap $RUN_USD"; return 0
+    skipped_buy "$today" "$hh" "wallet pool holds $pool USDC, less than the run cap $RUN_USD"; return 0
   fi
   log "scheduled buy $today $hh:00: wallet pool $pool USDC, seed $seed"
   # shellcheck disable=SC2046
@@ -326,6 +338,9 @@ WantedBy=timers.target
 EOU
 }
 
+# Test hook: `LOOP_SOURCE_ONLY=1 . scripts/loop.sh` defines the functions above and returns without running anything.
+[ "${LOOP_SOURCE_ONLY:-0}" = 1 ] && return 0
+
 case "${1:-loop}" in
   loop)
     rm -rf "$STATE"/*.lock
@@ -348,7 +363,7 @@ case "${1:-loop}" in
     # Planned audits from the live index, recorded as dry_run decisions; spends nothing.
     "${CLI[@]}" audit-triggers ;;
   caps)
-    # What applies at epoch $2 (default now): `scripts/loop.sh caps 1793750400` (2026-11-05 00:00 UTC).
+    # What applies at epoch $2 (default now): `scripts/loop.sh caps 1793836800` (2026-11-05 00:00 UTC).
     effective_caps "${2:-}"; echo "run_usd=$RUN_USD daily_usd=$DAILY_USD ($CAP_NOTE)" ;;
   dry-run-breadth)
     # shellcheck disable=SC2046

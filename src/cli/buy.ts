@@ -16,7 +16,7 @@ import { openDb, type Db } from "../db/index.js";
 import { log } from "../log.js";
 import { runStressDuplicate, runStressTimeout, stressReport, selectStressResources } from "../stress/index.js";
 import { createPayer, type Payer } from "../x402/pay.js";
-import { finishRun, startRun } from "./runs.js";
+import { finishRun, recordSkippedRun, startRun } from "./runs.js";
 import { reclassifyCalls } from "../pipeline/reclassify.js";
 import { reconcileOrphans } from "../pipeline/reconcile.js";
 import { assertGate } from "../gate.js";
@@ -361,6 +361,19 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         finishRun(db, runId, "error", { error: (e as Error).message });
         throw e;
       }
+    });
+
+  b.command("skipped")
+    .description("record that a scheduled run did not go ahead (the loop calls this when one of its gates fails): a `buy run` row with status skipped and the reason; moves no money")
+    .requiredOption("--reason <text>", "why the run was skipped (recorded in the row's notes)")
+    .option("--slot <key>", "the run slot that was skipped, e.g. 2026-10-30T00")
+    .option("--allocation <mode>", "coverage (a scheduled run) or breadth", "coverage")
+    .action(function (this: Command, o: { reason: string; slot?: string; allocation: string }) {
+      const g = globals(this);
+      if (o.allocation !== "coverage" && o.allocation !== "breadth") throw new Error(`--allocation must be coverage or breadth, got ${o.allocation}`);
+      const db = openDb(g.db);
+      const id = recordSkippedRun(db, "buy run", { allocation: o.allocation, live: true, skipped: true, ...(o.slot ? { slot: o.slot } : {}) }, g.network, o.reason);
+      console.log(JSON.stringify({ run: id, status: "skipped", reason: o.reason, slot: o.slot ?? null }));
     });
 
   b.command("reclassify")

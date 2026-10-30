@@ -51,6 +51,12 @@ study-window figure (6.6%, 2026-10-24 to 2026-10-26), it is a separate, frozen l
 scheduled budget), which is routine and should not alarm. `halted` now means only the halt file, an error, or a
 backstop cap (`MAX_PER_DAY_USD`, `MAX_TOTAL_USD`). `ok`/`completed` as before.
 
+Since 2026-10-30, `skipped` (also in the health post's `runs.buy.status`): the loop reached a scheduled slot but one of
+its gates stopped the run before any purchase (its test gate failed, a halt file was present, the working tree was
+dirty, or the wallet pool was below the run cap). The row has no calls and no spend; the reason is in the harness's
+`runs.notes`. The buy tile should show it as a missed run (red or amber), not as a fresh run and not as "ok": the next
+slot is at most six hours away, and a second `skipped` in a row is the signal that the harness needs an operator.
+
 ## Needed from the index: per-host demand by channel
 
 The harness ranks admit-lane sellers by **external** demand: checks from the `skill`, `mcp`, `x402-safe-fetch` and

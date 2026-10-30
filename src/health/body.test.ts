@@ -40,7 +40,11 @@ function envWith(vars: Record<string, string>) {
     else process.env[k] = v;
   }
 }
-const env = envWith({ X402_AUDIT_WALLET_KEYS: KEY, AUDIT_SECRET: SECRET, MAX_TOTAL_USD: "300", BREADTH_WEEKLY_USD: "2.25", BREADTH_RUN_ENABLED: "1" });
+// Every variable a test below asserts on is pinned here. `loadEnv()` reads the real process environment, and `pnpm gate`
+// runs this suite inside the loop, under /etc/paidfor/audit.env: on 2026-10-30 at 00:17 UTC the unpinned flags came back
+// as "1", the suite failed and the 00:00 scheduled buy was skipped.
+const FIXTURE_ENV = { X402_AUDIT_WALLET_KEYS: KEY, AUDIT_SECRET: SECRET, MAX_TOTAL_USD: "300", BREADTH_WEEKLY_USD: "2.25", BREADTH_RUN_ENABLED: "1", AUDIT_TRIGGERS_ENABLED: "0", CANDIDATE_BUYS_ENABLED: "0" };
+const env = envWith(FIXTURE_ENV);
 
 const loopEnv = { LOOP_RUN_USD: "1.00", LOOP_DAILY_USD: "4.00", LOOP_CAP_OVERRIDE_UNTIL_UTC: "2026-11-05T00:00:00Z", LOOP_CAP_OVERRIDE_RUN_USD: "2.00", LOOP_CAP_OVERRIDE_DAILY_USD: "8.00" };
 
@@ -118,6 +122,27 @@ describe("health body", () => {
     // Every amount is a 6-decimal string.
     const amounts = [...Object.values(b.caps), ...Object.values(b.runs).map((r) => r!.spent_usdc), ...b.wallets.map((w) => w.usdc)].filter((x) => x !== null);
     for (const a of amounts) expect(a).toMatch(/^\d+\.\d{6}$/);
+  });
+
+  it("the fixture pins every flag it asserts, so the gate's environment (the loop's audit.env) cannot fail it", () => {
+    const keys = ["AUDIT_TRIGGERS_ENABLED", "CANDIDATE_BUYS_ENABLED", "BREADTH_RUN_ENABLED"] as const;
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    Object.assign(process.env, { AUDIT_TRIGGERS_ENABLED: "1", CANDIDATE_BUYS_ENABLED: "1", BREADTH_RUN_ENABLED: "0" }); // the server's values
+    try {
+      const e = envWith(FIXTURE_ENV);
+      expect([e.AUDIT_TRIGGERS_ENABLED, e.CANDIDATE_BUYS_ENABLED, e.BREADTH_RUN_ENABLED]).toEqual(["0", "0", "1"]);
+    } finally {
+      for (const k of keys) if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k]!;
+    }
+  });
+
+  it("a scheduled run the loop skipped is the latest buy run: status skipped, no plan, no spend", async () => {
+    const db = seed();
+    db.prepare("INSERT INTO runs (id, subcommand, args_json, config_hash, network, dry_run, started_at, finished_at, status, notes) VALUES (6, 'buy run', ?, 'h', ?, 0, ?, ?, 'skipped', ?)")
+      .run(JSON.stringify({ allocation: "coverage", live: true, skipped: true, slot: "2026-10-30T00" }), NET, NOW - 60_000, NOW - 60_000, JSON.stringify({ reason: "pnpm gate failed" }));
+    const { runs } = await build({ db });
+    expect(runs.buy).toEqual({ status: "skipped", started_at: "2026-10-29T18:29:00.000Z", finished_at: "2026-10-29T18:29:00.000Z", planned_calls: null, spent_usdc: "0.000000", failures: 0, errors: 0 });
   });
 
   it("takes runs from the runs table, planned calls from run_allocations, spend as the run counted it", async () => {
