@@ -21,6 +21,7 @@
 #        scripts/loop.sh once       one hourly cycle now, then exit
 #        scripts/loop.sh dry-run-buy    print what the current slot's scheduled buy would buy; spends nothing
 #        scripts/loop.sh dry-run-audit  print (and record as dry_run) the audits the index would trigger now
+#        scripts/loop.sh run-slot <YYYY-MM-DD> <HH>  one scheduled buy for that slot now, in the foreground, through every gate (catch-up)
 #        scripts/loop.sh dry-run-breadth  print what the weekly breadth run would buy; spends nothing
 #        scripts/loop.sh install    macOS: write and load the launchd agent (com.x402audit.loop)
 #                                   Linux: (sudo) write /etc/systemd/system/paidfor-audit.service and enable it
@@ -359,6 +360,12 @@ case "${1:-loop}" in
     today="$(date -u +%F)"; slot="$(current_slot "$(date -u +%H)")"; slot="${slot:-00}"
     # shellcheck disable=SC2046
     "${CLI[@]}" buy run $(buy_args "$(date -u +%Y%m%d)$slot" "${today}T${slot}:00:00Z") ;;
+  run-slot)
+    # One scheduled buy for a slot, in the foreground, through every gate above (halt files, X402_AUDIT_LIVE, clean tree,
+    # `pnpm gate`, wallet pool) and under the same caps as the loop's own run: `scripts/loop.sh run-slot 2026-10-30 00`
+    # catches up a slot the loop skipped (its `skipped` row says why). The loop sees its buy.pid and waits for it.
+    today="${2:?usage: $0 run-slot <YYYY-MM-DD> <HH>}"; hh="$(printf %02d "$((10#${3:?usage: $0 run-slot <YYYY-MM-DD> <HH>}))")"
+    scheduled_buy "$today" "$hh"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ;;
   dry-run-audit)
     # Planned audits from the live index, recorded as dry_run decisions; spends nothing.
     "${CLI[@]}" audit-triggers ;;
@@ -427,5 +434,5 @@ EOP
     # One health post now: `scripts/loop.sh health [timer|probe|buy|export|manual] [--dry-run]` (the timer runs `health timer`).
     t="${2:-manual}"; shift; shift || true
     "${CLI[@]}" health --trigger "$t" "$@" ;;
-  *) echo "usage: $0 [loop|once|caps|dry-run-buy|dry-run-audit|dry-run-breadth|install|uninstall|status|unit|health-units|health]" >&2; exit 2 ;;
+  *) echo "usage: $0 [loop|once|caps|dry-run-buy|run-slot|dry-run-audit|dry-run-breadth|install|uninstall|status|unit|health-units|health]" >&2; exit 2 ;;
 esac
