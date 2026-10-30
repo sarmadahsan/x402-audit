@@ -1,7 +1,9 @@
 # secrets
-.env
-.env.*
+.env*
 !.env.example
+*.key
+*.pem
+*wallets*
 
 # runtime data
 data/
@@ -10,7 +12,12 @@ data/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+*.db
 halt
+halt-*
+
+# operator notes, kept local
+HANDOFF.md
 
 # build / deps
 node_modules/
