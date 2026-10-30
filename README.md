@@ -1,106 +1,104 @@
 # x402-audit
 
-A measurement harness that answers one question with a defensible number:
-**what share of paid x402 API calls on Base mainnet fail the buyer, by count and
-by dollars, and why.**
+The harness behind [paidfor.dev](https://paidfor.dev). It is published so that
+anyone reading the study, including the sellers it names, can check how we
+measured.
 
-This is a research instrument, not a product. It runs for a few weeks, spends at
-most a few hundred dollars of USDC, and produces a report. Every design choice
-favours correctness and auditability of the number over scale or reuse.
+## The question
 
-See `docs/PLAN.md` for milestones, `docs/taxonomy.md` for the failure taxonomy,
-`docs/protocol-notes.md` for the protocol facts this code relies on (with the
-files and commits they were read from), and `docs/NOT-BUILT.md` for what was
-deliberately left out.
+Of paid x402 API calls on Base mainnet, what share fail the buyer, by count and
+by dollars, and why?
 
-## Safety defaults
+## The answer, for the study window
 
-- Default network is Base Sepolia (`eip155:84532`).
-- Real money moves only with `--live`, `X402_AUDIT_LIVE=1`, and `--network eip155:8453`, all three.
-- Every subcommand defaults to `--dry-run`.
-- A file named `halt` in the repo root stops every running job within one loop iteration.
-- Keys come from `.env` only. `.env` is gitignored; `.env.example` documents every variable.
-- Wallets are never funded by the harness. Funding is manual (see "Wallets" below once milestone 3 lands).
+From 2026-10-24 20:25 UTC to 2026-10-26 00:19 UTC, across 12,992 paid calls to
+362 sellers (95% Wilson intervals):
 
-## Commands
+| measure | denominator | failures | rate |
+|---|---|---|---|
+| count-weighted | 12,992 paid calls | 859 | 6.6% [6.2%, 7.1%] |
+| dollar-weighted | 57.92 USDC | 4.51 USDC | 7.8% [6.8%, 9.0%] (Kish effective n = 2,237) |
 
-Every subcommand is dry-run by default and writes to the one SQLite file in `X402_AUDIT_DB`.
+The full report is [docs/FINAL-REPORT.md](docs/FINAL-REPORT.md), including its
+2026-10-28 revision and the 2026-10-29 corrections at the end. The figure on
+paidfor.dev is a rolling one over a wider sample and is not this number.
 
-| Command | Moves money? | What it does |
-|---|---|---|
-| `pnpm cli status` | no | effective config, caps, live gate, row counts |
-| `pnpm cli discover run` / `discover report` | no | pull the CDP Bazaar index and `config/manual-sellers.yaml`; top sellers by 30-day volume |
-| `pnpm cli chain scan-volume --days 30` | no | USDC transfers to every known pay-to over 30 days; ranks sellers (`chain top`) |
-| `pnpm cli chain verify-sample` / `verify-all` / `report` | no | EIP-3009 verification by receipt sampling; market-wide overcharge and duplicate-loop floors |
-| `pnpm cli probe plan` / `probe run --once` / `probe run` / `probe report` | no | select the probe set; one round or an hourly loop from two client identities; quote drift and pay-to changes |
-| `pnpm cli buy plan` | no | stratified plan with planned spend per stratum; refuses above `MAX_TOTAL_USD` |
-| `pnpm cli buy balances` | no | pool wallet USDC balances |
-| `pnpm cli buy run` | **only with `--live`, `X402_AUDIT_LIVE=1`, `--network eip155:8453`** | execute the plan under the caps; writes the `attempts` ledger before every signature |
-| `pnpm cli buy resolve` | no | re-check `indeterminate` calls against the chain (run periodically for 24 h) |
-| `pnpm cli stress duplicate` / `stress timeout` / `stress report` | same gate as buy | the two deliberate tests on about 10 sellers, own caps |
-| `pnpm cli telemetry serve` / `telemetry report` | no | ingest for `@x402-audit/client` records |
-| `pnpm cli report` | no | `reports/YYYY-MM-DD.md` + `.json`, every number from a named query |
-| `pnpm cli samplesize --rate 0.1 --halfwidth 0.01` | no | calls needed for a Wilson half-width |
-| `pnpm cli health [--trigger t] [--dry-run]` | no | machine and loop health (unit, disk, memory, halt files by existence only, runs, caps and spend, pool balances, the last run's redacted log lines) posted to `{PAIDFOR_INDEX_URL}/v1/admin/health`, signed like the audit callback; `--dry-run` prints the body; a failed post is a one-line warning, exit 0. `scripts/loop.sh` posts after every probe round, buy and export, and a systemd timer every 15 minutes |
+## What is in this repository
 
-Stopping: create a file named `halt` in the repo root; every loop checks it. To stop
-one job without the others, use `halt-buy`, `halt-stress` or `halt-probe`. The probe
-loop runs under launchd (`scripts/install-probe-agent.sh`) and restarts itself after a
-crash, logout or reboot; it stays stopped only while `halt` or `halt-probe` exists.
+- **probe** (`src/probe/`): unpaid 402 quotes, hourly, from two client identities.
+- **buy** (`src/buy/`, `src/pipeline/paidCall.ts`, `src/x402/`): the one paid-call
+  path. A ledger row is written before signing, caps are checked before
+  signing, and all signing goes through the official `@x402/*` client.
+- **validators** (`src/validators/`): eight checks on every response. A check
+  with no configuration returns `skipped`, never `pass`.
+- **taxonomy** (`src/taxonomy.ts`, [docs/taxonomy.md](docs/taxonomy.md)): one
+  primary outcome per call, the precedence rule, the overcharge rule and its
+  reference price. A test fails if the code and the document disagree.
+- **chain matching** (`src/chain/`): each payment is matched to its USDC
+  settlement on Base by the EIP-3009 nonce we signed.
+- **stats** (`src/report/`): Wilson intervals, the Kish effective sample size
+  for the dollar rate. Every reported number names its SQL query in
+  `src/report/queries.ts`.
+- **export** (`src/export/`): the files published to the public data repository.
+- **mock seller** (`tools/mock-seller/`): a local x402 seller that produces
+  every failure mode on demand, with an optional local chain.
 
-## Running locally (milestone 1)
+Background documents: [docs/PLAN.md](docs/PLAN.md),
+[docs/protocol-notes.md](docs/protocol-notes.md),
+[docs/commands.md](docs/commands.md), [docs/NOT-BUILT.md](docs/NOT-BUILT.md).
 
-Requirements: Node 22+ (developed on 23.11), pnpm 10.
+What is not in this repository: no wallets or keys, no database, no logs, and
+no server configuration. The per-call evidence that the study and the index
+use is published separately in
+[sarmadahsan/paidfor-data](https://github.com/sarmadahsan/paidfor-data).
+
+## Reproducing against the mock seller
+
+Requirements: Node 22 or later and pnpm 10. Foundry's `anvil` is optional; the
+local-chain suite is skipped without it.
 
 ```bash
 pnpm install
-pnpm test          # 176 tests: taxonomy/doc agreement, schema, validators, classifier, Wilson stats, x402 client wrapper, mock seller, end-to-end
-pnpm typecheck
-pnpm mock-seller   # local x402 v2 seller on :4402 with every failure mode on demand (see tools/mock-seller/README.md)
-pnpm cli status    # effective config, caps, live gate, row counts
-pnpm cli samplesize --rate 0.10 --halfwidth 0.01
+pnpm test                 # taxonomy and document agreement, validators, classifier, statistics, and an end-to-end run through every mock-seller route
+pnpm mock-seller          # the mock seller on port 4402, to call by hand
+pnpm cli status           # effective configuration, caps and the live gate
 ```
 
-Layout: `src/taxonomy.ts` (outcome constants, mirrored by `docs/taxonomy.md`),
-`src/validators/` (eight pluggable validators), `src/classify.ts` (validator
-results + settlement facts to one primary outcome and flags), `src/x402/`
-(thin wrapper over the official `@x402/*` client that exposes the nonce before
-sending and enforces the per-call cap before signing), `src/pipeline/paidCall.ts`
-(the one paid-call path: ledger row before signing, validators, settlement
-lookup, classifier, DB row), `src/db/schema.sql`, `tools/mock-seller/`.
+The report commands from the report's reproducibility section run against any
+database the harness has written; on a database of your own they recompute the
+same tables:
 
-## Wallets (manual funding only)
+```bash
+pnpm cli --db data/audit.sqlite --network eip155:8453 report --stdout
+pnpm cli --db data/audit.sqlite --network eip155:8453 chain report --top 60
+pnpm cli --db data/audit.sqlite --network eip155:8453 probe report
+pnpm cli --db data/audit.sqlite --network eip155:8453 stress report
+```
 
-The harness never funds a wallet and never moves funds between wallets. It
-only signs EIP-3009 `transferWithAuthorization` payments from the pool you
-give it, and only under the caps in `.env`.
+Every command is a dry run by default, and the default network is Base Sepolia.
+Mainnet payments need all three gates on every invocation: the `--live` flag,
+`X402_AUDIT_LIVE=1` in the environment, and `--network eip155:8453`. A live run
+also needs a passing `pnpm gate` recorded for the current commit on a clean
+tree. These caps are enforced in code before any signature (defaults, in USD):
+0.50 per call, 20 per seller per day, 100 per day, 300 in total, and 30 for
+the stress tests. [.env.example](.env.example) lists every setting.
 
-1. Generate N fresh keys locally (N is the pool size; 3 to 5 is enough for
-   round-robin per seller). For example with the installed foundry tools:
+## Responsible use
 
-   ```bash
-   cast wallet new
-   ```
+Running this against real sellers spends real money and produces claims about
+named businesses. Run it against the mock seller first, keep the caps low, and
+read [docs/taxonomy.md](docs/taxonomy.md) before publishing anything. A result
+is a measurement of what a naive buyer experienced, not a finding of intent.
+Sellers named on paidfor.dev have a right of reply: each seller page says how,
+and replies sent to reply@paidfor.dev are published verbatim on that page.
 
-   Keep the private keys in a password manager. Never paste them anywhere but `.env`.
-2. Put them in `.env` as `X402_AUDIT_WALLET_KEYS=0x...,0x...,0x...` (comma
-   separated). `.env` is gitignored; `pnpm cli status` prints only the count.
-3. Fund each address with USDC on the target network from a wallet you
-   control. No ETH is needed: the seller's facilitator pays gas for EIP-3009
-   settlement (see `docs/protocol-notes.md`).
-   - Base Sepolia: Circle faucet, https://faucet.circle.com (20 USDC per 2 h).
-   - Base mainnet: send USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
-     from an exchange or your own wallet. Fund only what the approved plan
-     needs: `pnpm cli buy plan` prints the planned spend per stratum and the
-     total; `MAX_TOTAL_USD` caps it in code regardless of balances.
-4. Check balances before a run: `pnpm cli buy balances` (reads on-chain USDC
-   balances for every pool wallet; moves nothing).
-5. After the study, sweep the remaining USDC out manually. The harness has
-   no sweep command on purpose.
+## Status
 
-Mainnet spending additionally requires `--live`, `X402_AUDIT_LIVE=1`, and
-`--network eip155:8453` on every invocation, and a passing integration suite:
-`pnpm gate` runs every test (including the anvil integration suite) and writes
-`data/.gate.json` for the current commit; a live mainnet `buy run` or `stress`
-refuses unless that marker matches HEAD, the tree is clean, and the pass is
-less than 24 hours old.
+This repository is published for review. It does not take support requests.
+Issues are open only for factual errors in the method.
+
+## Links
+
+- [paidfor.dev](https://paidfor.dev)
+- [Methodology](https://paidfor.dev/methodology)
+- [Public data](https://github.com/sarmadahsan/paidfor-data)
