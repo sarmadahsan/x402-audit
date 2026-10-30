@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Measurement harness: what share of paid x402 API calls on Base mainnet fail the buyer, by count and by dollars, and why.",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"

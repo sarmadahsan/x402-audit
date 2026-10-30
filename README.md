@@ -97,6 +97,11 @@ and replies sent to reply@paidfor.dev are published verbatim on that page.
 This repository is published for review. It does not take support requests.
 Issues are open only for factual errors in the method.
 
+## Licence
+
+The code is under the MIT licence ([LICENSE](LICENSE)). The published data in
+[sarmadahsan/paidfor-data](https://github.com/sarmadahsan/paidfor-data) keeps its own terms.
+
 ## Links
 
 - [paidfor.dev](https://paidfor.dev)
