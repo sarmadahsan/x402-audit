@@ -14615,56 +14615,56 @@
         "run_id": 11,
         "ts": 1792873638607,
         "reason": "halt_file",
-        "details_json": "{\"root\":\"/Users/sarmad/billing/x402-audit\"}"
+        "details_json": "{\"root\":\"<repo>\"}"
       },
       {
         "id": 2,
         "run_id": 12,
         "ts": 1792874012947,
         "reason": "halt_file",
-        "details_json": "{\"root\":\"/Users/sarmad/billing/x402-audit\"}"
+        "details_json": "{\"root\":\"<repo>\"}"
       },
       {
         "id": 3,
         "run_id": 13,
         "ts": 1792874243084,
         "reason": "halt_file",
-        "details_json": "{\"root\":\"/Users/sarmad/billing/x402-audit\"}"
+        "details_json": "{\"root\":\"<repo>\"}"
       },
       {
         "id": 4,
         "run_id": 14,
         "ts": 1792874760087,
         "reason": "halt_file",
-        "details_json": "{\"root\":\"/Users/sarmad/billing/x402-audit\"}"
+        "details_json": "{\"root\":\"<repo>\"}"
       },
       {
         "id": 5,
         "run_id": 15,
         "ts": 1792875603598,
         "reason": "halt_file",
-        "details_json": "{\"root\":\"/Users/sarmad/billing/x402-audit\"}"
+        "details_json": "{\"root\":\"<repo>\"}"
       },
       {
         "id": 6,
         "run_id": 16,
         "ts": 1792879854783,
         "reason": "halt_file",
-        "details_json": "{\"root\":\"/Users/sarmad/billing/x402-audit\"}"
+        "details_json": "{\"root\":\"<repo>\"}"
       },
       {
         "id": 7,
         "run_id": 17,
         "ts": 1792883488062,
         "reason": "halt_file",
-        "details_json": "{\"root\":\"/Users/sarmad/billing/x402-audit\"}"
+        "details_json": "{\"root\":\"<repo>\"}"
       },
       {
         "id": 8,
         "run_id": 18,
         "ts": 1792898848441,
         "reason": "halt_file",
-        "details_json": "{\"root\":\"/Users/sarmad/billing/x402-audit\"}"
+        "details_json": "{\"root\":\"<repo>\"}"
       }
     ],
     "query_names": [
