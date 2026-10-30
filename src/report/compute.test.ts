@@ -101,7 +101,7 @@ describe("computeReport", () => {
 
   it("stress summaries", () => {
     expect(r.stress.duplicate).toMatchObject({ intents: 3, intents_with_second_settlement: 2 });
-    expect(r.stress.timeout).toEqual({ intents: 3, settled_despite_abort: 2, intents_with_retry: 1, second_settlement_on_retry: 1 });
+    expect(r.stress.timeout).toEqual({ intents: 3, first_call_aborted: 2, settled_despite_abort: 1, intents_with_retry: 1, second_settlement_on_retry: 1 });
   });
 
   it("chain proxy finds exactly the seeded duplicate run and overcharge spike", () => {

@@ -19,6 +19,7 @@ export interface SeedCall {
   reference?: string;
   flags?: string[];
   intent?: string;
+  error?: string;
   ts?: number;
 }
 
@@ -34,8 +35,8 @@ export function seedDb(): Db {
   for (const id of [1, 2, 3]) res.run(id, id, `https://s${id}.example/r`, T0, T0);
 
   const ins = db.prepare(`INSERT INTO calls (intent_id, run_id, source, resource_id, seller_id, ts, wallet, quote_amount_atomic, quote_network,
-      reference_price_atomic, paid, amount_paid_atomic, request_json, settlement_header_json, settlement_count, outcome, flags_json)
-    VALUES (@intent, 1, @source, @seller, @seller, @ts, @wallet, @quote, @network, @reference, @paid, @amount, '{}', @header, @sc, @outcome, @flags)`);
+      reference_price_atomic, paid, amount_paid_atomic, request_json, settlement_header_json, settlement_count, outcome, flags_json, error)
+    VALUES (@intent, 1, @source, @seller, @seller, @ts, @wallet, @quote, @network, @reference, @paid, @amount, '{}', @header, @sc, @outcome, @flags, @error)`);
   let i = 0;
   const add = (c: SeedCall, times = 1) => {
     for (let k = 0; k < times; k++) {
@@ -53,6 +54,7 @@ export function seedDb(): Db {
         amount: c.amount === undefined ? "10000" : c.amount,
         header: c.header == null ? null : JSON.stringify(c.header),
         sc: c.settlementCount ?? 1,
+        error: c.error ?? null,
         outcome: c.outcome,
         flags: JSON.stringify(c.flags ?? []),
       });
@@ -86,11 +88,12 @@ export function seedDb(): Db {
   const st = db.prepare("INSERT INTO settlements (intent_id, tx_hash, log_index, from_addr, to_addr, value_atomic, source, found_at) VALUES (?, ?, 0, '0xw', ?, '10000', 'chain', ?)");
   st.run("d2", "0xd2a", P1, T0);
   st.run("d2", "0xd2b", P1, T0);
-  // stress_timeout: t1 retried with a second settlement, t2 settled despite abort, t3 nothing settled
-  add({ source: "stress_timeout", seller: 2, outcome: "indeterminate", intent: "t1", settlementCount: 1 });
+  // stress_timeout: t1 aborted, settled anyway, retried with a second settlement; t2 answered before the
+  // abort (settled, but not "despite abort"); t3 aborted and nothing settled
+  add({ source: "stress_timeout", seller: 2, outcome: "indeterminate", intent: "t1", settlementCount: 1, error: "aborted: paid request" });
   add({ source: "stress_timeout", seller: 2, outcome: "duplicate", intent: "t1", settlementCount: 2 });
   add({ source: "stress_timeout", seller: 2, outcome: "ok", intent: "t2", settlementCount: 1 });
-  add({ source: "stress_timeout", seller: 2, outcome: "not_paid", intent: "t3", settlementCount: 0, paid: 0, amount: null });
+  add({ source: "stress_timeout", seller: 2, outcome: "not_paid", intent: "t3", settlementCount: 0, paid: 0, amount: null, error: "aborted: paid request" });
 
   // chain transfers
   const ct = db.prepare("INSERT INTO chain_transfers (network, tx_hash, log_index, block_number, block_ts, from_addr, to_addr, value_atomic) VALUES (?, ?, 0, ?, ?, ?, ?, ?)");

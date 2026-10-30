@@ -81,7 +81,7 @@ export interface ReportData {
   top_sellers: SellerRow[];
   stress: {
     duplicate: { intents: number; intents_with_second_settlement: number; rate: number; lo: number; hi: number };
-    timeout: { intents: number; settled_despite_abort: number; intents_with_retry: number; second_settlement_on_retry: number };
+    timeout: { intents: number; first_call_aborted: number; settled_despite_abort: number; intents_with_retry: number; second_settlement_on_retry: number };
   };
   chain_proxy: {
     window: { since_ms: number; until_ms: number; first_transfer_ts: number | null; last_transfer_ts: number | null };
@@ -353,7 +353,9 @@ export function computeReport(db: Db, opts: ComputeOptions): ReportData {
     .slice(0, TOP_SELLERS_LIMIT);
 
   // ---- stress
-  type IntentRow = { intent_id: string; call_rows: number; retry_rows?: number; call_settlements: number; settlement_rows: number };
+  type IntentRow = { intent_id: string; call_rows: number; retry_rows?: number; call_settlements: number; settlement_rows: number; first_error?: string | null; first_settlements?: number };
+  // Same definition as the stress report: the first call's error is an abort or client timeout.
+  const firstAborted = (r: IntentRow) => /^(aborted|timeout):/.test(r.first_error ?? "");
   const settlementsOf = (r: IntentRow) => Math.max(num(r.call_settlements), num(r.settlement_rows));
   const sd = q<IntentRow>("stress", "stress_duplicate_summary");
   const sdSecond = sd.filter((r) => settlementsOf(r) > 1).length;
@@ -363,7 +365,8 @@ export function computeReport(db: Db, opts: ComputeOptions): ReportData {
     duplicate: { intents: sd.length, intents_with_second_settlement: sdSecond, rate: sdw.p, lo: sdw.lo, hi: sdw.hi },
     timeout: {
       intents: st.length,
-      settled_despite_abort: st.filter((r) => settlementsOf(r) >= 1).length,
+      first_call_aborted: st.filter(firstAborted).length,
+      settled_despite_abort: st.filter((r) => firstAborted(r) && num(r.first_settlements) >= 1).length,
       intents_with_retry: st.filter((r) => num(r.retry_rows) > 0).length,
       second_settlement_on_retry: st.filter((r) => num(r.retry_rows) > 0 && settlementsOf(r) >= 2).length,
     },

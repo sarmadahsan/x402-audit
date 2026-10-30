@@ -129,7 +129,7 @@ export function renderMarkdown(data: ReportData): string {
   out.push(SECTION_HEADERS.stress + "\n");
   out.push(table(["test", "intents", "result"], [
     ["stress_duplicate", s.duplicate.intents, `${s.duplicate.intents_with_second_settlement} with a second settlement, ${rateCi(s.duplicate)}`],
-    ["stress_timeout", s.timeout.intents, `${s.timeout.settled_despite_abort} settled despite abort; ${s.timeout.intents_with_retry} retried, ${s.timeout.second_settlement_on_retry} with a second settlement on retry`],
+    ["stress_timeout", s.timeout.intents, `first call aborted at ${s.timeout.first_call_aborted}, ${s.timeout.settled_despite_abort} of them settled anyway; ${s.timeout.intents_with_retry} retried, ${s.timeout.second_settlement_on_retry} with a second settlement on retry`],
   ]));
   out.push("Stress rows are never mixed into the headline. A retry is a `stress_timeout` row sharing an intent_id with an earlier `stress_timeout` row.\n");
   out.push(queriesLine(data, "stress"));

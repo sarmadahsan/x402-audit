@@ -412,3 +412,36 @@ v1; 0 use permit2; 1,179 have templated paths. Categories (keyword rules in
 `config/categories.yaml`): data 23,089, other 8,457, inference 2,645,
 scraping 2,023, compute 1,689. Sellers: 2,649 domains, 1,617 canonical after
 shadow removal.
+
+## Corrections (2026-10-29)
+
+The report above is frozen; these corrections are appended rather than edited
+in. No stored row was reclassified and no headline, tier, category or seller
+figure changes.
+
+1. **amanchain-relay did deliver.** Section 4.3 says amanchain-relay "took
+   $0.05 per call 150 times and never delivered". Both parts are wrong. The
+   stored responses show that all 150 calls settled on-chain and returned HTTP
+   200 with a JSON result for the service requested (a time-zone lookup, an
+   exchange rate, an email check and so on), and every delivery validator
+   passed. The seller quoted 7,476 atomic USDC ($0.0075) per call against Bazaar
+   listings of 1,244 to 2,488 (3.0x to 6.0x), 1.12 USDC over the 150 calls.
+   The 150 rows are correctly `overcharge`. The sentence should read:
+   "amanchain-relay charged 3x to 6x its listed price on all 150 calls ($0.0075
+   against $0.0012 to $0.0025 listed) and delivered each time."
+
+2. **Timeout stress test: 2 of 10 is right; the published `stress.json` was
+   wrong.** Sections 4.4 and 5 say 2 of 10 sellers settled the call whose
+   connection was dropped after 2 seconds. The stress rows and the chain
+   matches confirm it. The drop actually happened at 3 of the 10 sellers;
+   three answered with a 200 within 2 seconds, and four rejected the request
+   or returned no payable 402 before any payment. Of the 3 aborted calls, 2
+   (api.slamai.dev, api-xpay.com) have an on-chain settlement matching the
+   aborted call's own nonce; the third (api.locus.report) never settled. The
+   public `stress.json` gave 5 because its count took any intent with at least
+   one settlement, which also counted the retry's settlement and the three
+   calls that were never aborted. The export now uses the same definition as
+   the stress report, adds `first_call_aborted` (3), and its README states the
+   definition. "The retry produced a second settlement at 5 of 10" is
+   unchanged: 5 intents have two settlements. At 3 of those 5, the first call
+   had already been answered normally, so the retry was a second purchase.

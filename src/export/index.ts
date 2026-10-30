@@ -520,7 +520,8 @@ Resources whose quote is above the per-call cap that applies to them (0.10 USDC 
 - \`breadth_eligible\`: the quote is at or under the breadth cap (0.50), so the weekly breadth run can buy it once it is enabled.
 
 ## stress.json
-- \`summary\`: duplicate test (intents, intents settled twice, rate, Wilson interval) and timeout test (intents, settled despite abort, retried, second settlement on retry).
+- \`summary\`: duplicate test (intents, intents settled twice, rate, Wilson interval) and timeout test (intents, first call aborted, settled despite abort, retried, second settlement on retry).
+- Timeout test definitions. An intent is one seller: call 1 is sent with payment and the connection is dropped 2 seconds later, then call 2 retries like a naive client. \`first_call_aborted\` counts intents where the drop actually happened (call 1 ended with an abort or client timeout; a seller that answered within 2 seconds was not aborted). \`settled_despite_abort\` counts intents where call 1 was aborted and a settlement on-chain matches call 1 itself (its own nonce), so a settlement produced by the retry does not count. \`second_settlement_on_retry\` counts intents with a retry and at least two settlements in total.
 - \`tables\`: the stress report's tables (duplicate per resource, timeout per resource, totals) as rows keyed by column header.
 
 ## probe.json

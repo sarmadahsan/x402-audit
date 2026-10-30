@@ -194,10 +194,15 @@ export const QUERIES = {
 
   /**
    * stress_timeout: one row per intent. Rows after the earliest one for the same
-   * intent_id are retries (retry_rows = call_rows - 1).
+   * intent_id are retries (retry_rows = call_rows - 1). first_error and
+   * first_settlements describe the earliest row alone (the call we aborted), so a
+   * settlement produced by the retry is never counted as settling the aborted call.
    */
   stress_timeout_summary: `SELECT c.intent_id AS intent_id, COUNT(*) AS call_rows, COUNT(*) - 1 AS retry_rows,
-      MIN(c.ts) AS first_ts, MAX(c.settlement_count) AS call_settlements, ${settlementsForIntent("c")} AS settlement_rows
+      MIN(c.ts) AS first_ts, MAX(c.settlement_count) AS call_settlements, ${settlementsForIntent("c")} AS settlement_rows,
+      (SELECT f.error FROM calls f WHERE f.source = 'stress_timeout' AND f.intent_id = c.intent_id ORDER BY f.ts, f.id LIMIT 1) AS first_error,
+      (SELECT MAX(COALESCE(f.settlement_count, 0), (SELECT COUNT(DISTINCT s.tx_hash) FROM settlements s WHERE s.call_id = f.id))
+         FROM calls f WHERE f.source = 'stress_timeout' AND f.intent_id = c.intent_id ORDER BY f.ts, f.id LIMIT 1) AS first_settlements
     FROM calls c WHERE c.source = 'stress_timeout' AND ${CALL_WINDOW}
     GROUP BY c.intent_id ORDER BY c.intent_id`,
 
