@@ -16,6 +16,9 @@
 #            The old public-data branch of this repo is no longer updated.
 # Every existing gate stays: --live, X402_AUDIT_LIVE=1, --network eip155:8453, `pnpm gate` on a clean committed HEAD,
 # the MAX_* caps, and the halt / halt-buy / halt-probe files. A skipped step is logged; the loop itself never stops.
+# A skipped scheduled buy is also a `buy run` row with status skipped and the reason (which gate, the failing test files,
+# the dirty paths), exported as `last_buy_run.reason`. Every file the loop writes is under data/ or a halt file, all
+# git-ignored, so no step of the loop can dirty the tree for the commit gate (test/loop-skip.test.ts checks the list).
 #
 # Usage: scripts/loop.sh            run the loop in the foreground (what launchd runs)
 #        scripts/loop.sh once       one hourly cycle now, then exit
@@ -183,9 +186,28 @@ effective_caps() {
   fi
 }
 
+# The skip reasons name what fired, so the export's `last_buy_run.reason` says it without a login to the server.
+# Dirty tree: the first dirty paths from `git status --porcelain` (2026-10-30 and 2026-10-31 06:00 were first blamed on
+# this gate; it was the test gate, which until then said only "pnpm gate failed").
+dirty_tree_reason() {
+  local paths
+  paths="$(git status --porcelain | head -5 | tr '\n' ';' | sed 's/;$//')"
+  echo "working tree is dirty: $paths (the commit gate needs a clean, committed HEAD)"
+}
+# Test gate: the failing test files and the counts, read from the gate's output ($1), ANSI colours stripped. With
+# nothing recognisable (the gate did not reach vitest), just "pnpm gate failed".
+gate_failure_reason() {
+  local plain files counts
+  plain="$(sed -e $'s/\x1b\\[[0-9;]*m//g' "$1" 2>/dev/null)"
+  files="$(printf '%s\n' "$plain" | grep -oE '(^| )FAIL +[^ ]+\.test\.[a-z]+' | sed -E 's/.*FAIL +//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+  counts="$(printf '%s\n' "$plain" | grep -oE 'Tests +[0-9]+ failed \| [0-9]+ passed \([0-9]+\)' | tail -1 | sed -E 's/Tests +([0-9]+) failed \| [0-9]+ passed \(([0-9]+)\)/\1 of \2 tests failed/')"
+  if [ -z "$files" ] && [ -z "$counts" ]; then echo "pnpm gate failed"; return 0; fi
+  echo "pnpm gate failed: ${counts:-tests failed}${files:+ ($files)}"
+}
+
 # A scheduled buy that does not go ahead still leaves a `buy run` row (status skipped, the reason in notes), a health
-# post and an export, so `last_buy_run` in the export and the buy tile on the dashboard show the skip instead of the
-# previous run. (2026-10-30 00:00 UTC: `pnpm gate` failed and the slot passed with only a line in this log.)
+# post and an export, so `last_buy_run` in the export (with `reason`) and the buy tile on the dashboard show the skip
+# instead of the previous run. (2026-10-30 00:00 UTC: `pnpm gate` failed and the slot passed with only a line in this log.)
 skipped_buy() {
   local today="$1" hh="$2" reason="$3"
   log "scheduled buy $today $hh:00: skipped, $reason"
@@ -220,8 +242,12 @@ scheduled_buy() {
   if [ -e halt ] || [ -e halt-buy ]; then skipped_buy "$today" "$hh" "halt or halt-buy file present"; return 0; fi
   live="${X402_AUDIT_LIVE:-$(grep -E '^X402_AUDIT_LIVE=' .env 2>/dev/null | tail -1 | cut -d= -f2)}"
   if [ "$live" != 1 ]; then skipped_buy "$today" "$hh" "X402_AUDIT_LIVE is not 1"; return 0; fi
-  if [ -n "$(git status --porcelain)" ]; then skipped_buy "$today" "$hh" "working tree is dirty (the commit gate needs a clean, committed HEAD)"; return 0; fi
-  if ! run pnpm gate; then skipped_buy "$today" "$hh" "pnpm gate failed"; return 0; fi
+  if [ -n "$(git status --porcelain)" ]; then skipped_buy "$today" "$hh" "$(dirty_tree_reason)"; return 0; fi
+  # The gate's output goes to its own file first, so a failure's reason can name the failing tests; then to the log as before.
+  log "run: pnpm gate"
+  pnpm gate > "$STATE/gate.log" 2>&1; gate_rc=$?
+  cat "$STATE/gate.log" >> "$LOG"
+  if [ "$gate_rc" -ne 0 ]; then log "exit $gate_rc: pnpm gate"; skipped_buy "$today" "$hh" "$(gate_failure_reason "$STATE/gate.log")"; return 0; fi
   pool="$(wallet_pool_usd)"
   if [ -z "$pool" ]; then skipped_buy "$today" "$hh" "could not read wallet balances"; return 0; fi
   if awk -v b="$pool" -v n="$RUN_USD" 'BEGIN { exit !(b + 0 < n + 0) }'; then

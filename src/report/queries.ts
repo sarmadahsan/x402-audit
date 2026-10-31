@@ -351,11 +351,11 @@ export const QUERIES = {
     FROM resources r JOIN sellers s ON s.id = r.seller_id ORDER BY r.id`,
 
   /** Latest live buy run and latest probe run (liveness for the public index). */
-  last_runs: `SELECT subcommand, started_at, finished_at, status,
+  last_runs: `SELECT subcommand, started_at, finished_at, status, notes,
       CASE subcommand WHEN 'probe run' THEN (SELECT MAX(p.ts) FROM probes p)
                       ELSE (SELECT MAX(c.ts) FROM calls c WHERE c.source = 'buy') END AS last_activity
     FROM (
-      SELECT r.subcommand, r.started_at, r.finished_at, r.status,
+      SELECT r.subcommand, r.started_at, r.finished_at, r.status, r.notes,
         ROW_NUMBER() OVER (PARTITION BY r.subcommand ORDER BY COALESCE(r.finished_at, r.started_at) DESC, r.id DESC) AS rn
       FROM runs r WHERE r.network = @network AND r.subcommand IN ('buy run', 'probe run') AND (r.subcommand <> 'buy run' OR r.dry_run = 0)
     ) WHERE rn = 1`,

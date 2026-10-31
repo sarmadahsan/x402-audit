@@ -30,6 +30,9 @@ describe("skipped scheduled run", () => {
     const summary = JSON.parse(readFileSync(join(out, "summary.json"), "utf8"));
     expect(summary.last_buy_run.status).toBe("skipped");
     expect(summary.last_buy_run.started_at).toBe(new Date(row.started_at as number).toISOString());
+    expect(summary.last_buy_run.finished_at).toBe(summary.last_buy_run.started_at);
+    expect(summary.last_buy_run.reason).toBe("pnpm gate failed");
+    expect(summary.last_probe_run?.reason ?? null).toBeNull();
 
     const runs = healthRuns(db, MAINNET, [], NOW);
     expect(runs.buy).toMatchObject({ status: "skipped", planned_calls: null, spent_usdc: "0.000000", failures: 0, errors: 0 });

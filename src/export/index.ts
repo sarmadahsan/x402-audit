@@ -104,10 +104,23 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
 
   // ------------------------------------------------------------ summary.json
   const reached = q<{ sellers: number; resources: number }>("buy_reached")[0];
-  const runs = q<{ subcommand: string; started_at: number; finished_at: number | null; status: string | null; last_activity: number | null }>("last_runs");
+  const runs = q<{ subcommand: string; started_at: number; finished_at: number | null; status: string | null; notes: string | null; last_activity: number | null }>("last_runs");
+  // `reason`: why a `skipped` run did not go ahead (the loop's gate that stopped it, from the row's notes); null for
+  // every other status. Additive (2026-10-31): before it, nobody outside the server could see which gate had fired.
+  const skipReason = (notes: string | null): string | null => {
+    if (!notes) return null;
+    try {
+      const n = JSON.parse(notes) as { reason?: unknown };
+      return typeof n.reason === "string" ? n.reason.slice(0, 500) : null;
+    } catch {
+      return null;
+    }
+  };
   const lastRun = (sub: string) => {
     const r = runs.find((x) => x.subcommand === sub);
-    return r ? { started_at: iso(num(r.started_at)), finished_at: iso(r.finished_at == null ? null : num(r.finished_at)), status: r.status, last_activity: iso(r.last_activity == null ? null : num(r.last_activity)) } : null;
+    return r
+      ? { started_at: iso(num(r.started_at)), finished_at: iso(r.finished_at == null ? null : num(r.finished_at)), status: r.status, last_activity: iso(r.last_activity == null ? null : num(r.last_activity)), reason: r.status === "skipped" ? skipReason(r.notes) : null }
+      : null;
   };
   const h = report.headline;
   const summary = {
