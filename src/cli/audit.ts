@@ -64,6 +64,9 @@ export function registerAudit(program: Command, globals: (cmd: Command) => Money
       try {
         live = moneyGate(g, requireLive).live;
       } catch (e) {
+        // The decisions were recorded as planned before the gate ran; a planned decision counts as "audited today", so a
+        // refusal must not leave them standing (2026-11-01: the refused run blocked the host's audit for the rest of the day).
+        db.prepare("UPDATE audit_triggers SET decision = 'refused', decision_reason = ? WHERE run_id = ? AND decision = 'planned'").run(`money gate refused before spending: ${(e as Error).message}`.slice(0, 500), runId);
         finishRun(db, runId, "error", { error: (e as Error).message, refusedBeforeSpending: true });
         throw e;
       }
@@ -142,6 +145,9 @@ export function registerAudit(program: Command, globals: (cmd: Command) => Money
       try {
         live = moneyGate(g, requireLive).live;
       } catch (e) {
+        // The decisions were recorded as planned before the gate ran; a planned decision counts as "audited today", so a
+        // refusal must not leave them standing (2026-11-01: the refused run blocked the host's audit for the rest of the day).
+        db.prepare("UPDATE audit_triggers SET decision = 'refused', decision_reason = ? WHERE run_id = ? AND decision = 'planned'").run(`money gate refused before spending: ${(e as Error).message}`.slice(0, 500), runId);
         finishRun(db, runId, "error", { error: (e as Error).message, refusedBeforeSpending: true });
         throw e;
       }
