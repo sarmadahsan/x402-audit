@@ -1,6 +1,7 @@
 /**
  * Allocations a scheduled run adds next to the stratified plan (docs/PLAN.md "Schedule"):
- *  - candidate lane: one call per `queued` user candidate (src/discover/candidates.ts), only with CANDIDATE_BUYS_ENABLED=1;
+ *  - candidate lane: one call per `queued` user candidate (src/discover/candidates.ts), only with CANDIDATE_BUYS_ENABLED=1,
+ *    at most COVERAGE_MAX_PER_SELLER calls and the run's per-seller share per seller; the rest stay queued;
  *  - breadth lane (weekly, its own command): sellers with no resource under the scheduled cap, see breadthAllocations;
  *  - expensive lane: config/expensive-sellers.yaml, each seller at its own per-call cap and at most
  *    `max_per_week` purchases in any 7 days, one call per run so they spread across runs.
@@ -12,12 +13,36 @@ import type { PlanAllocation } from "./plan.js";
 import { buyableResources } from "../audit/run.js";
 import { clearTooExpensive, recordTooExpensive } from "./states.js";
 import { CALL_SOURCES, MEASURED_SOURCES } from "../taxonomy.js";
-import { sellerUniverse, type AllocationRow } from "./allocate.js";
+import { COVERAGE_MAX_PER_SELLER, planPrice, sellerUniverse, type AllocationRow, type Backoff } from "./allocate.js";
 import { spentAtomic } from "./guard.js";
 
 const WEEK_MS = 7 * 24 * 3_600_000;
 
-export function candidateAllocations(db: Db, o: { perCallCapAtomic: bigint; network: string }): PlanAllocation[] {
+export interface CandidateLaneOptions {
+  perCallCapAtomic: bigint;
+  network: string;
+  /** No seller plans more than this across the lane (the run's per-seller share, SELLER_SHARE_OF_RUN of the run budget). */
+  sellerCapAtomic?: bigint;
+  /** At most this many calls per seller a run (default COVERAGE_MAX_PER_SELLER); the rest stay queued for later runs. */
+  maxPerSeller?: number;
+  /** Resources in back-off (three straight not_paid/our_error) are left queued; see resourceBackoffs. */
+  backoffs?: Map<number, Backoff>;
+}
+
+export interface CandidateLaneResult {
+  allocations: PlanAllocation[];
+  /** Queued candidates this run leaves for a later one, with why. */
+  deferred: { domain: string; url: string; reason: string }[];
+}
+
+/**
+ * One call per queued user candidate, most checked first, with two limits a seller cannot exceed in one run: at most
+ * `maxPerSeller` calls and at most `sellerCapAtomic` of planned spend (quote x1.2, like every other lane). Without them
+ * one seller with many queued URLs reserved most of a run off the top (2026-10-31, run 177: 19 URLs, 0.83 of 2.00 USDC)
+ * and the per-seller guard then stopped it after six calls, stranding the rest of the budget. Deferred rows stay
+ * `queued` and come up in the next runs.
+ */
+export function candidateAllocations(db: Db, o: CandidateLaneOptions): CandidateLaneResult {
   const rows = db
     .prepare(
       `SELECT k.resource_id, r.seller_id, s.domain, r.url, r.method, r.input_json, r.declared_price_atomic price
@@ -26,9 +51,35 @@ export function candidateAllocations(db: Db, o: { perCallCapAtomic: bigint; netw
        ORDER BY k.checks + k.payments DESC, k.id`,
     )
     .all(o.network) as { resource_id: number; seller_id: number; domain: string; url: string; method: string; input_json: string | null; price: string }[];
-  return rows
-    .filter((r) => BigInt(r.price) <= o.perCallCapAtomic)
-    .map((r) => ({ resourceId: r.resource_id, sellerId: r.seller_id, sellerDomain: r.domain, url: r.url, method: r.method, inputJson: r.input_json, tier: "candidate" as const, category: "candidate", priceAtomic: BigInt(r.price), calls: 1 }));
+  const maxPerSeller = o.maxPerSeller ?? COVERAGE_MAX_PER_SELLER;
+  const count = new Map<number, number>();
+  const planned = new Map<number, bigint>();
+  const allocations: PlanAllocation[] = [];
+  const deferred: CandidateLaneResult["deferred"] = [];
+  for (const r of rows) {
+    const price = BigInt(r.price);
+    if (price > o.perCallCapAtomic) continue; // too_expensive is the candidate importer's call, not this lane's
+    const bo = o.backoffs?.get(r.resource_id);
+    if (bo) {
+      deferred.push({ domain: r.domain, url: r.url, reason: `in back-off until ${new Date(bo.until).toISOString()} (${bo.outcomes.join(", ")})` });
+      continue;
+    }
+    const n = count.get(r.seller_id) ?? 0;
+    if (n >= maxPerSeller) {
+      deferred.push({ domain: r.domain, url: r.url, reason: `seller already has ${n} call(s) this run (max ${maxPerSeller})` });
+      continue;
+    }
+    const plan = planPrice(price);
+    const p = planned.get(r.seller_id) ?? 0n;
+    if (o.sellerCapAtomic !== undefined && p + plan > o.sellerCapAtomic) {
+      deferred.push({ domain: r.domain, url: r.url, reason: `seller's planned ${atomicToUsd(p)} + ${atomicToUsd(plan)} USDC would pass its run share ${atomicToUsd(o.sellerCapAtomic)}` });
+      continue;
+    }
+    count.set(r.seller_id, n + 1);
+    planned.set(r.seller_id, p + plan);
+    allocations.push({ resourceId: r.resource_id, sellerId: r.seller_id, sellerDomain: r.domain, url: r.url, method: r.method, inputJson: r.input_json, tier: "candidate" as const, category: "candidate", priceAtomic: price, calls: 1 });
+  }
+  return { allocations, deferred };
 }
 
 export interface ExpensiveLaneResult {

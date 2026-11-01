@@ -9,7 +9,7 @@ import { makeChainLookupFactory, makeChainSettlementLookup, resolvePendingIndete
 import { atomicToUsd, capsFromEnv, loadEnv, loadFileConfigs, MAINNET, usdToAtomic, type Env, type Network } from "../config/index.js";
 import { breadthAllocations, candidateAllocations, expensiveAllocations } from "../buy/lanes.js";
 import { fetchDemand } from "../audit/triggers.js";
-import { buildCoveragePlan, planPrice, projectCoverage, renderCoverage, rowsFromAllocations, sellerUniverse, writeRunAllocations, type AllocationRow } from "../buy/allocate.js";
+import { SELLER_SHARE_OF_RUN, buildCoveragePlan, planPrice, projectCoverage, renderCoverage, resourceBackoffs, rowsFromAllocations, sellerUniverse, writeRunAllocations, type AllocationRow } from "../buy/allocate.js";
 import { CALL_SOURCES } from "../taxonomy.js";
 import type { RunLimits } from "../buy/guard.js";
 import { openDb, type Db } from "../db/index.js";
@@ -223,11 +223,16 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         for (const sk of lane.skipped) laneNotes.push(`expensive-sellers lane: ${sk.domain} skipped, ${sk.reason}.`);
       }
       if (o.candidates && !o.breadth) {
-        const lane = candidateAllocations(db, { perCallCapAtomic: caps.perCallAtomic, network: g.network });
+        // One seller may take at most its run share (SELLER_SHARE_OF_RUN of the run budget, the same share the
+        // coverage lanes and the per-seller run cap use) and COVERAGE_MAX_PER_SELLER calls; the rest stay queued.
+        const runBudgetForLane = usdToAtomic(o.budgetUsd ?? files.sample.max_total_usd);
+        const sellerCap = (runBudgetForLane * BigInt(Math.round(SELLER_SHARE_OF_RUN * 100))) / 100n;
+        const lane = candidateAllocations(db, { perCallCapAtomic: caps.perCallAtomic, network: g.network, sellerCapAtomic: sellerCap, backoffs: resourceBackoffs(db, runStart) });
         if (env.CANDIDATE_BUYS_ENABLED === "1") {
-          lanes.push(...lane);
-          if (lane.length) laneNotes.push(`candidate lane: ${lane.length} call(s) added (${lane.map((a) => a.sellerDomain).join(", ")}).`);
-        } else if (lane.length) laneNotes.push(`candidate lane: ${lane.length} queued candidate(s) not bought, CANDIDATE_BUYS_ENABLED is not 1 (${lane.map((a) => a.url).join(", ")}).`);
+          lanes.push(...lane.allocations);
+          if (lane.allocations.length) laneNotes.push(`candidate lane: ${lane.allocations.length} call(s) added (${lane.allocations.map((a) => a.sellerDomain).join(", ")}).`);
+        } else if (lane.allocations.length) laneNotes.push(`candidate lane: ${lane.allocations.length} queued candidate(s) not bought, CANDIDATE_BUYS_ENABLED is not 1 (${lane.allocations.map((a) => a.url).join(", ")}).`);
+        for (const d of lane.deferred) laneNotes.push(`candidate lane: ${d.url} left queued, ${d.reason}.`);
       }
       let plan: BuyPlan;
       if (o.breadth) {

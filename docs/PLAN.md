@@ -170,7 +170,12 @@ no-op while it answers 404), adds unknown resource URLs with `source = user`,
 probes each once without paying and classifies `queued`, `too_expensive` or
 `not_x402`. Queued candidates get one call per scheduled run in their own lane
 (`buy run --candidates`), only when `CANDIDATE_BUYS_ENABLED=1`; they never
-enter the stratified plan.
+enter the stratified plan. One seller takes at most `COVERAGE_MAX_PER_SELLER`
+(4) calls and its run share (`SELLER_SHARE_OF_RUN`, 15% of the run budget, at
+quote x1.2) from this lane in a run, and a resource in back-off is skipped; what
+is left stays `queued` for the next runs (2026-11-01, after run 177 let one
+seller with 19 queued URLs reserve 0.83 of a 2.00 USDC run and the per-seller
+guard stopped it at six calls).
 
 ### Coverage-first allocation (2026-10-29): finish and admit lanes
 
