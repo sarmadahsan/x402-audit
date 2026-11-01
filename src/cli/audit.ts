@@ -59,7 +59,14 @@ export function registerAudit(program: Command, globals: (cmd: Command) => Money
         if (g.live && !enabled) log.warn("audit-host: AUDIT_TRIGGERS_ENABLED is not 1; decisions recorded, nothing bought");
         return;
       }
-      const { live } = moneyGate(g, requireLive);
+      // A refused gate (no passing `pnpm gate` on this commit, a halt file) must finish the run row it would leave `running`.
+      let live: boolean;
+      try {
+        live = moneyGate(g, requireLive).live;
+      } catch (e) {
+        finishRun(db, runId, "error", { error: (e as Error).message, refusedBeforeSpending: true });
+        throw e;
+      }
       const client = makeChainClient({ rpcUrl: g.network === MAINNET ? env.BASE_LOGS_RPC_URL : env.BASE_SEPOLIA_RPC_URL, network: g.network });
       const receiptClient = g.network === MAINNET && env.BASE_RPC_URL !== env.BASE_LOGS_RPC_URL ? makeChainClient({ rpcUrl: env.BASE_RPC_URL, network: g.network }) : undefined;
       const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : ephemeralPayers(g.network, caps.perCallAtomic);
@@ -130,7 +137,14 @@ export function registerAudit(program: Command, globals: (cmd: Command) => Money
         if (g.live && !enabled) log.warn("audit-triggers: AUDIT_TRIGGERS_ENABLED is not 1; decisions recorded, nothing bought");
         return;
       }
-      const { live } = moneyGate(g, requireLive);
+      // A refused gate (no passing `pnpm gate` on this commit, a halt file) must finish the run row it would leave `running`.
+      let live: boolean;
+      try {
+        live = moneyGate(g, requireLive).live;
+      } catch (e) {
+        finishRun(db, runId, "error", { error: (e as Error).message, refusedBeforeSpending: true });
+        throw e;
+      }
       const client = makeChainClient({ rpcUrl: g.network === MAINNET ? env.BASE_LOGS_RPC_URL : env.BASE_SEPOLIA_RPC_URL, network: g.network });
       const receiptClient = g.network === MAINNET && env.BASE_RPC_URL !== env.BASE_LOGS_RPC_URL ? makeChainClient({ rpcUrl: env.BASE_RPC_URL, network: g.network }) : undefined;
       const payers = live ? payersFromEnv(env, g.network, caps.perCallAtomic) : ephemeralPayers(g.network, caps.perCallAtomic);
