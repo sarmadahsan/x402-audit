@@ -306,6 +306,29 @@ maybe_scheduled() {
   ( scheduled_buy "$today" "$slot"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ) &
 }
 
+# A scheduled buy the previous loop process started but never finished (2026-11-01 18:00 UTC: a deploy restarted the
+# service 25 s into `pnpm gate`): last-buy-slot already names the slot, so the loop would never retry it, and nothing
+# recorded the miss. On start, when the slot's buy left no `buy run` row at all (no live run, no skip), record a skipped
+# row with the catch-up command in its reason; a run that had begun buying keeps its own row. Never buys at start.
+recover_interrupted() {
+  [ -f "$STATE/last-buy-slot" ] || return 0
+  local key; key="$(cat "$STATE/last-buy-slot" 2>/dev/null)"; [ -n "$key" ] || return 0
+  if [ -f "$STATE/buy.pid" ] && kill -0 "$(cat "$STATE/buy.pid")" 2>/dev/null; then return 0; fi
+  rm -f "$STATE/buy.pid"
+  local n; n="$(slot_run_count "$key" 2>>"$LOG")" || n="?"
+  [ "$n" = "0" ] || return 0
+  local day="${key:0:10}" hh="${key:11:2}"
+  skipped_buy "$day" "$hh" "interrupted: the service stopped during the scheduled buy's gate (catch up with scripts/loop.sh run-slot $day $hh)"
+}
+
+# How many `buy run` rows a slot key (YYYY-MM-DDTHH) has: live runs carry the slot as their seed, skips carry it as --slot.
+slot_run_count() {
+  local key="$1" seed="${1:0:4}${1:5:2}${1:8:2}${1:11:2}"
+  node -e 'const D=require("better-sqlite3");const db=new D(process.argv[1],{readonly:true});
+    const r=db.prepare("SELECT COUNT(*) n FROM runs WHERE subcommand = \x27buy run\x27 AND (json_extract(args_json, \x27$.seed\x27) = ? OR json_extract(args_json, \x27$.slot\x27) = ?)").get(Number(process.argv[2]), process.argv[3]);
+    console.log(r.n)' "$REPO/data/audit.sqlite" "$seed" "$key"
+}
+
 write_unit() {
   cat <<EOU
 [Unit]
@@ -373,6 +396,7 @@ case "${1:-loop}" in
     rm -rf "$STATE"/*.lock
     effective_caps
     log "loop: start (runs at ($LOOP_RUN_HOURS_UTC) UTC, $RUN_USD USDC per run, day budget $DAILY_USD ($CAP_NOTE), per-call $LOOP_PER_CALL_USD, audits after ${LOOP_AUDIT_HOUR_UTC}:00, publish=$LOOP_PUBLISH)"
+    recover_interrupted
     trap 'log "loop: stopping"; kill $(jobs -p) 2>/dev/null; exit 0' INT TERM
     while true; do
       hourly
