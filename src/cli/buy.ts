@@ -18,6 +18,8 @@ import { runStressDuplicate, runStressTimeout, stressReport, selectStressResourc
 import { createPayer, type Payer } from "../x402/pay.js";
 import { finishRun, recordSkippedRun, startRun } from "./runs.js";
 import { reclassifyCalls } from "../pipeline/reclassify.js";
+import { annotate, CORRECTION_KINDS, correctReference, staleOverchargeCandidates } from "../pipeline/corrections.js";
+import { REFERENCE_SOURCES, type ReferenceSource } from "../taxonomy.js";
 import { reconcileOrphans } from "../pipeline/reconcile.js";
 import { assertGate } from "../gate.js";
 
@@ -392,6 +394,61 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       const r = await reclassifyCalls(db, { reason: o.reason, apply: o.apply, ...(o.ids ? { callIds: o.ids } : {}), services: serviceLookup(loadServiceConfigs()) });
       for (const c of r.changed) console.log(`${c.callId}\t${c.oldOutcome} -> ${c.newOutcome}\t[${c.oldFlags}] -> [${c.newFlags}]\t${c.url}`);
       console.log(JSON.stringify({ examined: r.examined, changed: r.changed.length, applied: r.applied }));
+    });
+
+  b.command("correct")
+    .description(
+      "operator correction of classified rows, on record in the corrections table (docs/taxonomy.md \"Corrections\"): " +
+        "--reference replaces the reference price the rows were judged against and re-classifies them (an audit row per call); " +
+        "--stale-listing leaves the rows as they are and attaches a public note. Shows the changes; writes only with --apply",
+    )
+    .requiredOption("--ids <n...>", "call ids", (v, acc: number[] = []) => [...acc, parseInt(v, 10)])
+    .requiredOption("--reason <text>", "why (public, recorded with the correction)")
+    .option("--reference <atomic>", "the reference price that held at purchase time, in atomic units (USDC: 6 dp)")
+    .option("--source <name>", "reference source recorded with --reference (bazaar, modal_7d, first_seen)", REFERENCE_SOURCES.BAZAAR)
+    .option("--stale-listing", "annotate the rows as stale-listing overcharges (the listing really said the lower price when we bought)", false)
+    .option("--note <text>", "public note shown next to each evidence row")
+    .option("--evidence <json>", "what the correction rests on, as JSON (public)")
+    .option("--apply", "write the changes", false)
+    .action(async function (this: Command, o: { ids: number[]; reason: string; reference?: string; source: string; staleListing: boolean; note?: string; evidence?: string; apply: boolean }) {
+      const g = globals(this);
+      const db = openDb(g.db);
+      if (!!o.reference === o.staleListing) throw new Error("buy correct: give exactly one of --reference <atomic> or --stale-listing");
+      if (!(Object.values(REFERENCE_SOURCES) as string[]).includes(o.source)) throw new Error(`buy correct: unknown --source ${o.source}`);
+      const evidence = o.evidence !== undefined ? (JSON.parse(o.evidence) as unknown) : undefined;
+      if (o.reference) {
+        const r = await correctReference(db, {
+          callIds: o.ids, referenceAtomic: o.reference, referenceSource: o.source as ReferenceSource, reason: o.reason, apply: o.apply,
+          ...(o.note !== undefined ? { note: o.note } : {}), ...(evidence !== undefined ? { evidence } : {}), services: serviceLookup(loadServiceConfigs()),
+        });
+        for (const c of r.changes) console.log(`${c.callId}\tref ${c.oldReference ?? "-"} -> ${c.newReference}\t${c.oldOutcome} -> ${c.newOutcome}\t${c.correctionId !== null ? `correction #${c.correctionId}` : "(preview)"}\t${c.url}`);
+        console.log(JSON.stringify({ kind: CORRECTION_KINDS.REFERENCE_PRICE, rows: r.changes.length, outcomeChanged: r.changes.filter((c) => c.oldOutcome !== c.newOutcome).length, missing: r.missing, applied: r.applied }));
+      } else {
+        if (!o.note) throw new Error("buy correct --stale-listing needs --note <text>");
+        const r = annotate(db, { callIds: o.ids, kind: CORRECTION_KINDS.STALE_LISTING, reason: o.reason, note: o.note, apply: o.apply, ...(evidence !== undefined ? { evidence } : {}) });
+        for (const c of r.annotated) console.log(`${c.callId}\t${c.outcome}\t${c.correctionId !== null ? `correction #${c.correctionId}` : "(preview)"}\t${c.url}`);
+        console.log(JSON.stringify({ kind: CORRECTION_KINDS.STALE_LISTING, rows: r.annotated.length, missing: r.missing, applied: r.applied }));
+      }
+    });
+
+  b.command("stale-overcharges")
+    .description("overcharge rows judged against a Bazaar snapshot that our own earlier settlement at the same quote had already made stale (the Bazaar rewrites a listing at every settlement); reads only")
+    .option("--json", "print rows and summary as JSON", false)
+    .option("--seller <domain>", "only this seller's rows")
+    .action(function (this: Command, o: { json: boolean; seller?: string }) {
+      const g = globals(this);
+      const db = openDb(g.db);
+      const r = staleOverchargeCandidates(db);
+      const rows = o.seller ? r.rows.filter((x) => x.domain === o.seller) : r.rows;
+      const summary = o.seller ? r.summary.filter((x) => x.domain === o.seller) : r.summary;
+      if (o.json) {
+        console.log(JSON.stringify({ summary, rows: rows.map((x) => ({ ...x, ts: new Date(x.ts).toISOString(), first_paid_at_quote: x.first_paid_at_quote === null ? null : new Date(x.first_paid_at_quote).toISOString() })) }, null, 2));
+        return;
+      }
+      console.log("| seller | overcharge rows | after our own purchase at the quote | listing now equals quote | candidates | corrected |");
+      console.log("|---|---:|---:|---:|---:|---:|");
+      for (const s of summary) console.log(`| ${s.domain} | ${s.overcharge_rows} | ${s.repeat_after_own_purchase} | ${s.listing_now_equals_quote} | ${s.candidates} | ${s.already_corrected} |`);
+      if (o.seller) for (const x of rows) console.log(`${x.call_id}\t${new Date(x.ts).toISOString()}\tq ${x.quote_atomic} ref ${x.reference_atomic} listed_now ${x.listed_now_atomic ?? "-"}\t${x.first_paid_at_quote === null ? "first purchase at this quote" : `after our ${new Date(x.first_paid_at_quote).toISOString()}`}\t${x.corrected ? "corrected" : ""}\t${x.url}`);
     });
 
   b.command("reconcile")

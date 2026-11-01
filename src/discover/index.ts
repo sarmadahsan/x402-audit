@@ -129,7 +129,10 @@ function prepare(db: Db) {
     findSeller: db.prepare<[string], { id: number }>("SELECT id FROM sellers WHERE domain = ?"),
     insertSeller: db.prepare("INSERT INTO sellers (domain, first_seen_at, last_seen_at) VALUES (?, ?, ?)"),
     touchSeller: db.prepare("UPDATE sellers SET last_seen_at = MAX(last_seen_at, ?) WHERE id = ?"),
-    findResource: db.prepare<[string, string, string], { id: number }>("SELECT id FROM resources WHERE url = ? AND method = ? AND source = ?"),
+    findResource: db.prepare<[string, string, string], { id: number; declared_price_atomic: string | null }>("SELECT id, declared_price_atomic FROM resources WHERE url = ? AND method = ? AND source = ?"),
+    listingChanged: db.prepare(
+      "INSERT INTO price_events (resource_id, ts, kind, old_value, new_value, details_json) VALUES (?, ?, 'listing_changed', ?, ?, ?)",
+    ),
     upsertResource: db.prepare(
       `INSERT INTO resources (${RESOURCE_COLS.join(", ")}) VALUES (${RESOURCE_COLS.map((c) => "@" + c).join(", ")})
        ON CONFLICT (url, method, source) DO UPDATE SET ${updates}`,
@@ -274,9 +277,13 @@ export function upsertFromBazaar(db: Db, items: readonly BazaarItem[], now: numb
         first_seen_at: now,
         last_seen_at: now,
       };
-      if (s.findResource.get(row.url as string, method, "bazaar")) stats.resourcesSeen++;
+      const prev = s.findResource.get(row.url as string, method, "bazaar");
+      if (prev) stats.resourcesSeen++;
       else stats.resourcesNew++;
       s.upsertResource.run(row);
+      // A listed price that moved since the last crawl is on record (src/discover/listing.ts does the same before a buy).
+      if (prev && prev.declared_price_atomic !== null && row.declared_price_atomic !== null && prev.declared_price_atomic !== row.declared_price_atomic)
+        s.listingChanged.run(prev.id, now, prev.declared_price_atomic, row.declared_price_atomic, JSON.stringify({ lastUpdated: item.lastUpdated ?? null, via: "discover" }));
     }
     refreshSellerAggregates(db);
     if (opts.exclude) stats.excludedSellers = applyExclusions(db, opts.exclude);

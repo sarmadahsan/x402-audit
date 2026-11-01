@@ -22,6 +22,7 @@ import { haltRequested } from "../safety.js";
 import type { Payer } from "../x402/pay.js";
 import type { BuyPlan, PlanAllocation } from "./plan.js";
 import { referencePriceFor } from "./reference.js";
+import { ListingCache, refreshListing, type ListingRefreshStatus } from "../discover/listing.js";
 import { loadServiceConfigs, serviceLookup, type ServiceLookup } from "./services.js";
 import {
   checkCaps,
@@ -77,6 +78,12 @@ export interface RunBuyOptions extends ConfirmPolicy {
   source?: CallSource;
   /** Which caps apply (default buy; audit adds AUDIT_MAX_PER_DAY_USD over the audit sources). */
   capScope?: "buy" | "audit";
+  /** Re-read each resource's Bazaar listing just before buying it (src/discover/listing.ts), so the reference price is
+   * the listing at purchase time, not the last crawl's. Default true for live runs; a lookup failure keeps the snapshot. */
+  refreshListings?: boolean;
+  /** Fetch used for the listing lookups (tests). */
+  listingFetch?: typeof fetch;
+  listingCache?: ListingCache;
   /** Per-run limits of a scheduled run (per run, per seller per run, scheduled-buy day budget). */
   runLimits?: RunLimits;
 }
@@ -121,6 +128,8 @@ export interface BuyStats {
   skippedUnformable: { resourceId: number; url: string; dropped: number }[];
   /** True when the run ended because no pool wallet could cover the cheapest remaining call. */
   poolExhausted?: boolean;
+  /** Pre-buy listing lookups by result (live runs with refreshListings). */
+  listingRefresh?: Partial<Record<ListingRefreshStatus, number>>;
 }
 
 /** After this many consecutive malformed-request our_errors on one resource, its remaining calls are dropped. */
@@ -191,6 +200,8 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
   const sellerIdx = new Map(sellerOrder.map((s, i) => [s, i]));
   const sellerK = new Map<number, number>();
   const backoffUntil = new Map<number, number>();
+  const listingCache = o.listingCache ?? new ListingCache();
+  const payToOf = new Map<number, string>();
   let cursor = 0;
 
   // A seller's daily cap is a per-seller limit, not a reason to stop every other seller: record it in `halts`
@@ -297,6 +308,12 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         }
         payer = chosen;
       }
+      if (!o.dryRun && (o.refreshListings ?? true)) {
+        // The listing at purchase time, not the crawl's snapshot: the Bazaar rewrites an entry at every settlement.
+        const lr = await refreshListing(db, { resourceId: a.resourceId, now: realNow(), cache: listingCache, network: o.network, log: L, ...(o.listingFetch ? { fetchImpl: o.listingFetch } : {}) });
+        stats.listingRefresh = { ...(stats.listingRefresh ?? {}), [lr.status]: ((stats.listingRefresh ?? {})[lr.status] ?? 0) + 1 };
+        if (lr.payTo) payToOf.set(a.resourceId, lr.payTo);
+      }
       const reference = referencePriceFor(db, a.resourceId, t);
       const seq = stats.schedule.length + 1;
       stats.schedule.push({ seq, at: t, resourceId: a.resourceId, sellerId: a.sellerId, url: a.url, wallet: payer.address });
@@ -352,6 +369,8 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       });
       stats.calls++;
       stats.callIds.push(out.callId);
+      // Our own settlement rewrites the seller's Bazaar entries: the next lookup for this pay-to must not reuse the pages.
+      if (out.result.signed && payToOf.has(a.resourceId)) listingCache.invalidate(payToOf.get(a.resourceId)!);
       if (out.classification.flags.includes(FLAGS.UNPAID_OVERCHARGE)) {
         // Quoted above the cap that applies to this allocation: recorded too_expensive, never silently skipped.
         const q = db.prepare("SELECT quote_amount_atomic q FROM calls WHERE id = ?").get(out.callId) as { q: string | null } | undefined;

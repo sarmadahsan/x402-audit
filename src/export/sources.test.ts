@@ -31,7 +31,7 @@ describe("export: audit and candidate rows", () => {
     expect(e.summary.denominator_paid_calls).toBe(base.summary.denominator_paid_calls);
     expect(e.summary.count_weighted).toEqual(base.summary.count_weighted);
     expect(e.summary.by_tier).toEqual(base.summary.by_tier);
-    expect(e.summary.audit_purchases).toEqual({ audit_disagreement: { paid_calls: 10, sellers: 1 }, audit_demand: { paid_calls: 0, sellers: 0 } });
+    expect(e.summary.audit_purchases).toEqual({ audit_disagreement: { paid_calls: 10, sellers: 1 }, audit_demand: { paid_calls: 0, sellers: 0 }, audit_operator: { paid_calls: 0, sellers: 0 } });
     const s1 = e.sellers.sellers.find((s: { domain: string }) => s.domain === "big.example");
     const b1 = base.sellers.sellers.find((s: { domain: string }) => s.domain === "big.example");
     expect(s1.denominator_calls).toBe(b1.denominator_calls + 10);

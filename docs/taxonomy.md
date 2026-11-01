@@ -55,6 +55,43 @@ In order of preference, recorded per call in `calls.reference_source`:
 of the same asset. The ratio is stored, and the report also shows sensitivity
 rows at ratio >= 1.1 and >= 2.0 so a reader can discount one-cent jitter.
 
+The `bazaar` reference is the listing **at purchase time**. The Bazaar rewrites
+an entry at every settlement (its `lastUpdated` is the resource's last call), so
+a seller that raises its price without re-registering is listed at the new price
+from the first settlement on. Until 2026-11-01 the reference was the last daily
+crawl's snapshot (`resources.declared_price_atomic`), which called every later
+purchase of such a resource an overcharge; the first purchase after the change is
+the only one a buyer who reads the listing would have met. Since then `buy`
+re-reads the seller's entries just before each purchase through the public
+merchant endpoint (`src/discover/listing.ts`; newest entries first, so one page
+decides), updates the snapshot and records a `price_events` row of kind
+`listing_changed` when the listed price moved; the daily crawl records the same
+event for every resource whose price moved between crawls. A lookup failure
+keeps the snapshot and is counted in the run's `listingRefresh` statistics.
+
+### Corrections
+
+A classified row is never edited in place. Two audit tables record changes:
+`reclassifications` (validator or classifier fixes re-applied to history, with
+the reason and the code commit) and `corrections` (`buy correct`), for the
+operator's own corrections:
+
+- `reference_price`: the reference the row was judged against did not hold at
+  purchase time (a Bazaar snapshot an earlier settlement had already made stale).
+  The row's reference is replaced, the classifier runs again, and both the
+  correction (old and new reference, old and new outcome, reason, evidence) and
+  the resulting `reclassifications` row (reason `correction #id: ...`) are kept.
+- `stale_listing`: the row stands. The listing really said the lower price when
+  we bought, so the overcharge is the buyer's experience; a public note says the
+  seller had raised its price without re-registering.
+
+`buy stale-overcharges` lists, per seller, the overcharge rows that follow one of
+our own settlements at the same quote (so the listing already read the quote)
+and whose quote is what the listing says now: the candidates for a
+`reference_price` correction, for the operator to review. The export carries each
+evidence row's latest correction and every seller's list (`evidence/<host>.json`
+`corrections`), so a re-scored row stays visible after it leaves the failures.
+
 ### Resolution of `indeterminate`
 
 The background poller re-checks the chain for 24 h after signing.
@@ -98,8 +135,10 @@ rate. The stress report counts "second settlement observed" directly.
 Audit rows (`audit-triggers`, 2026-10-29) use the same outcomes, validators and
 settlement matching but carry `source = audit_disagreement` (the index's
 operator-reported series disagrees with ours, is mature while ours is thin, or
-reports failures on a seller we mark ok) or `audit_demand` (people are checking
-the seller and our data is thin or stale). They count in that seller's own
+reports failures on a seller we mark ok), `audit_demand` (people are checking
+the seller and our data is thin or stale) or `audit_operator` (`audit-host`: the
+operator named the host, e.g. a re-measurement after a seller's reply, under the
+same audit caps plus an explicit `--max-usd`). They count in that seller's own
 measured series and evidence file, because a seller's failure rate is its rate
 whatever made us sample it. They are kept out of the headline market rate and
 the tier and category tables, because triggered sampling deliberately

@@ -27,9 +27,10 @@ export const STALE_DAYS = 14;
 const DAY_MS = 24 * 3_600_000;
 
 export type Verdict = "ok" | "caution" | "avoid";
-export type TriggerReason = "disagreement" | "demand" | "thin_measured" | "reported_above_ok";
-/** Expected information gain, roughly: disagreements first, then demand, then the rest. */
-export const REASON_PRIORITY: Record<TriggerReason, number> = { disagreement: 0, demand: 1, thin_measured: 2, reported_above_ok: 3 };
+export type TriggerReason = "disagreement" | "demand" | "thin_measured" | "reported_above_ok" | "operator";
+/** Expected information gain, roughly: disagreements first, then demand, then the rest. `operator` is never ranked: it is
+ * the operator's explicit request (`audit-host`), one trigger per named host. */
+export const REASON_PRIORITY: Record<TriggerReason, number> = { disagreement: 0, demand: 1, thin_measured: 2, reported_above_ok: 3, operator: 0 };
 
 export interface ReportedHost {
   host: string;
@@ -68,6 +69,8 @@ export interface Trigger {
     reported: ReportedHost | null;
     measured: (Omit<MeasuredSeller, "lastCallTs"> & { last_call: string | null; verdict: Verdict }) | null;
     demand: { rank: number; checks: number; days: number } | null;
+    /** `audit-host`: the operator's reason and limits, recorded with the decision. */
+    operator?: { reason: string; calls: number; maxUsd: string; measuredOnly: boolean };
   };
 }
 

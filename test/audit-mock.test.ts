@@ -153,6 +153,66 @@ describe("audits against the mock seller", () => {
     fresh.close();
   });
 
+  it("re-reads the Bazaar listing just before each purchase, so the reference is the listing at purchase time", async () => {
+    // A snapshot of 0.010000 from an old crawl; the Bazaar (merchant endpoint, newest first) now lists 0.012000.
+    const fresh = openDb(":memory:");
+    const host = new URL(seller.url).hostname;
+    const payTo = seller.catalog()[0]!.payTo;
+    fresh.prepare("INSERT INTO sellers (id, domain, first_seen_at, last_seen_at) VALUES (1, ?, 0, 0)").run(host);
+    fresh
+      .prepare("INSERT INTO resources (id, seller_id, url, method, source, network, scheme, declared_price_atomic, pay_to, raw_json, first_seen_at, last_seen_at) VALUES (1, 1, ?, 'GET', 'bazaar', ?, 'exact', '10000', ?, ?, 0, 0)")
+      .run(`${seller.url}/ok?symbol=BTC`, NETWORK, payTo, JSON.stringify({ lastUpdated: "2026-10-24T01:40:00.000Z" }));
+    const entry = {
+      resource: `${seller.url}/ok?symbol=BTC`, type: "http", x402Version: 2, description: "ok", lastUpdated: "2026-10-25T08:48:11.000Z",
+      accepts: [{ scheme: "exact", network: NETWORK, amount: "12000", asset: seller.catalog()[0]!.asset, payTo, maxTimeoutSeconds: 300, extra: { name: "USDC", version: "2" } }],
+      extensions: { bazaar: { info: { input: { type: "http", method: "GET" } } } },
+    };
+    const listingUrls: string[] = [];
+    const listingFetch = (async (u: string) => {
+      listingUrls.push(u);
+      return new Response(JSON.stringify({ payTo, x402Version: 2, pagination: { limit: 100, offset: 0, total: 1 }, resources: [entry] }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const t = { host, sellerId: 1, reasons: ["operator" as const], source: "audit_operator" as const, priority: 0, inputs: { reported: null, measured: null, demand: null } };
+    const items = planAudits(fresh, [t], { caps, network: NETWORK, now: Date.now(), maxSellersPerDay: 10, maxCallsPerSeller: 2 });
+    expect(items[0]!.decision).toBe("planned");
+    const triggerIds = recordDecisions(fresh, items, { now: Date.now() });
+    let runSeq = 200;
+    const results = await runAudits(fresh, items, {
+      index: "https://index.test",
+      secret: "",
+      triggerIds,
+      payers: [createPayer({ privateKey: generatePrivateKey(), network: NETWORK, maxAmountAtomic: caps.perCallAtomic, timeoutMs: 5_000 })],
+      caps,
+      network: NETWORK,
+      settlementLookup: lookup,
+      minSecondsBetweenCallsPerResource: 0,
+      confirmTimeoutMs: 2_000,
+      confirmIntervalMs: 50,
+      rejectGraceMs: 200,
+      listingFetch,
+      startRun: () => {
+        fresh.prepare("INSERT INTO runs (id, subcommand, args_json, config_hash, network, dry_run, started_at) VALUES (?, 'audit', '{}', '', ?, 0, ?)").run(++runSeq, NETWORK, Date.now());
+        return runSeq;
+      },
+      log: silent,
+      haltRoot: mkdtempSync(join(tmpdir(), "audit-halt-")),
+      dryRun: false,
+    });
+    expect(results[0]!.result.calls).toBe(2);
+    const calls = fresh.prepare("SELECT source, quote_amount_atomic, reference_price_atomic, reference_source, outcome FROM calls ORDER BY id").all();
+    expect(calls).toEqual([
+      { source: "audit_operator", quote_amount_atomic: "10000", reference_price_atomic: "12000", reference_source: "bazaar", outcome: "ok" },
+      { source: "audit_operator", quote_amount_atomic: "10000", reference_price_atomic: "12000", reference_source: "bazaar", outcome: "ok" },
+    ]);
+    expect(fresh.prepare("SELECT declared_price_atomic FROM resources WHERE id = 1").get()).toEqual({ declared_price_atomic: "12000" });
+    expect(fresh.prepare("SELECT kind, old_value, new_value FROM price_events").all()).toEqual([{ kind: "listing_changed", old_value: "10000", new_value: "12000" }]);
+    // One lookup before the first call; our settlement dropped the cached pages, so the second call looked again.
+    expect(listingUrls).toHaveLength(2);
+    expect(new URL(listingUrls[0]!).searchParams.get("payTo")).toBe(payTo);
+    expect(new URL(listingUrls[0]!).pathname).toBe("/platform/v2/x402/discovery/merchant");
+    fresh.close();
+  });
+
   it("auditResult leaves out-of-denominator rows out", () => {
     const r = auditResult(db, { runId: 999, sellerId: 1, host: "127.0.0.1", triggeredAt: 0, reason: "demand" });
     expect(r).toMatchObject({ calls: 0, failures: 0, rate: null });

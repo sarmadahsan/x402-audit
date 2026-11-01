@@ -105,11 +105,13 @@ export const CALL_SOURCES = {
   AUDIT_DISAGREEMENT: "audit_disagreement",
   /** Triggered audit purchases: people are checking the seller and our measured data is thin or stale. */
   AUDIT_DEMAND: "audit_demand",
+  /** Operator-requested audit of named hosts (`audit-host`): a re-measurement after a seller's reply, under the audit caps. */
+  AUDIT_OPERATOR: "audit_operator",
   /** Weekly breadth run (docs/taxonomy.md "Breadth purchases"): one call per seller the scheduled per-call cap excludes. */
   BREADTH: "breadth",
 } as const;
 export type CallSource = (typeof CALL_SOURCES)[keyof typeof CALL_SOURCES];
-export const AUDIT_SOURCES: readonly CallSource[] = [CALL_SOURCES.AUDIT_DISAGREEMENT, CALL_SOURCES.AUDIT_DEMAND];
+export const AUDIT_SOURCES: readonly CallSource[] = [CALL_SOURCES.AUDIT_DISAGREEMENT, CALL_SOURCES.AUDIT_DEMAND, CALL_SOURCES.AUDIT_OPERATOR];
 /** Sources in the headline, by_tier and by_category: scheduled buys and breadth purchases (sellers the scheduled cap
  * excluded, not the design). Audit sources stay out because triggered sampling oversamples contested and popular sellers. */
 export const HEADLINE_SOURCES: readonly CallSource[] = [CALL_SOURCES.BUY, CALL_SOURCES.BREADTH];

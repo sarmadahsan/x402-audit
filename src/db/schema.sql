@@ -327,6 +327,32 @@ CREATE TABLE IF NOT EXISTS reclassifications (
   code_commit   TEXT
 );
 
+-- ------------------------------------------------------------ corrections
+-- Operator corrections to call rows (docs/taxonomy.md "Corrections"). Two kinds:
+--   reference_price: the reference the row was judged against was wrong at purchase time (the Bazaar listing had
+--                    already been rewritten and our snapshot had not); the row's reference is replaced and the row is
+--                    re-classified through `reclassifications` with this correction's id in the reason.
+--   stale_listing:   the row stands (the listing really said the lower price when we bought) and carries a public note.
+-- The call row keeps every original fact; this table keeps what changed, why, when and on what evidence. Public:
+-- the export carries each row's latest correction and the seller's list.
+CREATE TABLE IF NOT EXISTS corrections (
+  id                    INTEGER PRIMARY KEY,
+  call_id               INTEGER NOT NULL REFERENCES calls(id),
+  ts                    INTEGER NOT NULL,
+  kind                  TEXT NOT NULL,            -- reference_price | stale_listing
+  old_reference_atomic  TEXT,
+  old_reference_source  TEXT,
+  new_reference_atomic  TEXT,
+  new_reference_source  TEXT,
+  old_outcome           TEXT,
+  new_outcome           TEXT,
+  reason                TEXT NOT NULL,
+  note                  TEXT,
+  evidence_json         TEXT,
+  code_commit           TEXT
+);
+CREATE INDEX IF NOT EXISTS corrections_call ON corrections(call_id);
+
 -- ------------------------------------------------------------------ audits
 -- Every audit-trigger decision with its inputs, written BEFORE any audit spend (docs/PLAN.md "Audits").
 CREATE TABLE IF NOT EXISTS audit_triggers (

@@ -19,6 +19,8 @@ import { countRate } from "../report/compute.js";
 import { AUDIT_SOURCES, FLAGS, HEADLINE_FAILURE_OUTCOMES, PAID_DENOMINATOR_OUTCOMES } from "../taxonomy.js";
 import type { FetchImpl, Trigger } from "./triggers.js";
 import { recordTooExpensive } from "../buy/states.js";
+import { CALL_SOURCES } from "../taxonomy.js";
+import { measuredSeries as measuredSeriesLocal, measuredVerdict, sellerIdsByHost as sellerIdsByHostLocal } from "./triggers.js";
 
 export type AuditDecision = "planned" | "dry_run" | "disabled" | "refused";
 
@@ -38,6 +40,8 @@ export interface PlanAuditsOptions {
   maxSellersPerDay: number;
   maxCallsPerSeller: number;
   exclude?: ExcludeConfig;
+  /** Keep only these resources (operator audits: `--measured-only`, the resources we have paid before). */
+  resourceFilter?: (r: { resource_id: number; url: string }) => boolean;
 }
 
 interface BuyableResource {
@@ -109,7 +113,7 @@ export function planAudits(db: Db, triggers: readonly Trigger[], o: PlanAuditsOp
       refuse(t, `cap: at most ${o.maxSellersPerDay} audited sellers per UTC day`);
       continue;
     }
-    const all = buyableResources(db, t.sellerId, o.network);
+    const all = buyableResources(db, t.sellerId, o.network).filter((r) => (o.resourceFilter ? o.resourceFilter(r) : true));
     const over = all.filter((r) => r.price > o.caps.perCallAtomic);
     for (const r of over) recordTooExpensive(db, { resourceId: r.resource_id, quotedAtomic: r.price, capAtomic: o.caps.perCallAtomic, basis: r.basis, now: o.now });
     const res = all.filter((r) => r.price <= o.caps.perCallAtomic);
@@ -158,6 +162,71 @@ export function planAudits(db: Db, triggers: readonly Trigger[], o: PlanAuditsOp
     });
   }
   return items;
+}
+
+export interface OperatorAuditOptions {
+  hosts: string[];
+  /** Paid calls per host, round-robin over its resources. */
+  calls: number;
+  /** Hard limit on the whole plan, refused (nothing bought) when the plan is above it. */
+  maxUsd: number;
+  reason: string;
+  /** Only resources this seller has been paid on before (a re-measurement of the disputed endpoints). */
+  measuredOnly: boolean;
+  caps: Caps;
+  network: string;
+  now: number;
+  maxSellersPerDay: number;
+  exclude?: ExcludeConfig;
+}
+
+/**
+ * `audit-host`: the operator names the hosts (a seller's reply, a dispute). Same planner and caps as a triggered audit
+ * (per call, per seller per day, the day's audit budget, at most AUDIT_MAX_SELLERS_PER_DAY, never twice a day), plus the
+ * operator's own --max-usd on the whole plan: above it every item is refused and nothing is bought. Source audit_operator,
+ * so the calls count in the seller's own series and never in the headline.
+ */
+export function planOperatorAudit(db: Db, o: OperatorAuditOptions): { items: AuditPlanItem[]; plannedAtomic: bigint; withinMax: boolean } {
+  const byHost = sellerIdsByHostLocal(db);
+  const measured = new Map(measuredSeriesLocal(db, o).map((m) => [m.sellerId, m]));
+  const triggers: Trigger[] = o.hosts.map((raw) => {
+    const host = raw.trim().toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
+    const sellerId = byHost.get(host) ?? null;
+    const m = sellerId !== null ? (measured.get(sellerId) ?? null) : null;
+    return {
+      host,
+      sellerId,
+      reasons: ["operator"],
+      source: CALL_SOURCES.AUDIT_OPERATOR,
+      priority: 0,
+      inputs: {
+        reported: null,
+        measured: m ? { ...m, last_call: m.lastCallTs == null ? null : new Date(m.lastCallTs).toISOString(), verdict: measuredVerdict(m) } : null,
+        demand: null,
+        operator: { reason: o.reason, calls: o.calls, maxUsd: o.maxUsd.toFixed(6), measuredOnly: o.measuredOnly },
+      },
+    };
+  });
+  const paidBefore = new Set((db.prepare("SELECT DISTINCT resource_id FROM calls WHERE paid = 1").all() as { resource_id: number }[]).map((r) => r.resource_id));
+  const items = planAudits(db, triggers, {
+    caps: o.caps,
+    network: o.network,
+    now: o.now,
+    maxSellersPerDay: o.maxSellersPerDay,
+    maxCallsPerSeller: o.calls,
+    ...(o.exclude ? { exclude: o.exclude } : {}),
+    ...(o.measuredOnly ? { resourceFilter: (r: { resource_id: number }) => paidBefore.has(r.resource_id) } : {}),
+  });
+  const plannedAtomic = items.reduce((s, i) => s + i.plannedAtomic, 0n);
+  const maxAtomic = BigInt(Math.round(o.maxUsd * 1_000_000));
+  const withinMax = plannedAtomic <= maxAtomic;
+  if (!withinMax)
+    return {
+      items: items.map((i) => (i.decision === "planned" ? { ...i, decision: "refused" as const, decisionReason: `operator --max-usd ${o.maxUsd.toFixed(6)}: the whole plan is ${atomicToUsd(plannedAtomic)} USDC; nothing bought`, allocations: [], plannedAtomic: 0n, plannedCalls: 0 } : i)),
+      plannedAtomic,
+      withinMax,
+    };
+  return { items, plannedAtomic, withinMax };
 }
 
 /** Write every decision (with its inputs) before anything is spent. Returns the row id per item. */

@@ -20,6 +20,9 @@ export interface ReclassifyOptions {
   services?: (domain: string) => ServiceConfig | undefined;
   defaultMaxTimeoutSeconds?: number;
   now?: () => number;
+  /** Judge these rows against another reference than the stored one (a `buy correct` preview; the apply path writes the
+   * reference first and needs no override). */
+  referenceOverride?: Map<number, { amountAtomic: string; source: ReferenceSource }>;
 }
 
 export interface ReclassifyChange { callId: number; intentId: string; url: string; oldOutcome: string | null; newOutcome: string; oldFlags: string[]; newFlags: string[] }
@@ -109,7 +112,11 @@ export async function reclassifyCalls(db: Db, o: ReclassifyOptions): Promise<Rec
       ...(row.response_status != null ? { responseStatus: row.response_status } : {}),
       elapsedSinceSignMs: now() - row.ts,
       quoteAmountAtomic: row.quote_amount_atomic ?? "0",
-      ...(row.reference_price_atomic ? { referencePriceAtomic: row.reference_price_atomic, referenceSource: (row.reference_source ?? "first_seen") as ReferenceSource } : {}),
+      ...(o.referenceOverride?.has(row.id)
+        ? { referencePriceAtomic: o.referenceOverride.get(row.id)!.amountAtomic, referenceSource: o.referenceOverride.get(row.id)!.source }
+        : row.reference_price_atomic
+          ? { referencePriceAtomic: row.reference_price_atomic, referenceSource: (row.reference_source ?? "first_seen") as ReferenceSource }
+          : {}),
       paid: row.paid === 1,
       validators,
       ...(row.latency_ms != null ? { latencyMs: row.latency_ms } : {}),
