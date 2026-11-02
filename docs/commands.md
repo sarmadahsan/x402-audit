@@ -41,6 +41,9 @@ Every subcommand is dry-run by default and writes to the one SQLite file in `X40
 | `pnpm cli telemetry serve` / `telemetry report` | no | ingest for `@x402-audit/client` records |
 | `pnpm cli report` | no | `reports/YYYY-MM-DD.md` + `.json`, every number from a named query |
 | `pnpm cli samplesize --rate 0.1 --halfwidth 0.01` | no | calls needed for a Wilson half-width |
+| `pnpm cli audit-host --host h --calls n --max-usd x --reason t [--measured-only]` | same gate as buy, plus `AUDIT_TRIGGERS_ENABLED=1` | operator-requested audit of named hosts (source `audit_operator`: the seller's own series, never the headline); posts each result to the index (docs/audit-callback.md) |
+| `pnpm cli audit-post --id n` / `--host h --latest` | no | re-send a stored audit result to the index with the same signing as the original post, from `AUDIT_SECRET` in the environment; prints the HTTP status; idempotent; `--force` re-sends one already posted |
+| `pnpm cli export [--out dir]` | no | write the public data (summary, sellers with the rolling `window` block, resources, evidence, stress, probe, candidates, too_expensive); the public-data README documents every field |
 | `pnpm cli health [--trigger t] [--dry-run]` | no | machine and loop health (unit, disk, memory, halt files by existence only, runs, caps and spend, pool balances, the last run's redacted log lines) posted to `{PAIDFOR_INDEX_URL}/v1/admin/health`, signed like the audit callback; `--dry-run` prints the body; a failed post is a one-line warning, exit 0. `scripts/loop.sh` posts after every probe round, buy and export, and a systemd timer every 15 minutes |
 
 Stopping: create a file named `halt` in the repo root; every loop checks it. To stop

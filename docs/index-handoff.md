@@ -144,3 +144,67 @@ What the tile should show instead: the status word and reason of the last schedu
 **completed** run with its own time, e.g. `skipped at 06:35 (pnpm gate failed: ...) · last completed 00:28 to 00:43 ·
 603 planned · 1.553211 USDC`. The "last purchases" line on the home page should use `last_buy_run.last_activity`, not
 `finished_at`.
+
+## 2026-11-02: rolling verdicts, the `window` block
+
+Decision (founder, 2026-11-02): verdicts are computed over each seller's **most recent 50 paid calls**, not all time, so
+a seller that fixed a problem recovers and one that degrades is caught at the same speed. The all-time series stays as
+history; the market-wide headline stays all-time. Live from the first export after the harness deploy. Additive: no
+existing field changed name, type or meaning.
+
+### sellers.json: `window` on every row in `sellers` and `low_sample`
+
+```json
+"window": {
+  "size": 50,
+  "calls": 50,
+  "failures": 5,
+  "failure_rate": 0.1,
+  "wilson_low": 0.0435,
+  "wilson_high": 0.2139,
+  "by_type": { "non_delivery": 5, "overcharge": 0, "duplicate": 0, "wrong_goods": 0 },
+  "first_ts": "2026-11-01T12:04:00.000Z",
+  "last_ts": "2026-11-02T07:41:58.000Z",
+  "last_failure_ts": "2026-11-02T07:41:58.000Z"
+}
+```
+
+| field | type | meaning |
+|---|---|---|
+| `size` | integer | The window, 50. |
+| `calls` | integer | Paid denominator calls in the window: at most 50, fewer for a seller with fewer calls (then equal to `denominator_calls`). |
+| `failures` | integer | Failures among them (overcharge, non_delivery, wrong_goods, duplicate). |
+| `failure_rate` / `wilson_low` / `wilson_high` | number or null | Rate and 95% Wilson interval over the window, the same code as the all-time figures; null when `calls` is 0. |
+| `by_type` | object | The window's failures split into `non_delivery`, `overcharge`, `duplicate`, `wrong_goods`. |
+| `first_ts` / `last_ts` | ISO 8601 UTC or null | Oldest and newest call in the window. |
+| `last_failure_ts` | ISO 8601 UTC or null | Newest failure in the window; null with none. |
+
+The rows are the same the all-time figures count: every source in `purchases_by_source` (scheduled buys, breadth,
+triggered and operator audits), paid-denominator outcomes only, unpaid overcharges excluded, corrections applied
+(a re-scored row counts with its corrected outcome). The matching evidence file (`evidence/<domain>.json`) carries the
+same `window` object in its header, so a seller page can show the window next to the samples.
+
+### summary.json
+
+| field | type | meaning |
+|---|---|---|
+| `window_size` | integer | 50. |
+| `verdict_basis_note` | string | `verdicts use each seller's most recent 50 paid calls; the market rate is all-time`, for the index to show next to a verdict. |
+
+### What the index should do (in `~/paidfor`, not here)
+
+- `lib/verdict.ts`: compute the verdict from `window.calls`, `window.failures`, `window.wilson_low` and
+  `window.failure_rate` (avoid: lower bound above 10% with 30 or more window calls; caution: rate above 2%), falling
+  back to the all-time fields when `window` is absent (an older export).
+- Seller page: the window figures as the verdict's numbers ("last 50 paid calls: 5 failures, 10.0%"), the all-time
+  figures as history below, `verdict_basis_note` once near the verdict legend.
+- Home page and `/v1/summary`: the headline (`count_weighted`) unchanged, all-time.
+- Offera Studio under the window (2026-11-02): api.fadeandco.workers.dev 0 of 50, api.sitecheck-api.workers.dev 5 of 50
+  (the 9 stale-listing overcharges of 2026-10-25 on each host have aged out of fadeandco's window and partly out of
+  sitecheck's).
+
+### Audit results with reason `operator`
+
+`audit-host` posts to `POST /v1/audits` with `reason: "operator"`. The two results of 2026-11-02 07:38 and 07:42 UTC
+(hosts api.fadeandco.workers.dev and api.sitecheck-api.workers.dev) were refused with 400 before the index accepted that
+value; the harness re-sends stored results with `audit-post` (docs/audit-callback.md) once the index does.

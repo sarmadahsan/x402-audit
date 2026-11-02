@@ -308,7 +308,7 @@ export function auditResult(db: Db, o: { runId: number; sellerId: number; host: 
     rate: c?.rate ?? null,
     wilson_low: c?.lo ?? null,
     wilson_high: c?.hi ?? null,
-    evidence_url: EVIDENCE_BASE + o.host.toLowerCase().replace(/[^a-z0-9.-]/g, "_") + ".json",
+    evidence_url: evidenceUrlFor(o.host),
   };
 }
 
@@ -317,8 +317,21 @@ export function signAuditBody(secret: string, timestamp: string, body: string): 
   return "sha256=" + createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
 }
 
-export async function postAuditResult(index: string, secret: string, result: AuditResult, fetchImpl: FetchImpl = fetch, now = Date.now()): Promise<string> {
-  if (!secret) return "skipped_no_secret";
+/** The evidence file the index links for a host (same name the export writes). */
+export function evidenceUrlFor(host: string): string {
+  return EVIDENCE_BASE + host.toLowerCase().replace(/[^a-z0-9.-]/g, "_") + ".json";
+}
+
+export interface AuditPost {
+  /** `posted`, `skipped_no_secret`, or `failed:<http status or error>` (the value stored in audit_results.post_status). */
+  status: string;
+  /** The index's HTTP status, or null when no response arrived. */
+  http: number | null;
+}
+
+/** POST the result to `{index}/v1/audits`, signed with the secret (never logged). The secret is only ever read here and by the caller from the environment. */
+export async function postAuditResultDetailed(index: string, secret: string, result: AuditResult, fetchImpl: FetchImpl = fetch, now = Date.now()): Promise<AuditPost> {
+  if (!secret) return { status: "skipped_no_secret", http: null };
   const body = JSON.stringify(result);
   const ts = String(Math.floor(now / 1000));
   try {
@@ -327,10 +340,113 @@ export async function postAuditResult(index: string, secret: string, result: Aud
       headers: { "content-type": "application/json", "x-paidfor-audit-timestamp": ts, "x-paidfor-audit-signature": signAuditBody(secret, ts, body) },
       body,
     });
-    return res.ok ? "posted" : `failed:${res.status}`;
+    return { status: res.ok ? "posted" : `failed:${res.status}`, http: res.status };
   } catch (e) {
-    return `failed:${(e as Error).message}`;
+    return { status: `failed:${(e as Error).message}`, http: null };
   }
+}
+
+export async function postAuditResult(index: string, secret: string, result: AuditResult, fetchImpl: FetchImpl = fetch, now = Date.now()): Promise<string> {
+  return (await postAuditResultDetailed(index, secret, result, fetchImpl, now)).status;
+}
+
+export interface StoredAuditResult {
+  id: number;
+  trigger_id: number;
+  run_id: number | null;
+  host: string;
+  source: string;
+  finished_at: number;
+  calls: number;
+  failures: number;
+  rate: number | null;
+  wilson_low: number | null;
+  wilson_high: number | null;
+  post_status: string | null;
+  posted_at: number | null;
+  /** The trigger's first reason (`operator`, `disagreement`, ...), as the original post carried it. */
+  reason: string;
+}
+
+const STORED_SELECT = `SELECT a.id, a.trigger_id, a.run_id, a.host, a.source, a.finished_at, a.calls, a.failures, a.rate, a.wilson_low, a.wilson_high, a.post_status, a.posted_at, t.reasons_json
+  FROM audit_results a JOIN audit_triggers t ON t.id = a.trigger_id`;
+
+function storedRow(r: Record<string, unknown> | undefined): StoredAuditResult | null {
+  if (!r) return null;
+  let reasons: unknown = [];
+  try {
+    reasons = JSON.parse(String(r.reasons_json));
+  } catch {
+    reasons = [];
+  }
+  const reason = Array.isArray(reasons) && typeof reasons[0] === "string" ? (reasons[0] as string) : "operator";
+  const { reasons_json: _r, ...rest } = r;
+  return { ...(rest as Omit<StoredAuditResult, "reason">), reason };
+}
+
+/** One stored audit result by id, with its trigger's reason. */
+export function storedAuditResult(db: Db, id: number): StoredAuditResult | null {
+  return storedRow(db.prepare(`${STORED_SELECT} WHERE a.id = ?`).get(id) as Record<string, unknown> | undefined);
+}
+
+/** The newest stored audit result for a host (as the index names it). */
+export function latestStoredAuditResult(db: Db, host: string): StoredAuditResult | null {
+  const h = host.trim().toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
+  return storedRow(db.prepare(`${STORED_SELECT} WHERE lower(a.host) = ? ORDER BY a.finished_at DESC, a.id DESC LIMIT 1`).get(h) as Record<string, unknown> | undefined);
+}
+
+/**
+ * The body a stored result posts as: the nine fields of docs/audit-callback.md, from the stored figures. `triggered_at`
+ * is the stored `finished_at`, so the same stored row always produces the same body and the index's replay rule
+ * (same host and triggered_at answers 200 and stores nothing) makes a repeated re-post idempotent.
+ */
+export function storedAuditBody(r: StoredAuditResult): AuditResult {
+  return {
+    host: r.host,
+    triggered_at: new Date(r.finished_at).toISOString(),
+    reason: r.reason,
+    calls: r.calls,
+    failures: r.failures,
+    rate: r.rate,
+    wilson_low: r.wilson_low,
+    wilson_high: r.wilson_high,
+    evidence_url: evidenceUrlFor(r.host),
+  };
+}
+
+export interface RepostOptions {
+  index: string;
+  /** AUDIT_SECRET from the environment; never printed or stored. */
+  secret: string;
+  /** Re-send a result whose stored post_status is already `posted` (otherwise it is skipped as `already_posted`). */
+  force?: boolean;
+  fetchImpl?: FetchImpl;
+  now?: number;
+}
+
+export interface RepostOutcome {
+  id: number;
+  host: string;
+  body: AuditResult;
+  /** `posted`, `already_posted`, `skipped_no_secret`, or `failed:<status>`. */
+  status: string;
+  http: number | null;
+}
+
+/**
+ * `audit-post`: re-send a stored audit-host (or triggered audit) result to the index, signed like the original post.
+ * Spends nothing and reads nothing but the stored row; on a response the row's post_status (and posted_at when the
+ * index accepted it) are updated so the stored outcome matches what the index holds.
+ */
+export async function repostAuditResult(db: Db, r: StoredAuditResult, o: RepostOptions): Promise<RepostOutcome> {
+  const body = storedAuditBody(r);
+  if (r.post_status === "posted" && !o.force) return { id: r.id, host: r.host, body, status: "already_posted", http: null };
+  const p = await postAuditResultDetailed(o.index, o.secret, body, o.fetchImpl ?? fetch, o.now ?? Date.now());
+  if (p.status !== "skipped_no_secret") {
+    const at = o.now ?? Date.now();
+    db.prepare("UPDATE audit_results SET post_status = ?, posted_at = CASE WHEN ? = 'posted' THEN ? ELSE posted_at END WHERE id = ?").run(p.status, p.status, at, r.id);
+  }
+  return { id: r.id, host: r.host, body, status: p.status, http: p.http };
 }
 
 export interface RunAuditsOptions extends Omit<RunBuyOptions, "plan" | "source" | "capScope" | "runId"> {

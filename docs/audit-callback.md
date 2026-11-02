@@ -16,7 +16,7 @@ x-paidfor-audit-signature: sha256=<hex>           (HMAC-SHA256 with AUDIT_SECRET
 {
   "host": "api.example.com",
   "triggered_at": "2026-10-29T12:41:07.000Z",
-  "reason": "disagreement",            // disagreement | demand | thin_measured | reported_above_ok
+  "reason": "disagreement",            // disagreement | demand | thin_measured | reported_above_ok | operator (audit-host)
   "calls": 10,                         // paid-denominator calls in this audit
   "failures": 4,
   "rate": 0.4,                         // null when calls is 0
@@ -32,7 +32,7 @@ x-paidfor-audit-signature: sha256=<hex>           (HMAC-SHA256 with AUDIT_SECRET
 2. Reject with 401 unless `x-paidfor-audit-signature` equals `sha256=` + hex HMAC-SHA256(`AUDIT_SECRET`, `${timestamp}.${body}`),
    compared in constant time, and `|now - timestamp| <= 300` seconds.
 3. Reject with 400 unless the body has exactly the nine fields above with these types: `host` a bare lowercase hostname,
-   `triggered_at` ISO 8601, `reason` one of the four values, `calls` and `failures` integers with `0 <= failures <= calls <= 50`,
+   `triggered_at` ISO 8601, `reason` one of the five values (`operator` since 2026-11-02: the index answered 400 to the first two `audit-host` posts because it did not accept it), `calls` and `failures` integers with `0 <= failures <= calls <= 50`,
    `rate`/`wilson_low`/`wilson_high` numbers in [0, 1] or null, `evidence_url` starting with
    `https://raw.githubusercontent.com/sarmadahsan/paidfor-data/main/evidence/`. Strip nothing silently; refuse unknown fields.
 4. Store in KV: `audit:<host>` list, newest first, capped at 20 entries, each the body plus `received_at`.
@@ -55,3 +55,20 @@ measured figures from the next export (sellers.json `audit_purchases`), so the l
 ## Events
 
 The changes feed already lists `audit_completed`; emit it from this route (host, reason, rate, calls).
+
+## Re-posting a stored result (`audit-post`, 2026-11-02)
+
+Every completed audit is stored in `audit_results` with its `post_status` (`posted`, `skipped_no_secret`, `failed:<status>`).
+When a post failed (the index was down, or refused a field it has since learned to accept, as with reason `operator` on
+2026-11-02), the stored result is re-sent with
+
+```
+x402-audit audit-post --id <audit_results id> [--id ...]
+x402-audit audit-post --host <host> --latest [--host ...]
+```
+
+It builds the same nine-field body from the stored row (`triggered_at` is the stored `finished_at`, so the same row
+always makes the same body and the index's replay rule makes a repeat harmless), signs it exactly like the original post
+with `AUDIT_SECRET` from the environment (never printed), prints the HTTP status, updates `post_status` (and `posted_at`
+on success), and spends nothing. A result already recorded as `posted` is skipped unless `--force`. `--json` prints the
+body sent and the status. Exit code 2 when any post failed.

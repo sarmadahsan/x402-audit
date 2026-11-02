@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { atomicToUsd, MAINNET, usdToAtomic } from "../config/index.js";
 import type { Db } from "../db/index.js";
 import { computeReport, countRate, dollarRate, modeOf } from "../report/compute.js";
-import { runQuery, type QueryParams } from "../report/queries.js";
+import { runQuery, SELLER_WINDOW_CALLS, type QueryParams } from "../report/queries.js";
 import { probeReport } from "../probe/report.js";
 import { stressReport } from "../stress/index.js";
 import { AUDIT_SOURCES, CALL_SOURCES, HEADLINE_FAILURE_OUTCOMES, MEASURED_SOURCES } from "../taxonomy.js";
@@ -23,6 +23,9 @@ export const SELLER_MIN_CALLS = 30;
 export const SELLER_LOW_SAMPLE_MIN_CALLS = 5;
 export const RESOURCE_MIN_CALLS = 10;
 export const EVIDENCE_PER_SELLER = 25;
+/** The rolling window every verdict is computed over (2026-11-02): each seller's most recent paid-denominator calls. */
+export const WINDOW_SIZE = SELLER_WINDOW_CALLS;
+export const VERDICT_BASIS_NOTE = "verdicts use each seller's most recent 50 paid calls; the market rate is all-time";
 const FAILURE_TYPES = ["non_delivery", "overcharge", "duplicate", "wrong_goods"] as const;
 
 export interface ExportOptions {
@@ -160,6 +163,8 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
       }),
     ) as Record<string, { paid_calls: number; sellers: number }>,
     ...growthFields(db, o),
+    window_size: WINDOW_SIZE,
+    verdict_basis_note: VERDICT_BASIS_NOTE,
   };
 
   // ------------------------------------------------------------ sellers.json
@@ -201,6 +206,16 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
     bySource.set(r.seller_id, m);
   }
 
+  // The rolling window (`window` on every seller row and evidence header): the seller's most recent WINDOW_SIZE
+  // paid-denominator rows, from the same series as the all-time figures, with the same Wilson code.
+  const windowRows = new Map<number, { outcome: string; failed: number; ts: number }[]>();
+  for (const r of q<{ seller_id: number; outcome: string; failed: number; ts: number }>("buy_seller_window")) {
+    const l = windowRows.get(num(r.seller_id)) ?? [];
+    l.push({ outcome: r.outcome, failed: num(r.failed), ts: num(r.ts) });
+    windowRows.set(num(r.seller_id), l);
+  }
+  const windowOf = (id: number) => windowBlock(windowRows.get(id) ?? []);
+
   const sellerRows = sellerRates.map((r) => {
     const id = num(r.seller_id);
     const m = meta.get(id)!;
@@ -232,6 +247,7 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
       purchases_by_source: Object.fromEntries(MEASURED_SOURCES.map((src) => [src, bySource.get(id)?.[src] ?? 0])),
       discovered_at: iso(discovery.get(id)?.at),
       first_buy_at: iso(firstBuy.get(id)),
+      window: windowOf(id),
       ...(() => {
         const c = candidateSellers.get(id);
         return c
@@ -399,7 +415,7 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   const safeName = (d: string) => d.toLowerCase().replace(/[^a-z0-9.-]/g, "_");
   for (const s of [...main, ...low]) {
     files[`evidence/${safeName(s.domain)}.json`] = {
-      ...header, domain: s.domain, seller_id: s.seller_id, failures_total: s.failures, shown: (samples.get(s.seller_id) ?? []).length, samples: samples.get(s.seller_id) ?? [],
+      ...header, domain: s.domain, seller_id: s.seller_id, failures_total: s.failures, shown: (samples.get(s.seller_id) ?? []).length, window: s.window, samples: samples.get(s.seller_id) ?? [],
       corrections_total: (correctionsBySeller.get(s.seller_id) ?? []).length, corrections: correctionsBySeller.get(s.seller_id) ?? [],
     };
   }
@@ -419,6 +435,43 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   for (const [k, t] of Object.entries(texts)) writeFileSync(join(out, k), t);
   writeFileSync(join(out, "README.md"), README);
   return { files: [...Object.keys(texts), "README.md"], sellers: main.length, lowSample: low.length, resources: resources.length, evidenceFiles: main.length + low.length };
+}
+
+export interface WindowBlock {
+  size: number;
+  calls: number;
+  failures: number;
+  failure_rate: number | null;
+  wilson_low: number | null;
+  wilson_high: number | null;
+  by_type: Record<(typeof FAILURE_TYPES)[number], number>;
+  first_ts: string | null;
+  last_ts: string | null;
+  last_failure_ts: string | null;
+}
+
+/**
+ * The rolling-window figures from a seller's most recent paid-denominator rows (newest first, at most WINDOW_SIZE):
+ * count, failures, rate and 95% Wilson interval exactly as the all-time figures (countRate), failures by type, and the
+ * window's oldest, newest and newest-failure timestamps. Rate and interval are null with no calls.
+ */
+export function windowBlock(rows: readonly { outcome: string; failed: number; ts: number }[]): WindowBlock {
+  const w = [...rows].sort((a, b) => b.ts - a.ts).slice(0, WINDOW_SIZE);
+  const failures = w.filter((r) => r.failed === 1);
+  const c = w.length ? countRate(failures.length, w.length) : null;
+  const byType = Object.fromEntries(FAILURE_TYPES.map((t) => [t, failures.filter((r) => r.outcome === t).length])) as WindowBlock["by_type"];
+  return {
+    size: WINDOW_SIZE,
+    calls: w.length,
+    failures: failures.length,
+    failure_rate: c?.rate ?? null,
+    wilson_low: c?.lo ?? null,
+    wilson_high: c?.hi ?? null,
+    by_type: byType,
+    first_ts: w.length ? iso(w[w.length - 1]!.ts) : null,
+    last_ts: w.length ? iso(w[0]!.ts) : null,
+    last_failure_ts: failures.length ? iso(failures[0]!.ts) : null,
+  };
 }
 
 const envUsd = (name: string, d: number): bigint => {
@@ -499,6 +552,7 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`sellers_measured_trend\`: the last seven daily values of \`sellers_with_min_calls\`, oldest first, as \`{ date, sellers_with_min_calls }\`; each is the count at the end of that UTC day, the last one is now (equal to \`sellers_with_min_calls\`).
 - \`discovery_last_run\`: the last \`discover refresh\`: \`finished_at\`, \`new_sellers\`, \`probe_set_added\`, \`bazaar_resources\`, \`seed_sellers_added\`, \`new_unmapped_payees\`, \`facilitators\`, \`receipts_sampled\`, \`errors\`; null before the first one.
 - \`breadth_purchases\`: paid calls and sellers from the weekly breadth run (source \`breadth\`): one call per seller whose every resource quotes above the scheduled per-call cap, at up to 0.50 USDC. Breadth purchases count in the headline, \`by_tier\`, \`by_category\`, and each seller's own figures and evidence: these sellers were in the original stratified universe and the cap, not the design, excluded them. Most sit in \`low_sample\` for weeks.
+- \`window_size\` / \`verdict_basis_note\`: the rolling window every seller verdict is computed over (50: each seller's most recent 50 paid calls, see sellers.json \`window\`) and the one-line note the index shows for it. The headline (\`count_weighted\`, \`dollar_weighted\`) stays all-time.
 - \`unmapped_payees\` / \`unmapped_payee_inflow_30d_usdc\`: Base addresses that received facilitator settlements in a daily sample and match no pay-to of any seller we know (listing or quote), and the sum of their 30-day non-dust USDC inflow: money flowing to x402 sellers nobody can name. \`unmapped_payees_with_inflow\` says how many of them have a measured inflow so far (at most 20 are measured per day); the sum covers only those. Method in the harness's docs/discovery.md.
 
 ## sellers.json
@@ -521,6 +575,7 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`discovered_at\`: when the seller entered our database (the discovery run that found it, else the first time any listing or import named it).
 - \`first_buy_at\`: our first paid call to the seller, any measured source ("measured since").
 - \`source\`: \`discovery\` (Bazaar, chain scan or our own list), \`seed\` (config/seed-sellers.yaml, a hand-kept list of ecosystem hosts) or \`user\` (entered through the user-candidate import); a \`user\` seller also has \`entered_at\`, \`entered_after_checks\` and \`entered_after_payments\` (the index's counts at import).
+- \`window\` (since 2026-11-02): the seller's most recent 50 paid denominator calls, the rows verdicts are computed over, so a seller that fixed a problem recovers and one that degrades is caught at the same speed; the all-time figures above stay as history. Same rows as \`denominator_calls\` counts (every source in \`purchases_by_source\`, corrections applied), same 95% Wilson interval. \`size\` is 50; \`calls\` is at most 50 and fewer for a seller with fewer calls (then it equals \`denominator_calls\`); \`failures\`, \`failure_rate\`, \`wilson_low\`, \`wilson_high\` (null when \`calls\` is 0); \`by_type\` splits the window's failures into non_delivery, overcharge, duplicate, wrong_goods; \`first_ts\` / \`last_ts\` are the oldest and newest call in the window and \`last_failure_ts\` the newest failure in it (ISO 8601 UTC, or null).
 
 ## resources.json
 Resources with at least 10 denominator calls, sorted by failure rate descending.
@@ -535,6 +590,7 @@ Resources with at least 10 denominator calls, sorted by failure rate descending.
 ## evidence/<domain>.json
 One file per seller in sellers.json (both arrays); up to 25 most recent failures.
 - \`failures_total\` / \`shown\`: failures for the seller and how many samples follow.
+- \`window\`: the same rolling-window block as the seller's row in sellers.json (most recent 50 paid calls).
 - \`outcome\`: failure type.
 - \`source\`: \`buy\` (scheduled purchase), \`breadth\` (weekly breadth run), \`audit_disagreement\` or \`audit_demand\` (triggered audit purchase), \`audit_operator\` (operator-requested audit of a named host, e.g. a re-measurement after a seller's reply).
 - \`timestamp\`: when the call was made.

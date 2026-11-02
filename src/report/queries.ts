@@ -34,6 +34,8 @@ const HEADLINE_LIST = sqlList(HEADLINE_SOURCES);
 /** A seller that entered through the user-candidate import stays out of the headline, by_tier and by_category until
  * its first scheduled purchase is at least this old (docs/taxonomy.md "Candidate sellers"). */
 export const CANDIDATE_SETTLE_MS = 7 * 24 * 60 * 60 * 1000;
+/** The rolling window verdicts are computed over (sellers.json `window`, 2026-11-02): each seller's most recent paid-denominator calls. */
+export const SELLER_WINDOW_CALLS = 50;
 const YOUNG_CANDIDATE = `(EXISTS (SELECT 1 FROM candidates k WHERE k.seller_id = c.seller_id AND k.seller_new = 1)
     AND COALESCE((SELECT MIN(c2.ts) FROM calls c2 WHERE c2.seller_id = c.seller_id AND c2.source IN (${HEADLINE_LIST})), @until) > @until - ${CANDIDATE_SETTLE_MS})`;
 
@@ -367,6 +369,18 @@ export const QUERIES = {
     FROM b JOIN sellers s ON s.id = b.seller_id
     WHERE in_denom = 1
     GROUP BY s.id ORDER BY s.id`,
+
+  /**
+   * The rolling window (sellers.json `window`, 2026-11-02): each seller's most recent SELLER_WINDOW_CALLS paid-denominator rows from
+   * its own measured series (scheduled buys, breadth and audit purchases, candidates included; the rows the all-time
+   * figures count), newest first. A corrected row carries its corrected outcome, so corrections are honoured.
+   */
+  buy_seller_window: `${SELLER_CTE}
+    SELECT x.seller_id AS seller_id, x.outcome AS outcome, x.failed AS failed, x.ts AS ts FROM (
+      SELECT b.seller_id, b.outcome, b.failed, c.ts, ROW_NUMBER() OVER (PARTITION BY b.seller_id ORDER BY c.ts DESC, b.id DESC) AS rn
+      FROM b JOIN calls c ON c.id = b.id WHERE in_denom = 1
+    ) x WHERE x.rn <= ${SELLER_WINDOW_CALLS}
+    ORDER BY x.seller_id, x.ts DESC`,
 
   /** Paid audit purchases by source, and per seller (the export's "includes N audit purchases"). */
   audit_purchases_by_source: `SELECT c.source AS source, COUNT(*) AS paid_calls, COUNT(DISTINCT c.seller_id) AS sellers

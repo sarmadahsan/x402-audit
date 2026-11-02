@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { erc20Abi } from "viem";
 import { evaluateTriggers, fetchDemand, fetchReported, measuredSeries, sellerIdsByHost } from "../audit/triggers.js";
-import { planAudits, planOperatorAudit, recordDecisions, renderAuditPlan, runAudits, type AuditPlanItem } from "../audit/run.js";
+import { latestStoredAuditResult, planAudits, planOperatorAudit, recordDecisions, renderAuditPlan, repostAuditResult, runAudits, storedAuditResult, type AuditPlanItem, type StoredAuditResult } from "../audit/run.js";
 import { loadServiceConfigs, serviceLookup } from "../buy/services.js";
 import { makeChainClient, usdcFor } from "../chain/client.js";
 import { makeChainLookupFactory } from "../chain/confirm.js";
@@ -96,6 +96,48 @@ export function registerAudit(program: Command, globals: (cmd: Command) => Money
         finishRun(db, runId, "error", { error: (e as Error).message });
         throw e;
       }
+    });
+
+  program
+    .command("audit-post")
+    .description(
+      "re-send a stored audit result (audit-host or audit-triggers) to the index's POST /v1/audits, signed with AUDIT_SECRET from the " +
+        "environment exactly like the original post; prints the HTTP status; spends nothing; idempotent (the body is the stored row, " +
+        "so the index treats a repeat as a replay), and a result already recorded as posted is skipped unless --force",
+    )
+    .option("--id <n>", "audit_results id (repeat for several)", (v: string, acc: number[] = []) => [...acc, parseInt(v, 10)])
+    .option("--host <domain>", "instead of --id: the host whose newest stored result to re-send (repeat for several)", (v: string, acc: string[] = []) => [...acc, v])
+    .option("--latest", "with --host: the newest stored result for the host (the default and only choice)", false)
+    .option("--force", "re-send even when the stored post_status is already posted", false)
+    .option("--index <url>", "index origin (default PAIDFOR_INDEX_URL)")
+    .option("--json", "print each outcome as JSON (the body sent, the status; never the secret)", false)
+    .action(async function (this: Command, o: { id?: number[]; host?: string[]; latest: boolean; force: boolean; index?: string; json: boolean }) {
+      const g = globals(this);
+      const env = loadEnv();
+      const db = openDb(g.db);
+      const index = o.index ?? env.PAIDFOR_INDEX_URL;
+      if (!o.id?.length && !o.host?.length) throw new Error("audit-post: give --id <n> or --host <domain>");
+      const rows: StoredAuditResult[] = [];
+      for (const id of o.id ?? []) {
+        if (!Number.isInteger(id) || id <= 0) throw new Error(`audit-post: --id must be a positive integer, got ${id}`);
+        const r = storedAuditResult(db, id);
+        if (!r) throw new Error(`audit-post: no stored audit result with id ${id}`);
+        rows.push(r);
+      }
+      for (const host of o.host ?? []) {
+        const r = latestStoredAuditResult(db, host);
+        if (!r) throw new Error(`audit-post: no stored audit result for host ${host}`);
+        rows.push(r);
+      }
+      if (!env.AUDIT_SECRET) log.warn("audit-post: AUDIT_SECRET is not set in the environment; nothing is sent");
+      let failed = 0;
+      for (const r of rows) {
+        const out = await repostAuditResult(db, r, { index, secret: env.AUDIT_SECRET, force: o.force });
+        if (out.status !== "posted" && out.status !== "already_posted") failed++;
+        if (o.json) console.log(JSON.stringify(out));
+        else console.log(`audit-post #${out.id} ${out.host} (${out.body.reason}, ${out.body.calls} calls, ${out.body.failures} failures, triggered_at ${out.body.triggered_at}): ${out.status}${out.http != null ? ` (HTTP ${out.http})` : ""}`);
+      }
+      if (failed) process.exitCode = 2;
     });
 
   program
