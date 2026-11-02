@@ -1,0 +1,22 @@
+{
+  "generated_at": "2026-11-02T00:23:17.094Z",
+  "network": "eip155:8453",
+  "min_calls": 30,
+  "low_sample_min_calls": 5,
+  "sellers": [
+    {
+      "domain": "api-xpay.com",
+      "canonical_domain": "api-xpay.com",
+      "denominator_calls": 546,
+      "failures": 292,
+      "failure_rate": 0.5347985347985348,
+      "wilson_low": 0.49286344905209534,
+      "wilson_high": 0.5762473816904874,
+      "pay_to_addresses": [
+        "0x589a2314a2e05f45e40c4823da3ba58d421db3d8"
+      ],
+      "last_seen": "2026-11-02T00:12:44.479Z"
+    }
+  ],
+  "low_sample": []
+}

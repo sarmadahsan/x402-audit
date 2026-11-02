@@ -1,0 +1,53 @@
+{
+  "input": "https://www.api-xpay.com/",
+  "host": "www.api-xpay.com",
+  "verdict": "avoid",
+  "verdict_text": "Avoid: 53.5% of 546 paid calls to api-xpay.com failed the buyer; 292 settled on-chain and returned nothing usable within the seller's declared timeout. Evidence: https://raw.githubusercontent.com/sarmadahsan/paidfor-data/main/evidence/api-xpay.com.json",
+  "seller": {
+    "domain": "api-xpay.com",
+    "tier": "top",
+    "category": "other",
+    "calls": 546,
+    "failures": 292,
+    "failure_rate": 0.5347985347985348,
+    "wilson_low": 0.49286344905209534,
+    "wilson_high": 0.5762473816904874,
+    "by_type": {
+      "non_delivery": 292,
+      "overcharge": 0,
+      "duplicate": 0,
+      "wrong_goods": 0
+    },
+    "dollar_weighted_rate": 0.534798534798534,
+    "median_quote_usdc": "0.005000",
+    "last_seen": "2026-11-02T00:12:44.479Z",
+    "inflow_30d_usdc": "8773.645000",
+    "bazaar_listing_count": 14,
+    "low_sample": false,
+    "verdict": "avoid",
+    "url": "https://paidfor.dev/seller/api-xpay.com",
+    "evidence_url": "https://raw.githubusercontent.com/sarmadahsan/paidfor-data/main/evidence/api-xpay.com.json",
+    "reported": null,
+    "verdict_basis": "measured",
+    "measured_verdict": "avoid",
+    "checks_7d": 31
+  },
+  "resource": null,
+  "probe": {
+    "probes": 326,
+    "modal_price": "$0.005",
+    "min_price": "$0.005",
+    "max_price": "$0.005",
+    "rate_402": "100.0%",
+    "modal_price_usdc": "0.005000",
+    "min_price_usdc": "0.005000",
+    "max_price_usdc": "0.005000",
+    "rate_402_fraction": 1
+  },
+  "seller_url": "https://paidfor.dev/seller/api-xpay.com",
+  "evidence_url": "https://raw.githubusercontent.com/sarmadahsan/paidfor-data/main/evidence/api-xpay.com.json",
+  "methodology_url": "https://paidfor.dev/methodology",
+  "generated_at": "2026-11-02T00:23:17.094Z",
+  "verdict_basis": "measured",
+  "candidate": null
+}

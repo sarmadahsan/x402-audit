@@ -1,0 +1,64 @@
+{
+  "name": "@paidfor/x402-policy",
+  "version": "0.1.0",
+  "description": "One line on your existing @x402 client: refuse sellers the paidfor index rates avoid before anything is signed, and report each payment's outcome to the index afterwards. No custody, no key handling, no new wallet.",
+  "license": "MIT",
+  "author": "Sarmad Siddiki",
+  "homepage": "https://paidfor.dev",
+  "keywords": [
+    "x402",
+    "payments",
+    "usdc",
+    "base",
+    "agents",
+    "policy",
+    "paidfor"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "demo": "tsx demo/run.ts",
+    "demo:live": "tsx demo/live.ts",
+    "prepublishOnly": "node -e \"if(process.env.PAIDFOR_PUBLISH_APPROVED!=='1'){console.error('Publishing @paidfor/x402-policy requires explicit human approval (set PAIDFOR_PUBLISH_APPROVED=1).');process.exit(1)}\" && pnpm typecheck && pnpm test && tsup"
+  },
+  "peerDependencies": {
+    "@x402/core": "^2.28.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@x402/core": "2.28.0",
+    "@x402/evm": "2.28.0",
+    "@x402/fetch": "2.28.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "viem": "^2.57.10",
+    "vitest": "^5.0.5"
+  }
+}

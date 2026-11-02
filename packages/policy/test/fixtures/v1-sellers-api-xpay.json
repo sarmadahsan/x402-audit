@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-11-01T23:24:02.078Z",
+  "min_calls": 30,
+  "sort": "rate",
+  "category": null,
+  "zero_failures": false,
+  "count": 1,
+  "sellers": [
+    {
+      "domain": "api-xpay.com",
+      "tier": "top",
+      "category": "other",
+      "calls": 546,
+      "failures": 292,
+      "failure_rate": 0.5347985347985348,
+      "wilson_low": 0.49286344905209534,
+      "wilson_high": 0.5762473816904874,
+      "by_type": {
+        "non_delivery": 292,
+        "overcharge": 0,
+        "duplicate": 0,
+        "wrong_goods": 0
+      },
+      "dollar_weighted_rate": 0.534798534798534,
+      "median_quote_usdc": "0.005000",
+      "last_seen": "2026-11-01T23:22:43.761Z",
+      "inflow_30d_usdc": "8773.645000",
+      "bazaar_listing_count": 14,
+      "low_sample": false,
+      "verdict": "avoid",
+      "url": "https://paidfor.dev/seller/api-xpay.com",
+      "evidence_url": "https://raw.githubusercontent.com/sarmadahsan/paidfor-data/main/evidence/api-xpay.com.json",
+      "reported": null,
+      "verdict_basis": "measured",
+      "measured_verdict": "avoid"
+    }
+  ]
+}
