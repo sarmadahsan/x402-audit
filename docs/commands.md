@@ -102,8 +102,18 @@ give it, and only under the caps in `.env`.
    no sweep command on purpose.
 
 Mainnet spending additionally requires `--live`, `X402_AUDIT_LIVE=1`, and
-`--network eip155:8453` on every invocation, and a passing integration suite:
+`--network eip155:8453` on every invocation, and a gate marker:
 `pnpm gate` runs every test (including the anvil integration suite) and writes
-`data/.gate.json` for the current commit; a live mainnet `buy run` or `stress`
-refuses unless that marker matches HEAD, the tree is clean, and the pass is
-less than 24 hours old.
+`data/.gate.json` for the current commit with the tests' outcome
+(`tests: {status: passed|failed|error, passed, failed, files}`); a live mainnet
+`buy run` or `stress` refuses unless that marker matches HEAD, the tree is
+clean, and the marker is less than 24 hours old. Since 2026-11-03 the tests
+are advisory: failing tests no longer refuse a run or skip a scheduled buy.
+The loop passes the marker to `buy run --gate-file data/.gate.json` (and to
+`buy skipped` when a later gate skips the slot), which records the outcome in
+the run row's `notes.gate`; with `HEALTH_BUY_HISTORY=1` the health post
+carries the last 28 scheduled runs with it as `buy_history` for the admin
+dashboard. The public export does not carry test results. `pnpm gate` exits 1
+for a dirty tree, 2 when it could not reach the tests, and 0 otherwise, so use
+`pnpm test` to check the suite by hand. The money limit is the runtime caps,
+checked before every signature.

@@ -10,7 +10,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import { loadEnv, usdToAtomic } from "../config/index.js";
 import { openDb, type Db } from "../db/index.js";
-import { buildHealthBody, effectiveLoopCaps, exportRunFromLog, logTail } from "./body.js";
+import { buildHealthBody, BUY_HISTORY_RUNS, effectiveLoopCaps, exportRunFromLog, logTail } from "./body.js";
 import { postHealth } from "./post.js";
 
 const NET = "eip155:8453";
@@ -198,6 +198,56 @@ describe("health body", () => {
     const { machine } = await build();
     expect(machine).toMatchObject({ halt_file: true, halt_buy_file: false, halt_probe_file: false, harness_commit: null });
     expect(typeof machine.uptime_s).toBe("number");
+  });
+});
+
+describe("buy history (HEALTH_BUY_HISTORY=1)", () => {
+  const insertRun = (d: Db, id: number, args: unknown, start: number, end: number | null, status: string, notes: unknown) =>
+    d.prepare("INSERT INTO runs (id, subcommand, args_json, config_hash, network, dry_run, started_at, finished_at, status, notes) VALUES (?, 'buy run', ?, 'h', ?, 0, ?, ?, ?, ?)")
+      .run(id, JSON.stringify(args), NET, start, end, status, notes === null ? null : JSON.stringify(notes));
+  const on = { ...loopEnv, HEALTH_BUY_HISTORY: "1" };
+
+  it("is off by default, so the body keeps the shape the index accepted before it learned the key", async () => {
+    expect(Object.keys(await build())).not.toContain("buy_history");
+    expect(Object.keys(await build({ procEnv: { ...loopEnv, HEALTH_BUY_HISTORY: "0" } }))).not.toContain("buy_history");
+    expect(Object.keys(await build({ procEnv: on }))).toEqual(["v", "posted_at", "trigger", "host", "machine", "flags", "runs", "caps", "wallets", "log_tail", "buy_history"]);
+  });
+
+  it("is the scheduled runs newest first in the agreed shape: live and skipped, with the gate outcome; dry and breadth runs left out", async () => {
+    const db = seed();
+    // Before 2026-11-03: a skip by the old test gate (its reason says so) and one by a halt file.
+    insertRun(db, 10, { allocation: "coverage", live: true, skipped: true, slot: "2026-10-29T00" }, NOW - 18 * H, NOW - 18 * H, "skipped", { reason: "pnpm gate failed: 1 of 389 tests failed (src/cli/skipped.test.ts)" });
+    insertRun(db, 11, { allocation: "coverage", live: true, skipped: true, slot: "2026-10-29T06" }, NOW - 12 * H, NOW - 12 * H, "skipped", { reason: "halt or halt-buy file present" });
+    // Since: a live run whose tests failed and went ahead anyway, and one that errored.
+    insertRun(db, 12, { allocation: "coverage", live: true, seed: 2026102912, slot: "2026-10-29T12" }, NOW - 6 * H, NOW - 5 * H, "ok", { spentAtomic: "900000", gate: { status: "failed", passed: 411, failed: 1, files: ["test/e2e-mock.test.ts"], commit: "c".repeat(40) } });
+    insertRun(db, 13, { allocation: "coverage", live: true, seed: 2026102818 }, NOW - 24 * H, NOW - 24 * H + 1000, "error", { error: "rpc down", gate: { status: "passed", passed: 412, failed: 0, files: [] } });
+    const b = await build({ db, procEnv: on });
+    const h = b.buy_history!;
+    expect(h.map((r) => r.slot)).toEqual(["2026-10-29T18", "2026-10-29T12", "2026-10-29T06", "2026-10-29T00", "2026-10-28T18"]);
+    for (const r of h) {
+      expect(Object.keys(r)).toEqual(["slot", "started_at", "finished_at", "status", "planned_calls", "spent_usdc", "reason", "gate"]);
+      expect(Object.keys(r.gate)).toEqual(["status", "passed", "failed", "files"]);
+    }
+    expect(h[0]).toEqual({ slot: "2026-10-29T18", started_at: "2026-10-29T18:00:00.000Z", finished_at: "2026-10-29T18:20:00.000Z", status: "cap_reached", planned_calls: 10, spent_usdc: "1.605664", reason: null, gate: { status: "not_run", passed: null, failed: null, files: [] } });
+    expect(h[1]).toMatchObject({ status: "ok", spent_usdc: "0.900000", reason: null, gate: { status: "failed", passed: 411, failed: 1, files: ["test/e2e-mock.test.ts"] } });
+    expect(h[2]).toMatchObject({ status: "skipped", planned_calls: null, spent_usdc: "0.000000", reason: "halt or halt-buy file present", gate: { status: "not_run" } });
+    expect(h[3]).toMatchObject({ status: "skipped", gate: { status: "failed", passed: 388, failed: 1, files: ["src/cli/skipped.test.ts"] } });
+    expect(h[4]).toMatchObject({ status: "failed", reason: "rpc down", gate: { status: "passed", passed: 412, failed: 0, files: [] } });
+  });
+
+  it("holds at most 28 runs and stays well under the index's 64 KB limit with the longest fields the contract allows", async () => {
+    const db = seed();
+    const long = { reason: "x".repeat(2000), gate: { status: "failed", passed: 1, failed: 99, files: Array.from({ length: 30 }, (_, i) => `test/${String(i).padStart(3, "0")}${"y".repeat(400)}.test.ts`) } };
+    for (let i = 0; i < 40; i++) insertRun(db, 100 + i, { allocation: "coverage", live: true, skipped: true, slot: "2026-10-01T00" }, NOW - (i + 2) * H, NOW - (i + 2) * H, "skipped-with-a-very-long-status-word-indeed", long);
+    const b = await build({ db, procEnv: on });
+    expect(b.buy_history).toHaveLength(BUY_HISTORY_RUNS);
+    for (const r of b.buy_history!) {
+      expect(r.status.length).toBeLessThanOrEqual(32);
+      expect(r.reason?.length ?? 0).toBeLessThanOrEqual(500);
+      expect(r.gate.files.length).toBeLessThanOrEqual(10);
+      for (const f of r.gate.files) expect(f.length).toBeLessThanOrEqual(200);
+    }
+    expect(JSON.stringify(b).length).toBeLessThan(40 * 1024);
   });
 });
 

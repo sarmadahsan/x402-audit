@@ -70,6 +70,23 @@ export interface HealthBody {
   };
   wallets: { label: string; address: string; usdc: string | null }[];
   log_tail: { run: string | null; lines: string[] };
+  /** Only with HEALTH_BUY_HISTORY=1 (the index refused unknown keys before it learned this one; 2026-11-03). */
+  buy_history?: HealthBuyHistoryRun[];
+}
+
+export const GATE_STATUSES = ["passed", "failed", "error", "not_run"] as const;
+export interface HealthGate { status: (typeof GATE_STATUSES)[number]; passed: number | null; failed: number | null; files: string[] }
+
+/** One scheduled buy run (the coverage `buy run` rows, live or skipped), newest first in `buy_history`. */
+export interface HealthBuyHistoryRun {
+  slot: string;
+  started_at: string | null;
+  finished_at: string | null;
+  status: string;
+  planned_calls: number | null;
+  spent_usdc: string | null;
+  reason: string | null;
+  gate: HealthGate;
 }
 
 const iso = (ms: number | null | undefined) => (ms == null || !Number.isFinite(ms) ? null : new Date(ms).toISOString());
@@ -226,6 +243,79 @@ export function healthRuns(db: Db, network: string, logLines: readonly string[],
     audit: auditRun(db, latest(db, "subcommand = 'audit-triggers' AND network = ?", [network]), now),
     breadth: buyRun(db, latest(db, `${buyWhere} AND json_extract(args_json, '$.allocation') = 'breadth'`, [network])),
   };
+}
+
+// ----------------------------------------------------------------------------------------------------- buy history
+
+export const BUY_HISTORY_RUNS = 28;
+export const BUY_HISTORY_REASON_MAX = 500;
+export const BUY_HISTORY_STATUS_MAX = 32;
+export const BUY_HISTORY_FILES_MAX = 10;
+export const BUY_HISTORY_FILE_MAX = 200;
+/** The history's own budget inside the index's 64 KB body limit; real rows are a few hundred bytes each. */
+export const BUY_HISTORY_MAX_BYTES = 24 * 1024;
+
+const SLOT = /^\d{4}-\d\d-\d\dT\d\d$/;
+
+/** The run slot a row was for: `slot` in its args (skips, and live runs since 2026-11-03), else its seed (the loop seeds
+ * a scheduled run YYYYMMDDHH), else the latest LOOP_RUN_HOURS_UTC hour at or before its start. */
+export function runSlot(args: Record<string, unknown> | null, startedAt: number, runHours = "0 6 12 18"): string {
+  if (typeof args?.slot === "string" && SLOT.test(args.slot)) return args.slot;
+  const seed = String(args?.seed ?? "");
+  if (/^20\d{8}$/.test(seed)) return `${seed.slice(0, 4)}-${seed.slice(4, 6)}-${seed.slice(6, 8)}T${seed.slice(8, 10)}`;
+  const d = new Date(startedAt);
+  const hours = runHours.split(/\s+/).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h < 24);
+  const h = hours.filter((x) => x <= d.getUTCHours()).sort((a, b) => b - a)[0] ?? d.getUTCHours();
+  return `${d.toISOString().slice(0, 10)}T${String(h).padStart(2, "0")}`;
+}
+
+const nonNegInt = (x: unknown): number | null => (typeof x === "number" && Number.isInteger(x) && x >= 0 ? x : null);
+const gateFiles = (x: unknown): string[] =>
+  Array.isArray(x) ? x.filter((f): f is string => typeof f === "string").slice(0, BUY_HISTORY_FILES_MAX).map((f) => redactLine(f).slice(0, BUY_HISTORY_FILE_MAX)) : [];
+
+/** The tests' outcome for a run: notes.gate (written from `--gate-file` since 2026-11-03), else, for an older skip,
+ * what its reason says (`pnpm gate failed: 1 of 389 tests failed (src/a.test.ts)`), else not_run. */
+export function runGate(notes: Record<string, unknown> | null): HealthGate {
+  const g = notes?.gate as Record<string, unknown> | undefined;
+  if (g && typeof g === "object" && (GATE_STATUSES as readonly string[]).includes(String(g.status)))
+    return { status: g.status as HealthGate["status"], passed: nonNegInt(g.passed), failed: nonNegInt(g.failed), files: gateFiles(g.files) };
+  const reason = typeof notes?.reason === "string" ? notes.reason : "";
+  if (/^pnpm gate failed\b/.test(reason)) {
+    const m = /(\d+) of (\d+) tests failed/.exec(reason);
+    const files = /tests failed \(([^)]*)\)/.exec(reason)?.[1]?.split(/\s+/).filter(Boolean) ?? [];
+    return { status: "failed", passed: m ? Number(m[2]) - Number(m[1]) : null, failed: m ? Number(m[1]) : null, files: gateFiles(files) };
+  }
+  return { status: "not_run", passed: null, failed: null, files: [] };
+}
+
+/** The last BUY_HISTORY_RUNS scheduled buy runs on this network, newest first: live (coverage) runs and skips. */
+export function buyHistory(db: Db, network: string, runHours?: string): HealthBuyHistoryRun[] {
+  const rows = db
+    .prepare(
+      "SELECT id, started_at, finished_at, status, notes, args_json FROM runs WHERE subcommand = 'buy run' AND network = ? AND dry_run = 0 AND json_extract(args_json, '$.allocation') = 'coverage' ORDER BY started_at DESC, id DESC LIMIT ?",
+    )
+    .all(network, BUY_HISTORY_RUNS) as (RunRow & { args_json: string | null })[];
+  const out = rows.map((r): HealthBuyHistoryRun => {
+    const notes = parseNotes(r.notes);
+    const run = buyRun(db, r)!;
+    const why = typeof notes?.reason === "string" ? notes.reason : typeof notes?.error === "string" ? notes.error : null;
+    return {
+      slot: runSlot(parseNotes(r.args_json), r.started_at, runHours),
+      started_at: run.started_at,
+      finished_at: run.finished_at,
+      status: run.status.slice(0, BUY_HISTORY_STATUS_MAX),
+      planned_calls: run.planned_calls,
+      spent_usdc: run.spent_usdc,
+      reason: why === null ? null : redactLine(why).slice(0, BUY_HISTORY_REASON_MAX),
+      gate: runGate(notes),
+    };
+  });
+  // Well inside the body limit whatever the rows hold: trim the oldest rows' detail first.
+  for (let i = out.length - 1; i >= 0 && JSON.stringify(out).length > BUY_HISTORY_MAX_BYTES; i--) {
+    out[i]!.gate.files = out[i]!.gate.files.slice(0, 2);
+    if (out[i]!.reason) out[i]!.reason = out[i]!.reason!.slice(0, 120);
+  }
+  return out;
 }
 
 // -------------------------------------------------------------------------------------------------------- log tail
@@ -391,5 +481,6 @@ export async function buildHealthBody(o: BuildHealthOptions): Promise<HealthBody
     },
     wallets: wallets.map((w, i) => ({ label: w.label, address: w.address, usdc: bals[i] == null ? null : atomicToUsd(bals[i]!) })),
     log_tail: logTail(o.logLines),
+    ...(o.procEnv.HEALTH_BUY_HISTORY === "1" ? { buy_history: buyHistory(o.db, o.network, o.procEnv.LOOP_RUN_HOURS_UTC) } : {}),
   };
 }

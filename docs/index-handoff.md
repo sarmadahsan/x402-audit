@@ -52,8 +52,8 @@ scheduled budget), which is routine and should not alarm. `halted` now means onl
 backstop cap (`MAX_PER_DAY_USD`, `MAX_TOTAL_USD`). `ok`/`completed` as before.
 
 Since 2026-10-30, `skipped` (also in the health post's `runs.buy.status`): the loop reached a scheduled slot but one of
-its gates stopped the run before any purchase (its test gate failed, a halt file was present, the working tree was
-dirty, or the wallet pool was below the run cap). The row has no calls and no spend; the reason is in the harness's
+its gates stopped the run before any purchase (a halt file was present, the working tree was dirty, or the wallet
+pool was below the run cap; until 2026-11-03 also a failed test gate, which is now recorded on the run instead). The row has no calls and no spend; the reason is in the harness's
 `runs.notes` and, since 2026-10-31, in `last_buy_run.reason` (section below). The buy tile should show it as a missed run (red or amber), not as a fresh run and not as "ok": the next
 slot is at most six hours away, and a second `skipped` in a row is the signal that the harness needs an operator.
 
@@ -208,3 +208,15 @@ same `window` object in its header, so a seller page can show the window next to
 `audit-host` posts to `POST /v1/audits` with `reason: "operator"`. The two results of 2026-11-02 07:38 and 07:42 UTC
 (hosts api.fadeandco.workers.dev and api.sitecheck-api.workers.dev) were refused with 400 before the index accepted that
 value; the harness re-sends stored results with `audit-post` (docs/audit-callback.md) once the index does.
+
+## Health post `buy_history` (2026-11-03)
+
+With `HEALTH_BUY_HISTORY=1` in the loop's env (off by default, turned on only after the index accepts the key), the
+health post carries a top-level `buy_history`: the last 28 scheduled buy runs (coverage `buy run` rows, live or
+skipped), newest first, each exactly
+`{ slot: "YYYY-MM-DDTHH", started_at: ISO|null, finished_at: ISO|null, status: string<=32, planned_calls: int|null,
+spent_usdc: "0.000000"|null, reason: string<=500|null, gate: { status: "passed"|"failed"|"error"|"not_run",
+passed: int|null, failed: int|null, files: string[] (<=10, each <=200) } }`. `gate` is the `pnpm gate` test outcome
+recorded on the run (`notes.gate`); runs from before 2026-11-03 are `not_run` unless their skip reason says the gate
+failed. The tests are advisory since 2026-11-03: a run with `gate.status` `failed` still bought. Test results are not
+in the public export.

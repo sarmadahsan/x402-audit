@@ -3,13 +3,15 @@
  * reached through `buy skipped`), and both consumers show it as the latest buy run: the export's `last_buy_run` and the
  * health post's runs.buy. Before 2026-10-30 a skip left only a line in data/loop.log and both kept showing the previous run.
  */
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAINNET } from "../config/index.js";
 import { runExport } from "../export/index.js";
-import { healthRuns } from "../health/body.js";
+import { buildProgram } from "../cli.js";
+import { openDb } from "../db/index.js";
+import { buyHistory, healthRuns } from "../health/body.js";
 import { NOW, seedDb } from "../report/test-helpers.js";
 import { recordSkippedRun } from "./runs.js";
 
@@ -36,5 +38,30 @@ describe("skipped scheduled run", () => {
 
     const runs = healthRuns(db, MAINNET, [], NOW);
     expect(runs.buy).toMatchObject({ status: "skipped", planned_calls: null, spent_usdc: "0.000000", failures: 0, errors: 0 });
+  });
+
+  it("records the tests' outcome when they ran before the skip (`buy skipped --gate-file`); the public export never carries it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "skipped-gate-"));
+    const dbPath = join(dir, "audit.sqlite");
+    const gateFile = join(dir, "gate.json");
+    writeFileSync(gateFile, JSON.stringify({ commit: "c".repeat(40), dirty: false, ranAt: 1, tests: { status: "failed", passed: 411, failed: 1, files: ["test/e2e-mock.test.ts"] } }));
+    const reason = "wallet pool holds 0.500000 USDC, less than the run cap 1.00";
+    await buildProgram().exitOverride().parseAsync(["node", "x402-audit", "--db", dbPath, "--network", MAINNET, "buy", "skipped", "--slot", "2026-11-03T06", "--reason", reason, "--gate-file", gateFile]);
+    const db = openDb(dbPath);
+    const row = db.prepare("SELECT status, notes FROM runs WHERE subcommand = 'buy run' ORDER BY id DESC LIMIT 1").get() as { status: string; notes: string };
+    expect(row.status).toBe("skipped");
+    expect(JSON.parse(row.notes)).toEqual({ reason, gate: { status: "failed", passed: 411, failed: 1, files: ["test/e2e-mock.test.ts"], commit: "c".repeat(40) } });
+    expect(buyHistory(db, MAINNET)[0]).toMatchObject({ slot: "2026-11-03T06", status: "skipped", reason, gate: { status: "failed", passed: 411, failed: 1, files: ["test/e2e-mock.test.ts"] } });
+
+    const out = mkdtempSync(join(tmpdir(), "export-skipped-gate-"));
+    runExport(db, { network: MAINNET, now: Date.now(), outDir: out, gitCommit: "test" });
+    const summary = JSON.parse(readFileSync(join(out, "summary.json"), "utf8"));
+    expect(summary.last_buy_run.reason).toBe(reason);
+    for (const f of readdirSync(out, { recursive: true }) as string[]) {
+      if (!f.endsWith(".json")) continue;
+      const text = readFileSync(join(out, f), "utf8");
+      expect(text, f).not.toContain("e2e-mock.test.ts");
+      expect(text, f).not.toContain('"gate"');
+    }
   });
 });

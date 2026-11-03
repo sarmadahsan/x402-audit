@@ -78,8 +78,9 @@ pnpm cli --db data/audit.sqlite --network eip155:8453 stress report
 Every command is a dry run by default, and the default network is Base Sepolia.
 Mainnet payments need all three gates on every invocation: the `--live` flag,
 `X402_AUDIT_LIVE=1` in the environment, and `--network eip155:8453`. A live run
-also needs a passing `pnpm gate` recorded for the current commit on a clean
-tree. These caps are enforced in code before any signature (defaults, in USD):
+also needs a `pnpm gate` run recorded for the current commit on a clean tree
+within 24 hours; the test outcome it records is advisory (logged and kept on
+the run's row), not a refusal. These caps are enforced in code before any signature (defaults, in USD):
 0.50 per call, 20 per seller per day, 100 per day, 300 in total, and 30 for
 the stress tests. [.env.example](.env.example) lists every setting.
 

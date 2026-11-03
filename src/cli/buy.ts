@@ -21,7 +21,7 @@ import { reclassifyCalls } from "../pipeline/reclassify.js";
 import { annotate, CORRECTION_KINDS, correctReference, staleOverchargeCandidates } from "../pipeline/corrections.js";
 import { REFERENCE_SOURCES, type ReferenceSource } from "../taxonomy.js";
 import { reconcileOrphans } from "../pipeline/reconcile.js";
-import { assertGate } from "../gate.js";
+import { assertGate, gateNote } from "../gate.js";
 
 const minBig = (a: bigint, b: bigint) => (a < b ? a : b);
 
@@ -188,7 +188,9 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .option("--candidates", "add one call per queued user candidate (only when CANDIDATE_BUYS_ENABLED=1; otherwise they are listed and skipped)", false)
     .option("--allocation <mode>", "stratified (the study design) or coverage (scheduled runs: sellers below 30 calls first, then maintenance)", "stratified")
     .option("--breadth", "the weekly breadth run instead of a scheduled run: one call per seller with no resource under --per-call-usd, at BREADTH_MAX_PER_CALL_USD, under BREADTH_WEEKLY_USD; buys only when BREADTH_RUN_ENABLED=1", false)
-    .action(async function (this: Command, o: { seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean; perCallUsd?: number; runUsd?: number; runsPerDay?: number; dayBudgetUsd?: number; expensive: boolean; candidates: boolean; allocation: string; breadth: boolean }) {
+    .option("--slot <key>", "the scheduled run slot this run is for, e.g. 2026-10-30T00 (recorded in the row's args)")
+    .option("--gate-file <path>", "the marker `pnpm gate` wrote before this run (data/.gate.json): its test outcome is recorded in the row's notes as `gate`; advisory, it never stops the run")
+    .action(async function (this: Command, o: { slot?: string; gateFile?: string; seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean; perCallUsd?: number; runUsd?: number; runsPerDay?: number; dayBudgetUsd?: number; expensive: boolean; candidates: boolean; allocation: string; breadth: boolean }) {
       const g = globals(this);
       const gate = moneyGate(g, requireLive);
       const env = loadEnv();
@@ -316,7 +318,10 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       }
       console.log(coverageText || renderPlan(plan));
       if (coverageText && plan.notes.length && o.breadth) console.log(plan.notes.map((n) => `- ${n}`).join("\n"));
-      const runId = startRun(db, "buy run", { seed: o.seed, maxCalls: o.maxCalls, budgetUsd: o.budgetUsd, perCallUsd: o.perCallUsd, runUsd: o.runUsd, runsPerDay: o.runsPerDay, dayBudgetUsd: o.dayBudgetUsd, expensive: o.expensive, candidates: o.candidates, allocation: o.breadth ? "breadth" : o.allocation, live }, g.network, !live);
+      // The tests are advisory (since 2026-11-03): their outcome rides on the row, it does not decide whether the run goes ahead.
+      const gateRec = o.gateFile ? { gate: gateNote(o.gateFile) } : {};
+      if (gateRec.gate && gateRec.gate.status !== "passed") log.warn(`gate: tests ${gateRec.gate.status} (${gateRec.gate.failed ?? "?"} failed${gateRec.gate.files.length ? `: ${gateRec.gate.files.join(" ")}` : ""}); recorded on this run, the run goes ahead`);
+      const runId = startRun(db, "buy run", { ...(o.slot ? { slot: o.slot } : {}), seed: o.seed, maxCalls: o.maxCalls, budgetUsd: o.budgetUsd, perCallUsd: o.perCallUsd, runUsd: o.runUsd, runsPerDay: o.runsPerDay, dayBudgetUsd: o.dayBudgetUsd, expensive: o.expensive, candidates: o.candidates, allocation: o.breadth ? "breadth" : o.allocation, live }, g.network, !live);
       // Every planned call (and every back-off) is on record before the first signature.
       const allocRows = [...backoffRows, ...rowsFromAllocations(plan.allocations)];
       writeRunAllocations(db, runId, allocRows, Date.now());
@@ -362,10 +367,10 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
           log,
           dryRun: !live,
         });
-        finishRun(db, runId, runStatus(stats), { ...stats, callIds: undefined, schedule: undefined });
+        finishRun(db, runId, runStatus(stats), { ...stats, callIds: undefined, schedule: undefined, ...gateRec });
         console.log(JSON.stringify({ ...stats, spentUsdc: atomicToUsd(stats.spentAtomic), callIds: undefined, schedule: undefined }, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
       } catch (e) {
-        finishRun(db, runId, "error", { error: (e as Error).message });
+        finishRun(db, runId, "error", { error: (e as Error).message, ...gateRec });
         throw e;
       }
     });
@@ -375,11 +380,12 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .requiredOption("--reason <text>", "why the run was skipped (recorded in the row's notes)")
     .option("--slot <key>", "the run slot that was skipped, e.g. 2026-10-30T00")
     .option("--allocation <mode>", "coverage (a scheduled run) or breadth", "coverage")
-    .action(function (this: Command, o: { reason: string; slot?: string; allocation: string }) {
+    .option("--gate-file <path>", "the marker `pnpm gate` wrote before the skip, when the tests ran: their outcome is recorded in the row's notes as `gate`")
+    .action(function (this: Command, o: { reason: string; slot?: string; allocation: string; gateFile?: string }) {
       const g = globals(this);
       if (o.allocation !== "coverage" && o.allocation !== "breadth") throw new Error(`--allocation must be coverage or breadth, got ${o.allocation}`);
       const db = openDb(g.db);
-      const id = recordSkippedRun(db, "buy run", { allocation: o.allocation, live: true, skipped: true, ...(o.slot ? { slot: o.slot } : {}) }, g.network, o.reason);
+      const id = recordSkippedRun(db, "buy run", { allocation: o.allocation, live: true, skipped: true, ...(o.slot ? { slot: o.slot } : {}) }, g.network, o.reason, o.gateFile ? gateNote(o.gateFile) : undefined);
       console.log(JSON.stringify({ run: id, status: "skipped", reason: o.reason, slot: o.slot ?? null }));
     });
 

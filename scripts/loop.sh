@@ -14,10 +14,14 @@
 #            git add -A && git commit -m "data: <timestamp>" && git push to main of the public repo
 #            sarmadahsan/paidfor-data (remote "paidfor-data"). The main checkout stays clean for the commit gate.
 #            The old public-data branch of this repo is no longer updated.
-# Every existing gate stays: --live, X402_AUDIT_LIVE=1, --network eip155:8453, `pnpm gate` on a clean committed HEAD,
-# the MAX_* caps, and the halt / halt-buy / halt-probe files. A skipped step is logged; the loop itself never stops.
-# A skipped scheduled buy is also a `buy run` row with status skipped and the reason (which gate, the failing test files,
-# the dirty paths), exported as `last_buy_run.reason`. Every file the loop writes is under data/ or a halt file, all
+# Every existing gate stays: --live, X402_AUDIT_LIVE=1, --network eip155:8453, a clean committed HEAD with a `pnpm gate`
+# marker for it under 24 h old, the wallet pool, the MAX_* caps (src/buy/guard.ts, checked before every signature), and the
+# halt / halt-buy / halt-probe files. `pnpm gate` runs the full suite before every scheduled buy, but since 2026-11-03 the
+# tests are advisory: a failing test is logged and recorded on the run's row (notes.gate, from `--gate-file`) and in the
+# health post's buy_history, and the buy goes ahead (five slots had been lost to flaky or environment-dependent tests).
+# A skipped step is logged; the loop itself never stops. A skipped scheduled buy is also a `buy run` row with status
+# skipped and the reason (which gate, the dirty paths), exported as `last_buy_run.reason`, with the tests' outcome when
+# they ran before the skip. Every file the loop writes is under data/ or a halt file, all
 # git-ignored, so no step of the loop can dirty the tree for the commit gate (test/loop-skip.test.ts checks the list).
 #
 # Usage: scripts/loop.sh            run the loop in the foreground (what launchd runs)
@@ -195,10 +199,12 @@ dirty_tree_reason() {
   echo "working tree is dirty: $paths (the commit gate needs a clean, committed HEAD)"
 }
 # Test gate: the failing test files and the counts, read from the gate's output ($1), ANSI colours stripped. With
-# nothing recognisable (the gate did not reach vitest), just "pnpm gate failed".
+# nothing recognisable (the gate did not reach vitest), just "pnpm gate failed". For the log: failing tests no longer
+# skip the buy (the marker's `tests` block is what the run records); a dirty tree found by the gate itself still does.
 gate_failure_reason() {
   local plain files counts
   plain="$(sed -e $'s/\x1b\\[[0-9;]*m//g' "$1" 2>/dev/null)"
+  if printf '%s\n' "$plain" | grep -q '^gate: working tree is dirty'; then echo "pnpm gate: working tree is dirty (the commit gate needs a clean, committed HEAD)"; return 0; fi
   files="$(printf '%s\n' "$plain" | grep -oE '(^| )FAIL +[^ ]+\.test\.[a-z]+' | sed -E 's/.*FAIL +//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
   counts="$(printf '%s\n' "$plain" | grep -oE 'Tests +[0-9]+ failed \| [0-9]+ passed \([0-9]+\)' | tail -1 | sed -E 's/Tests +([0-9]+) failed \| [0-9]+ passed \(([0-9]+)\)/\1 of \2 tests failed/')"
   if [ -z "$files" ] && [ -z "$counts" ]; then echo "pnpm gate failed"; return 0; fi
@@ -208,10 +214,12 @@ gate_failure_reason() {
 # A scheduled buy that does not go ahead still leaves a `buy run` row (status skipped, the reason in notes), a health
 # post and an export, so `last_buy_run` in the export (with `reason`) and the buy tile on the dashboard show the skip
 # instead of the previous run. (2026-10-30 00:00 UTC: `pnpm gate` failed and the slot passed with only a line in this log.)
+# $4: the gate marker, when the tests ran before the skip, so the row records their outcome too.
 skipped_buy() {
-  local today="$1" hh="$2" reason="$3"
+  local today="$1" hh="$2" reason="$3" gate_file="${4:-}" gate_arg=()
+  [ -n "$gate_file" ] && gate_arg=(--gate-file "$gate_file")
   log "scheduled buy $today $hh:00: skipped, $reason"
-  run "${CLI[@]}" buy skipped --slot "${today}T${hh}" --reason "$reason" || log "scheduled buy $today $hh:00: could not record the skip; continuing"
+  run "${CLI[@]}" buy skipped --slot "${today}T${hh}" --reason "$reason" ${gate_arg[@]+"${gate_arg[@]}"} || log "scheduled buy $today $hh:00: could not record the skip; continuing"
   health_post buy
   export_publish || true
   log "scheduled buy $today $hh:00: done (skipped)"
@@ -243,19 +251,28 @@ scheduled_buy() {
   live="${X402_AUDIT_LIVE:-$(grep -E '^X402_AUDIT_LIVE=' .env 2>/dev/null | tail -1 | cut -d= -f2)}"
   if [ "$live" != 1 ]; then skipped_buy "$today" "$hh" "X402_AUDIT_LIVE is not 1"; return 0; fi
   if [ -n "$(git status --porcelain)" ]; then skipped_buy "$today" "$hh" "$(dirty_tree_reason)"; return 0; fi
-  # The gate's output goes to its own file first, so a failure's reason can name the failing tests; then to the log as before.
+  # The gate's output goes to its own file first, so the log can name the failing tests; then to the log as before.
+  # `pnpm gate` writes data/.gate.json whenever the tests ran (and removes any older one first), whatever they found; it
+  # exits non-zero only for a dirty tree or when it could not reach the tests, and those still skip the slot.
   log "run: pnpm gate"
+  rm -f data/.gate.json
   pnpm gate > "$STATE/gate.log" 2>&1; gate_rc=$?
   cat "$STATE/gate.log" >> "$LOG"
-  if [ "$gate_rc" -ne 0 ]; then log "exit $gate_rc: pnpm gate"; skipped_buy "$today" "$hh" "$(gate_failure_reason "$STATE/gate.log")"; return 0; fi
+  gate_file=""; gate_arg=()
+  if [ -f data/.gate.json ]; then gate_file="data/.gate.json"; gate_arg=(--gate-file "$gate_file"); fi
+  if [ "$gate_rc" -ne 0 ]; then log "exit $gate_rc: pnpm gate"; skipped_buy "$today" "$hh" "$(gate_failure_reason "$STATE/gate.log")" "$gate_file"; return 0; fi
+  tests_status="$(node -e 'try{const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(m.tests?.status??"error"))}catch{process.stdout.write("error")}' data/.gate.json 2>/dev/null)"
+  if [ "$tests_status" != passed ]; then
+    log "scheduled buy $today $hh:00: tests $tests_status, $(gate_failure_reason "$STATE/gate.log"); tests are advisory, the buy goes ahead and records the outcome"
+  fi
   pool="$(wallet_pool_usd)"
-  if [ -z "$pool" ]; then skipped_buy "$today" "$hh" "could not read wallet balances"; return 0; fi
+  if [ -z "$pool" ]; then skipped_buy "$today" "$hh" "could not read wallet balances" "$gate_file"; return 0; fi
   if awk -v b="$pool" -v n="$RUN_USD" 'BEGIN { exit !(b + 0 < n + 0) }'; then
-    skipped_buy "$today" "$hh" "wallet pool holds $pool USDC, less than the run cap $RUN_USD"; return 0
+    skipped_buy "$today" "$hh" "wallet pool holds $pool USDC, less than the run cap $RUN_USD" "$gate_file"; return 0
   fi
   log "scheduled buy $today $hh:00: wallet pool $pool USDC, seed $seed"
   # shellcheck disable=SC2046
-  run "${CLI[@]}" --live buy run $(buy_args "$seed" "$since") \
+  run "${CLI[@]}" --live buy run $(buy_args "$seed" "$since") --slot "${today}T${hh}" ${gate_arg[@]+"${gate_arg[@]}"} \
     || log "scheduled buy $today $hh:00: buy run exited non-zero; continuing to settlement confirmation"
   health_post buy
   run "${CLI[@]}" buy resolve || true
@@ -269,7 +286,7 @@ scheduled_buy() {
     if [ "$(date -u +%u)" = "$LOOP_BREADTH_WEEKDAY_UTC" ]; then
       # Weekly; buys only with BREADTH_RUN_ENABLED=1, otherwise logs its plan.
       # shellcheck disable=SC2046
-      run "${CLI[@]}" --live buy run $(breadth_args) || log "breadth run $today: exited non-zero"
+      run "${CLI[@]}" --live buy run $(breadth_args) ${gate_arg[@]+"${gate_arg[@]}"} || log "breadth run $today: exited non-zero"
       health_post buy
       run "${CLI[@]}" buy resolve || true
       run "${CLI[@]}" buy reclassify --apply --reason "loop: settlement confirmation after breadth run $today" || true
@@ -412,8 +429,9 @@ case "${1:-loop}" in
     "${CLI[@]}" buy run $(buy_args "$(date -u +%Y%m%d)$slot" "${today}T${slot}:00:00Z") ;;
   run-slot)
     # One scheduled buy for a slot, in the foreground, through every gate above (halt files, X402_AUDIT_LIVE, clean tree,
-    # `pnpm gate`, wallet pool) and under the same caps as the loop's own run: `scripts/loop.sh run-slot 2026-10-30 00`
-    # catches up a slot the loop skipped (its `skipped` row says why). The loop sees its buy.pid and waits for it.
+    # the `pnpm gate` marker, wallet pool; failing tests are recorded, not a skip) and under the same caps as the loop's
+    # own run: `scripts/loop.sh run-slot 2026-10-30 00` catches up a slot the loop skipped (its `skipped` row says why).
+    # The loop sees its buy.pid and waits for it.
     today="${2:?usage: $0 run-slot <YYYY-MM-DD> <HH>}"; hh="$(printf %02d "$((10#${3:?usage: $0 run-slot <YYYY-MM-DD> <HH>}))")"
     scheduled_buy "$today" "$hh"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ;;
   dry-run-audit)
