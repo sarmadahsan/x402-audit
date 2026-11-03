@@ -252,6 +252,8 @@ const CLI_PREFIX = /^pnpm -s tsx src\/cli\.ts (?:--db \S+ )?(?:--network \S+ )?/
 
 /** The most recent run's lines: from the last `run:` marker on, the last LOG_TAIL_LINES of them, every line redacted.
  * With no marker in reach, the last lines of the log and run null. */
+export const LOG_RUN_MAX = 120;
+
 export function logTail(lines: readonly string[]): HealthBody["log_tail"] {
   let at = -1;
   for (let i = lines.length - 1; i >= 0; i--) if (RUN_MARKER.test(lines[i]!)) { at = i; break; }
@@ -259,7 +261,9 @@ export function logTail(lines: readonly string[]): HealthBody["log_tail"] {
   let run: string | null = null;
   if (at >= 0) {
     const m = LOG_LINE.exec(lines[at]!)!;
-    run = redactLine(`${m[1]} ${m[3]!.replace(/^run: /, "").replace(CLI_PREFIX, "x402-audit ")}`).slice(0, 200);
+    // The index accepts log_tail.run up to 120 characters (lib/admin-health.ts STR(120)); a skipped buy's marker carries
+    // the full gate reason and ran to 142 on 2026-11-03, so the post after a skipped buy was refused with 400.
+    run = redactLine(`${m[1]} ${m[3]!.replace(/^run: /, "").replace(CLI_PREFIX, "x402-audit ")}`).slice(0, LOG_RUN_MAX);
   }
   return { run, lines: redactLines(from.slice(-LOG_TAIL_LINES)) };
 }

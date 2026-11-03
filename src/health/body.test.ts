@@ -215,6 +215,12 @@ describe("log tail", () => {
 
   it("with no run marker is the last lines and run null; an empty log is empty", () => {
     expect(logTail(["a", "b"])).toEqual({ run: null, lines: ["a", "b"] });
+    // A skipped buy's marker carries the gate reason; the index refuses log_tail.run above 120 characters.
+    const skipped = logTail([
+      "2026-11-03T00:10:33Z [126363] run: pnpm -s tsx src/cli.ts --db data/audit.sqlite --network eip155:8453 buy skipped --slot 2026-11-03T00 --reason pnpm gate failed: tests failed (packages/policy/test/readme.test.ts)",
+    ]);
+    expect(skipped.run!.length).toBeLessThanOrEqual(120);
+    expect(skipped.run).toMatch(/^2026-11-03T00:10:33Z x402-audit buy skipped --slot 2026-11-03T00 --reason pnpm gate failed/);
     expect(logTail([])).toEqual({ run: null, lines: [] });
   });
 
