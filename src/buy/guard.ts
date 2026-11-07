@@ -72,7 +72,8 @@ export interface CapBreach {
     | "cap_audit_per_day"
     | "cap_per_run"
     | "cap_per_seller_per_run"
-    | "cap_buy_day_budget";
+    | "cap_buy_day_budget"
+    | "cap_retest_weekly";
   details: Record<string, string | number>;
 }
 
@@ -86,6 +87,8 @@ export interface CapCheckInput {
   scope: "buy" | "stress" | "audit";
   /** Limits of one scheduled run (docs/PLAN.md "Schedule"), counted over this scope's own source since `since`. */
   run?: RunLimits;
+  /** Source the call will be written with, when it differs from the run's (the re-test lane's `retest`). */
+  source?: CallSource;
 }
 
 export interface RunLimits {
@@ -98,6 +101,8 @@ export interface RunLimits {
   /** Scheduled-buy budget for the UTC day, counted over sources `buy` and `retest` (LOOP_DAILY_USD). The all-sources
    * per-day cap (MAX_PER_DAY_USD) stays the backstop. */
   dayBudgetAtomic?: bigint;
+  /** RETEST_WEEKLY_USD: spend over the last 7 days, source retest only, checked for calls with source retest. */
+  retestWeeklyAtomic?: bigint;
 }
 
 /**
@@ -143,6 +148,11 @@ export function checkCaps(db: Db, i: CapCheckInput): CapBreach | null {
     if (r.dayBudgetAtomic !== undefined) {
       const s = spentAtomic(db, { since: day, sources: [...SCHEDULED_SOURCES] });
       if (s + a > r.dayBudgetAtomic) return { reason: "cap_buy_day_budget", details: { spentToday: fmt(s), next: fmt(a), cap: fmt(r.dayBudgetAtomic) } };
+    }
+    // The re-test lane's weekly budget at the real quote, not only at planning (quotes can move between probe and call).
+    if (i.source === CALL_SOURCES.RETEST && r.retestWeeklyAtomic !== undefined) {
+      const s = spentAtomic(db, { since: i.now - 7 * 86_400_000, sources: [CALL_SOURCES.RETEST] });
+      if (s + a > r.retestWeeklyAtomic) return { reason: "cap_retest_weekly", details: { spentThisWeek: fmt(s), next: fmt(a), cap: fmt(r.retestWeeklyAtomic) } };
     }
   }
   return null;

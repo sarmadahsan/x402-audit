@@ -59,6 +59,7 @@ export type RetestPhase = (typeof RETEST_PHASES)[number];
 
 type Figures = { n: number; rate: number; lo: number };
 
+/** The index's thresholds applied to one set of figures: avoid needs a full sample and a Wilson low above 10%. */
 export function verdictFor(f: Figures): Verdict {
   const full = f.n >= MIN_CALLS;
   if (full && f.lo > AVOID_LOW_BOUND) return "avoid";

@@ -359,7 +359,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       // The payer refuses anything above the largest cap any allocation in this plan carries (never above MAX_PER_CALL_USD).
       const payerCap = plan.allocations.reduce((m, a) => (a.perCallCapAtomic !== undefined && a.perCallCapAtomic > m ? a.perCallCapAtomic : m), caps.perCallAtomic);
       const payers = live ? payersFromEnv(env, g.network, payerCap) : ephemeralPayers(g.network, payerCap);
-      const runLimits: RunLimits | undefined = o.breadth
+      const baseLimits: RunLimits | undefined = o.breadth
         ? { since: runStart, source: CALL_SOURCES.BREADTH, perRunAtomic: breadthRemaining ?? 0n }
         : o.runUsd !== undefined || o.runsPerDay !== undefined || o.dayBudgetUsd !== undefined
           ? {
@@ -373,6 +373,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
               ...(o.dayBudgetUsd !== undefined ? { dayBudgetAtomic: usdToAtomic(o.dayBudgetUsd) } : {}),
             }
           : undefined;
+      // The re-test lane's weekly budget is checked again at every signature, at the real quote.
+      const runLimits: RunLimits | undefined = retestSellers.size ? { ...(baseLimits ?? { since: runStart }), retestWeeklyAtomic: usdToAtomic(env.RETEST_WEEKLY_USD) } : baseLimits;
       const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
       // Receipts for seller-reported tx hashes come from the canonical-head RPC (BASE_RPC_URL); logs from the logs RPC.
       const receiptClient = g.network === MAINNET && env.BASE_RPC_URL !== env.BASE_LOGS_RPC_URL ? makeChainClient({ rpcUrl: env.BASE_RPC_URL, network: g.network }) : undefined;

@@ -98,6 +98,10 @@ export function markdownTables(md: string): { summary: Record<string, string>; s
   return { summary, sections };
 }
 
+/**
+ * Write the public data export (summary, sellers, resources, evidence and the rest) from the database, including each
+ * avoid seller's re-test block. Refuses to write a file that contains one of our wallet addresses.
+ */
 export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers: number; lowSample: number; resources: number; evidenceFiles: number } {
   const now = o.now;
   const base: QueryParams = { since: 0, until: now, network: o.network };

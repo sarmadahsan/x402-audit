@@ -27,6 +27,7 @@ const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 10, 6, 12, 0, 0);
 
 let n = 0;
+/** A seller with one resource, its first 402 probe ten days old, and an optional later probe for the gate. */
 function seller(d: Db, id: number, o: { price?: string; inflowUsd?: number; probe?: { status: number; outcome?: string; ts?: number } | false } = {}) {
   d.prepare("INSERT INTO sellers (id, domain, volume_30d_atomic, volume_30d_source, first_seen_at, last_seen_at) VALUES (?, ?, ?, 'chain', 0, 0)").run(id, `s${id}.example`, usdToAtomic(o.inflowUsd ?? 0).toString());
   const rid = id * 10;
@@ -36,6 +37,7 @@ function seller(d: Db, id: number, o: { price?: string; inflowUsd?: number; prob
   d.prepare("INSERT INTO probes (resource_id, client_identity, ts, status, amount_atomic, network, outcome) VALUES (?, 'A', ?, 402, ?, ?, 'ok')").run(rid, NOW - 10 * DAY, price, NET);
   if (o.probe) d.prepare("INSERT INTO probes (resource_id, client_identity, ts, status, amount_atomic, network, outcome) VALUES (?, 'A', ?, ?, ?, ?, ?)").run(rid, o.probe.ts ?? NOW - 3_600_000, o.probe.status, price, NET, o.probe.outcome ?? "ok");
 }
+/** One paid call row for seller `id`'s resource. */
 function call(d: Db, id: number, outcome: string, ts: number, source = "buy") {
   d.prepare("INSERT INTO calls (intent_id, source, resource_id, seller_id, ts, paid, amount_paid_atomic, request_json, outcome) VALUES (?, ?, ?, ?, ?, 1, '1000', '{}', ?)").run(`i${++n}`, source, id * 10, id, ts, outcome);
 }
@@ -226,5 +228,21 @@ describe("scheduled run limits count retest calls", () => {
     const l = lane(d, { weeklyBudgetAtomic: 2000n });
     expect(l.weeklyRemainingAtomic).toBe(1000n);
     expect(l.allocations).toEqual([]); // one sentinel plans 1200
+  });
+});
+
+describe("re-test weekly budget at signing", () => {
+  it("checkCaps refuses a retest call over RETEST_WEEKLY_USD and ignores it for other sources", async () => {
+    const { checkCaps } = await import("./guard.js");
+    const d = openDb(":memory:");
+    seller(d, 1);
+    call(d, 1, "ok", NOW - DAY, "retest"); // 1000 this week
+    call(d, 1, "ok", NOW - 8 * DAY, "retest"); // last week
+    const caps = { perCallAtomic: usdToAtomic(0.1), perSellerPerDayAtomic: usdToAtomic(20), perDayAtomic: usdToAtomic(100), totalAtomic: usdToAtomic(300), stressTotalAtomic: usdToAtomic(30), auditPerDayAtomic: usdToAtomic(5) };
+    const run = { since: NOW - 60_000, retestWeeklyAtomic: 2500n };
+    const at = (source: "retest" | "buy", amountAtomic: bigint) => checkCaps(d, { caps, sellerId: 1, amountAtomic, now: NOW, scope: "buy", run, source })?.reason ?? null;
+    expect(at("retest", 1500n)).toBeNull();
+    expect(at("retest", 1501n)).toBe("cap_retest_weekly");
+    expect(at("buy", 5000n)).toBeNull();
   });
 });

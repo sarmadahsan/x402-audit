@@ -561,6 +561,7 @@ export function writeRunAllocations(db: Db, runId: number, rows: readonly Alloca
 }
 
 /** Plan allocations as run_allocations rows, priced at what the plan budgeted. */
+/** run_allocations rows for a plan: stratified tiers and audits as maintenance, every lane (retest included) under its own pool. */
 export function rowsFromAllocations(allocs: readonly PlanAllocation[]): AllocationRow[] {
   return allocs.map((a) => ({
     sellerId: a.sellerId,
