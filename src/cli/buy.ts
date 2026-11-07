@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { erc20Abi, formatUnits } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { buildBuyPlan, renderPlan, assertPlanWithinCaps, planToJSON, type BuyPlan, type PlanAllocation } from "../buy/plan.js";
+import { buildBuyPlan, renderPlan, assertPlanWithinCaps, deductResumed, planToJSON, type BuyPlan, type PlanAllocation } from "../buy/plan.js";
 import { runBuy } from "../buy/run.js";
 import { loadServiceConfigs, serviceLookup } from "../buy/services.js";
 import { blockAtTimestamp, makeChainClient, usdcFor } from "../chain/client.js";
@@ -332,17 +332,20 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         plan.allocations = plan.allocations.map((a) => ({ ...a, calls: counts.get(a.resourceId)! })).filter((a) => a.calls > 0);
         plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
       }
-      // Resume: calls already made for a resource (any earlier live run, any outcome) count against its allocation,
-      // so a halted or crashed run can be restarted without resampling the first resources.
+      // Resume: calls already made for a resource count against its allocation, so a halted or crashed run can be
+      // restarted without resampling the first resources. Scheduled buys count every earlier buy call unless
+      // --resume-since narrows it; re-test allocations are new each run, so only re-test calls made since an explicit
+      // --resume-since (the restarted run) count against them (deductResumed).
       if (live && !o.breadth) {
         const sinceMs = o.resumeSince ? Date.parse(o.resumeSince) : 0;
         if (o.resumeSince && !Number.isFinite(sinceMs)) throw new Error(`--resume-since is not a date: ${o.resumeSince}`);
+        const sources = o.resumeSince ? [CALL_SOURCES.BUY, CALL_SOURCES.RETEST] : [CALL_SOURCES.BUY];
         const done = new Map(
           // our_error rows are excluded from the denominator, so they do not consume the resource's allocation.
-          (db.prepare("SELECT resource_id, COUNT(*) n FROM calls WHERE source IN ('buy', 'retest') AND outcome != 'our_error' AND ts >= ? GROUP BY resource_id").all(sinceMs) as { resource_id: number; n: number }[]).map((r) => [r.resource_id, r.n]),
+          (db.prepare(`SELECT source, resource_id, COUNT(*) n FROM calls WHERE source IN (${sources.map(() => "?").join(", ")}) AND outcome != 'our_error' AND ts >= ? GROUP BY source, resource_id`).all(...sources, sinceMs) as { source: string; resource_id: number; n: number }[]).map((r) => [`${r.source}:${r.resource_id}`, r.n]),
         );
         const before = plan.totalCalls;
-        plan.allocations = plan.allocations.map((a) => ({ ...a, calls: Math.max(0, a.calls - (done.get(a.resourceId) ?? 0)) })).filter((a) => a.calls > 0);
+        plan.allocations = deductResumed(plan.allocations, done);
         plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
         if (plan.totalCalls !== before) log.info(`resume: ${before - plan.totalCalls} call(s) already made in earlier runs are subtracted from the plan`);
       }

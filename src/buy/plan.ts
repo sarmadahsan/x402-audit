@@ -5,7 +5,7 @@
 import type { Db } from "../db/index.js";
 import { atomicToUsd, isExcluded, usdToAtomic, type Caps, type ExcludeConfig, type SampleConfig } from "../config/index.js";
 import { clearTooExpensive, recordTooExpensive } from "./states.js";
-import type { CallSource } from "../taxonomy.js";
+import { CALL_SOURCES, type CallSource } from "../taxonomy.js";
 
 export type Tier = "top" | "tail";
 
@@ -329,6 +329,25 @@ export function buildBuyPlan(db: Db, o: BuildPlanOptions): BuyPlan {
 }
 
 /** Throws when the planned spend exceeds MAX_TOTAL_USD (caps.totalAtomic) or sample.max_total_usd. */
+/**
+ * Resume: subtract calls already made from a plan's allocations. `done` counts earlier calls per
+ * `${source}:${resourceId}`; each allocation is reduced by its own source's calls only (retest by retest calls, every
+ * other lane by buy calls), and a count is used up as it is subtracted, so two allocations on one resource never both
+ * take the same earlier call off. Without an explicit resume cutoff the caller passes no retest counts at all: a
+ * re-test allocation is new every run, and old calls to the resource must not zero it.
+ */
+export function deductResumed(allocations: readonly PlanAllocation[], done: ReadonlyMap<string, number>): PlanAllocation[] {
+  const left = new Map(done);
+  const out: PlanAllocation[] = [];
+  for (const a of allocations) {
+    const key = `${a.tier === "retest" ? CALL_SOURCES.RETEST : CALL_SOURCES.BUY}:${a.resourceId}`;
+    const d = Math.min(a.calls, left.get(key) ?? 0);
+    if (d) left.set(key, (left.get(key) ?? 0) - d);
+    if (a.calls - d > 0) out.push({ ...a, calls: a.calls - d });
+  }
+  return out;
+}
+
 export function assertPlanWithinCaps(plan: BuyPlan, caps: Caps): void {
   if (plan.totalSpendAtomic > caps.totalAtomic)
     throw new Error(`planned spend ${atomicToUsd(plan.totalSpendAtomic)} USD exceeds MAX_TOTAL_USD ${atomicToUsd(caps.totalAtomic)} USD`);
