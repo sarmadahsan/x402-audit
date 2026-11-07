@@ -11,7 +11,7 @@ import { breadthAllocations, candidateAllocations, expensiveAllocations } from "
 import { fetchDemand } from "../audit/triggers.js";
 import { SELLER_SHARE_OF_RUN, buildCoveragePlan, planPrice, projectCoverage, renderCoverage, resourceBackoffs, rowsFromAllocations, sellerUniverse, writeRunAllocations, type AllocationRow } from "../buy/allocate.js";
 import { CALL_SOURCES } from "../taxonomy.js";
-import { retestAllocations } from "../buy/retest.js";
+import { retestAllocations, retestRunBudget } from "../buy/retest.js";
 import type { RunLimits } from "../buy/guard.js";
 import { openDb, type Db } from "../db/index.js";
 import { log } from "../log.js";
@@ -252,7 +252,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         const lane = retestAllocations(db, {
           network: g.network,
           now: runStart,
-          budgetAtomic: (runBudgetForLane * BigInt(Math.round(env.RETEST_SHARE * 1e6))) / 1_000_000n,
+          budgetAtomic: retestRunBudget(runBudgetForLane, env.RETEST_SHARE, lanes),
           weeklyBudgetAtomic: usdToAtomic(env.RETEST_WEEKLY_USD),
           sellerCapAtomic: sellerCap,
           perCallCapAtomic: caps.perCallAtomic,

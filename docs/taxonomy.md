@@ -195,7 +195,7 @@ A resource whose latest probe (last 36 hours) shows no 402, a probe
 overcharge or a quote above the cap is not bought that run; with no recent
 probe the sentinel call is the test. `our_error` and `not_paid` do not count
 as failures. The lane plans `RETEST_SHARE` of the run (default 0.15, quote
-x1.2) under `RETEST_WEEKLY_USD` (default 3.00, checked when planning and
+x1.2), cut to what the expensive and candidate lanes leave of 95% of the run, under `RETEST_WEEKLY_USD` (default 3.00, checked when planning and
 again before every re-test signature at the real quote; a breach drops the
 remaining re-test calls and the rest of the run goes on), ramp sellers first, then
 index demand, inflow and the longest since a re-test; sellers it buys are

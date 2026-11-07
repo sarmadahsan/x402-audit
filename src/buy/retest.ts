@@ -173,6 +173,20 @@ export function retestStatuses(db: Db, o: { network: string; now: number }): Ret
   return out.sort((x, y) => x.sellerId - y.sellerId);
 }
 
+/**
+ * This run's re-test budget: RETEST_SHARE of the run budget, but never more than what the lanes planned before it
+ * (expensive sellers, candidates) leave of the run's planned share (95% of the run budget, the same headroom coverage
+ * keeps), all at quote x1.2. Without this a full candidate queue plus the re-test share can plan past the run budget,
+ * which the trim does not touch, and the plan check then aborts the scheduled run before any payment.
+ */
+export function retestRunBudget(runBudgetAtomic: bigint, share: number, priorLanes: readonly Pick<PlanAllocation, "priceAtomic" | "calls">[]): bigint {
+  const shareAtomic = (runBudgetAtomic * BigInt(Math.round(share * 1e6))) / 1_000_000n;
+  const prior = priorLanes.reduce((a, x) => a + planPrice(x.priceAtomic) * BigInt(x.calls), 0n);
+  const left = (runBudgetAtomic * 95n) / 100n - prior;
+  if (left <= 0n) return 0n;
+  return shareAtomic < left ? shareAtomic : left;
+}
+
 export interface RetestLaneOptions {
   network: string;
   now: number;

@@ -17,6 +17,7 @@ import {
   WINDOW_SIZE,
   retestAllocations,
   retestBlock,
+  retestRunBudget,
   retestStatuses,
   sellerVerdict,
   type WindowRow,
@@ -244,5 +245,28 @@ describe("re-test weekly budget at signing", () => {
     expect(at("retest", 1500n)).toBeNull();
     expect(at("retest", 1501n)).toBe("cap_retest_weekly");
     expect(at("buy", 5000n)).toBeNull();
+  });
+});
+
+describe("retestRunBudget", () => {
+  const usd = (x: number) => usdToAtomic(x);
+  it("is RETEST_SHARE of the run when the other lanes leave room", () => {
+    expect(retestRunBudget(usd(1), 0.15, [])).toBe(usd(0.15));
+    expect(retestRunBudget(usd(1), 0.15, [{ priceAtomic: usd(0.1), calls: 2 }])).toBe(usd(0.15));
+  });
+  it("shrinks to what the earlier lanes leave of 95% of the run, at quote x1.2", () => {
+    // Six $0.10 candidates plan $0.72; 95% of $1 leaves $0.23, more than the share.
+    expect(retestRunBudget(usd(1), 0.15, [{ priceAtomic: usd(0.1), calls: 6 }])).toBe(usd(0.15));
+    // Seven plan $0.84, leaving $0.11.
+    expect(retestRunBudget(usd(1), 0.15, [{ priceAtomic: usd(0.1), calls: 7 }])).toBe(usd(0.11));
+  });
+  it("is zero when the earlier lanes already fill the run (the review case: eight $0.10 candidates)", () => {
+    expect(retestRunBudget(usd(1), 0.15, Array.from({ length: 8 }, () => ({ priceAtomic: usd(0.1), calls: 1 })))).toBe(0n);
+  });
+  it("keeps the whole plan under the run budget with the lane at its allocation", () => {
+    const prior = Array.from({ length: 7 }, () => ({ priceAtomic: usd(0.1), calls: 1 }));
+    const b = retestRunBudget(usd(1), 0.15, prior);
+    const priorPlan = prior.reduce((a, x) => a + ((x.priceAtomic * 120n + 99n) / 100n) * BigInt(x.calls), 0n);
+    expect(priorPlan + b).toBeLessThanOrEqual(usd(1));
   });
 });
