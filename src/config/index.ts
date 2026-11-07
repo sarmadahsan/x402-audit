@@ -69,6 +69,12 @@ const EnvSchema = z.object({
   BREADTH_MAX_PER_CALL_USD: usd.default(0.5),
   /** Breadth budget over any 7 days, source breadth only. */
   BREADTH_WEEKLY_USD: usd.default(10),
+  /** The re-test lane (src/buy/retest.ts) rides along with scheduled runs only when this is 1. */
+  RETEST_ENABLED: z.string().default("0"),
+  /** Share of a scheduled run's budget the re-test lane may plan (quote x1.2); unused share flows back to coverage. */
+  RETEST_SHARE: z.coerce.number().min(0).max(1).default(0.15),
+  /** Re-test spend over any 7 days, source retest only. */
+  RETEST_WEEKLY_USD: usd.default(3),
 });
 export type Env = z.infer<typeof EnvSchema>;
 

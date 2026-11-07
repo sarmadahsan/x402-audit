@@ -5,6 +5,7 @@
 import type { Db } from "../db/index.js";
 import { atomicToUsd, isExcluded, usdToAtomic, type Caps, type ExcludeConfig, type SampleConfig } from "../config/index.js";
 import { clearTooExpensive, recordTooExpensive } from "./states.js";
+import type { CallSource } from "../taxonomy.js";
 
 export type Tier = "top" | "tail";
 
@@ -17,7 +18,7 @@ export interface PlanAllocation {
   /** resources.input_json (Bazaar input info) so POST bodies can be built from the seller's own example. */
   inputJson: string | null;
   /** Stratified tier, or the lane an extra allocation came from (audit, user candidate, expensive-sellers list). */
-  tier: Tier | "audit" | "candidate" | "expensive" | "finish" | "admit" | "maintenance" | "breadth";
+  tier: Tier | "audit" | "candidate" | "expensive" | "finish" | "admit" | "maintenance" | "breadth" | "retest";
   category: string;
   priceAtomic: bigint;
   calls: number;
@@ -27,6 +28,8 @@ export interface PlanAllocation {
   planAtomic?: bigint;
   /** Why the planner chose it (written to run_allocations). */
   reason?: string;
+  /** Call source for this allocation when it differs from the run's (the re-test lane writes `retest`). */
+  source?: CallSource;
 }
 
 export interface PlanStratum {

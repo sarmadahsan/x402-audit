@@ -221,6 +221,30 @@ describe.skipIf(!HAVE_ANVIL)("integration on anvil: buy + stress + resolver", ()
     d2.close();
   }, 30_000);
 
+  it("4b. the re-test weekly budget is checked at signing: re-test calls stop, the rest of the run goes on", async () => {
+    const d2 = openDb(":memory:");
+    seed(d2);
+    const ok = ids.get("/ok")!;
+    const other = ids.get("/fail/500-after-settle")!;
+    const mixed: BuyPlan = {
+      ...plan,
+      allocations: [
+        { resourceId: ok.resourceId, sellerId: ok.sellerId, sellerDomain: ok.domain, url: ok.url, method: "GET", tier: "retest", category: "data", priceAtomic: 10000n, calls: 3, source: "retest" },
+        { resourceId: other.resourceId, sellerId: other.sellerId, sellerDomain: other.domain, url: other.url, method: "GET", tier: "top", category: "data", priceAtomic: 10000n, calls: 1 },
+      ],
+      totalCalls: 4,
+    };
+    const stats = await runBuy(d2, { ...common(), plan: mixed, dryRun: false, minSecondsBetweenCallsPerResource: 1, runLimits: { since: Date.now() - 1000, retestWeeklyAtomic: 15000n } });
+    expect(stats.halted).toBe(false);
+    const rows = d2.prepare("SELECT source, resource_id FROM calls WHERE run_id = ? ORDER BY id").all(stats.runId) as { source: string; resource_id: number }[];
+    expect(rows.filter((r) => r.source === "retest")).toHaveLength(1);
+    expect(rows.filter((r) => r.source === "buy").map((r) => r.resource_id)).toEqual([other.resourceId]);
+    const h = d2.prepare("SELECT reason, details_json FROM halts").all() as any[];
+    expect(h.map((x) => x.reason)).toEqual(["cap_retest_weekly"]);
+    expect(JSON.parse(h[0].details_json)).toMatchObject({ stage: "before_quote", dropped: 2 });
+    d2.close();
+  }, 60_000);
+
   it("5. stress duplicate on /ok: one intent, two settlements", async () => {
     const res = await runStressDuplicate(db, { ...common(), resources: [ref("/ok")] });
     expect(res.halted).toBe(false);
