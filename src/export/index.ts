@@ -15,6 +15,7 @@ import { stressReport } from "../stress/index.js";
 import { AUDIT_SOURCES, CALL_SOURCES, HEADLINE_FAILURE_OUTCOMES, MEASURED_SOURCES } from "../taxonomy.js";
 import { sellerDenominatorCalls, sellerUniverse, SELLER_TARGET_CALLS } from "../buy/allocate.js";
 import { utcDayStart } from "../buy/guard.js";
+import { RETEST_PHASES, retestBlock, retestStatuses, type RetestPhase } from "../buy/retest.js";
 import { listCandidates } from "../discover/candidates.js";
 import { listCorrections } from "../pipeline/corrections.js";
 import { listTooExpensive } from "../buy/states.js";
@@ -101,6 +102,8 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   const now = o.now;
   const base: QueryParams = { since: 0, until: now, network: o.network };
   const q = <T>(name: Parameters<typeof runQuery>[1], extra: QueryParams = {}) => runQuery<T>(db, name, { ...base, ...extra });
+  const retest = new Map(retestStatuses(db, { network: o.network, now }).map((st) => [st.sellerId, st]));
+  const retestPaid = db.prepare(`SELECT COUNT(*) n, COUNT(DISTINCT seller_id) s FROM calls WHERE source = '${CALL_SOURCES.RETEST}' AND paid = 1 AND ts <= ?`).get(now) as { n: number; s: number };
   const report = computeReport(db, { network: o.network, now });
   const generatedAt = new Date(now).toISOString();
   const gitCommit = o.gitCommit !== undefined ? o.gitCommit : report.reproducibility.git_commit;
@@ -162,6 +165,11 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
         return [src, { paid_calls: num(r?.paid_calls), sellers: num(r?.sellers) }];
       }),
     ) as Record<string, { paid_calls: number; sellers: number }>,
+    retest_purchases: {
+      paid_calls: num(retestPaid.n),
+      sellers: num(retestPaid.s),
+      sellers_by_phase: Object.fromEntries(RETEST_PHASES.map((ph) => [ph, [...retest.values()].filter((x) => x.phase === ph).length])) as Record<RetestPhase, number>,
+    },
     ...growthFields(db, o),
     window_size: WINDOW_SIZE,
     verdict_basis_note: VERDICT_BASIS_NOTE,
@@ -248,6 +256,7 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
       discovered_at: iso(discovery.get(id)?.at),
       first_buy_at: iso(firstBuy.get(id)),
       window: windowOf(id),
+      retest: retest.has(id) ? retestBlock(retest.get(id)!) : null,
       ...(() => {
         const c = candidateSellers.get(id);
         return c
@@ -546,6 +555,7 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`flagged_injection\`: denominator rows flagged for possible prompt injection, not counted as failures.
 - \`overcharge_sensitivity\`: headline rate if overcharges below a quote/reference ratio of 1.1 or 2.0 were not counted.
 - \`by_tier\` / \`by_category\`: denominator calls, failures, rate, Wilson interval and dollar-weighted rate per seller tier and category.
+- \`retest_purchases\` (since 2026-11-06): paid re-test calls and sellers re-tested (source \`retest\`), and \`sellers_by_phase\`: how many sellers our data rates avoid are in each re-test phase now (\`waiting\`, \`sentinel\`, \`ramp\`, \`holding\`, \`dormant\`). Re-test purchases count in each seller's own figures and window, never in the headline, \`by_tier\` or \`by_category\`: they oversample sellers already rated avoid.
 - \`audit_purchases\`: paid audit calls and sellers audited, by source (\`audit_disagreement\`, \`audit_demand\`, \`audit_operator\`). Audit purchases count in each seller's own figures and evidence, never in the headline (\`count_weighted\`, \`dollar_weighted\`, \`failures_by_type\`), \`by_tier\` or \`by_category\`: triggered sampling oversamples contested and popular sellers. Sellers that entered through the user-candidate import stay out of those three until their first scheduled purchase is 7 days old.
 - \`sellers_below_30\`: sellers with at least one resource quoting at or under the scheduled per-call cap and fewer than 30 denominator calls: the coverage pool the next scheduled run draws from (sellers with no calls yet included).
 - \`sellers_new_7d\`: sellers first seen in the last 7 days, through any route (Bazaar recrawl, seed list, user candidates), not counting the initial universe (the first Bazaar crawl, 2026-10-24).
@@ -571,7 +581,8 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`pay_to_addresses\`: addresses the seller listed or quoted for payment (lowercase).
 - \`bazaar_listing_count\`: resources the seller lists in the Coinbase Bazaar discovery API.
 - \`audit_purchases\` / \`audit_purchases_by_source\`: paid audit calls included in this seller's figures ("includes N audit purchases").
-- \`breadth_purchases\`: paid breadth-run calls included in this seller's figures; \`purchases_by_source\`: paid calls per source (\`buy\`, \`breadth\`, \`audit_disagreement\`, \`audit_demand\`, \`audit_operator\`).
+- \`breadth_purchases\`: paid breadth-run calls included in this seller's figures; \`purchases_by_source\`: paid calls per source (\`buy\`, \`breadth\`, \`audit_disagreement\`, \`audit_demand\`, \`audit_operator\`, \`retest\`).
+- \`retest\` (since 2026-11-06): null unless our data rates the seller avoid; then where it stands on the way back. Every avoid seller is re-tested on a schedule: no calls until its last failure is 3 days old (7, 14, then 30 days after each re-test that failed again; \`dormant\` after four); then one paid call a day (\`sentinel\`) until 3 calls in a row are clean; then up to 4 a run (\`ramp\`) until the window says ok; \`holding\` means the window already says ok and only the 7-day floor keeps the verdict at avoid. A free 402 probe that shows no 402, an overcharge or a quote over the cap holds the paid call back. Fields: \`phase\`, \`cycle\` (earlier re-tests that ended in a failure, last 120 days), \`clean_streak\` (paid calls since the last failure, any source), \`retest_calls\` (re-test calls since the last failure), \`since\` (first of those), \`last_failure_ts\`, \`next_due_at\` (next call, or when the floor lifts; null when due now).
 - \`discovered_at\`: when the seller entered our database (the discovery run that found it, else the first time any listing or import named it).
 - \`first_buy_at\`: our first paid call to the seller, any measured source ("measured since").
 - \`source\`: \`discovery\` (Bazaar, chain scan or our own list), \`seed\` (config/seed-sellers.yaml, a hand-kept list of ecosystem hosts) or \`user\` (entered through the user-candidate import); a \`user\` seller also has \`entered_at\`, \`entered_after_checks\` and \`entered_after_payments\` (the index's counts at import).

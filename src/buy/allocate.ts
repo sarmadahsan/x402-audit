@@ -210,7 +210,7 @@ export function rotationFor(s: SellerFacts): PricedResource[] {
 export interface AllocationRow {
   sellerId: number;
   resourceId: number | null;
-  pool: "finish" | "admit" | "maintenance" | "expensive" | "candidate" | "breadth" | "backoff";
+  pool: "finish" | "admit" | "maintenance" | "expensive" | "candidate" | "breadth" | "backoff" | "retest";
   plannedCalls: number;
   reason: string;
   priceAtomic: bigint | null;
@@ -425,6 +425,8 @@ export interface CoverageOptions {
   /** Index demand this week (host -> checks); empty when the index could not be read. */
   demand?: Map<string, number>;
   tiersSince: number;
+  /** Sellers another lane of this run already buys (the re-test lane): left out of finish, admit and maintenance. */
+  skipSellerIds?: ReadonlySet<number>;
 }
 
 export interface CoverageStats {
@@ -489,7 +491,7 @@ export function buildCoveragePlan(db: Db, o: CoverageOptions): CoveragePlan {
 
   const targets = targetContext(db, { ...(o.demand ? { demand: o.demand } : {}), ...(o.ownCapDomains ? { expensiveDomains: o.ownCapDomains } : {}), tiersSince: o.tiersSince });
   const sellerCap = (o.runBudgetAtomic * BigInt(Math.round(SELLER_SHARE_OF_RUN * 1e6))) / 1_000_000n;
-  const sel = selectCoverage(universe, { budgetAtomic: o.budgetAtomic, coverageShare: o.coverageShare, sellerCapAtomic: sellerCap, targets, rnd: seededRandom(o.seed), inflowFloorAtomic: usdToAtomic(o.inflowFloorUsd ?? 100) });
+  const sel = selectCoverage(o.skipSellerIds?.size ? universe.filter((s) => !o.skipSellerIds!.has(s.sellerId)) : universe, { budgetAtomic: o.budgetAtomic, coverageShare: o.coverageShare, sellerCapAtomic: sellerCap, targets, rnd: seededRandom(o.seed), inflowFloorAtomic: usdToAtomic(o.inflowFloorUsd ?? 100) });
 
   const tally: Record<CoveragePool, { sellers: number; calls: number }> = { finish: { sellers: 0, calls: 0 }, admit: { sellers: 0, calls: 0 }, maintenance: { sellers: 0, calls: 0 } };
   for (const { pool, sellers } of sel.order) {

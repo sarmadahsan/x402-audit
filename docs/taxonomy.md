@@ -169,6 +169,43 @@ these sellers were in the original stratified universe and the cap excluded
 them, not the design. At one call a week they sit in `low_sample` for
 weeks. A resource still above the breadth cap stays `too_expensive`.
 
+### Re-test purchases
+
+Re-test rows (`buy run --allocation coverage --retest`, 2026-11-06, behind
+`RETEST_ENABLED=1`) carry `source = retest`. A verdict moves only when new
+paid calls reach the seller's rolling window, and past its target a seller
+is bought only by the inflow-weighted maintenance draw, so a small seller
+rated avoid could stay there for good. The lane gives each one a scheduled,
+bounded path back (`src/buy/retest.ts`).
+
+The verdict is recomputed from our own database with the index's rule
+(window of 50, decides at 30, 7-day floor). The phase is derived from the
+call history on every run, never stored:
+
+- `waiting`: the last headline failure is younger than the cooldown, 3 days,
+  then 7, 14 and 30 after each earlier re-test day that ended in a failure
+  (last 120 days); `dormant` after four such cycles (30 days between tries).
+- `sentinel`: fewer than 3 clean paid calls since the last failure: one call,
+  at most one a day.
+- `ramp`: 3 or more clean calls: up to 4 calls a run.
+- `holding`: the window alone says ok and only the 7-day floor keeps the
+  verdict at avoid: no calls.
+
+A resource whose latest probe (last 36 hours) shows no 402, a probe
+overcharge or a quote above the cap is not bought that run; with no recent
+probe the sentinel call is the test. `our_error` and `not_paid` do not count
+as failures. The lane plans `RETEST_SHARE` of the run (default 0.15, quote
+x1.2) under `RETEST_WEEKLY_USD` (default 3.00), ramp sellers first, then
+index demand, inflow and the longest since a re-test; sellers it buys are
+left out of that run's coverage lanes. A scheduled run's per-run, per-seller
+and `LOOP_DAILY_USD` limits count `buy` and `retest` together.
+
+Re-test rows count in the seller's own series, window and evidence, never in
+the headline, tier or category rates: the lane oversamples sellers already
+rated avoid. Every failure stays in the window and restarts the floor, so
+stopping after a failure gives a failing seller fewer calls, never a better
+verdict.
+
 ### Rolling headline and the study window
 
 The published headline (`summary.json`, the index) is a rolling figure over

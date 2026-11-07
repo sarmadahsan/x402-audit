@@ -109,6 +109,9 @@ export const CALL_SOURCES = {
   AUDIT_OPERATOR: "audit_operator",
   /** Weekly breadth run (docs/taxonomy.md "Breadth purchases"): one call per seller the scheduled per-call cap excludes. */
   BREADTH: "breadth",
+  /** Re-test lane (docs/taxonomy.md "Re-test purchases"): scheduled calls to sellers our own data rates avoid, so a
+   * seller that has recovered can show it. In the seller's own series and window, never in the headline. */
+  RETEST: "retest",
 } as const;
 export type CallSource = (typeof CALL_SOURCES)[keyof typeof CALL_SOURCES];
 export const AUDIT_SOURCES: readonly CallSource[] = [CALL_SOURCES.AUDIT_DISAGREEMENT, CALL_SOURCES.AUDIT_DEMAND, CALL_SOURCES.AUDIT_OPERATOR];
@@ -116,7 +119,9 @@ export const AUDIT_SOURCES: readonly CallSource[] = [CALL_SOURCES.AUDIT_DISAGREE
  * excluded, not the design). Audit sources stay out because triggered sampling oversamples contested and popular sellers. */
 export const HEADLINE_SOURCES: readonly CallSource[] = [CALL_SOURCES.BUY, CALL_SOURCES.BREADTH];
 /** Sources that count in a seller's own measured series (and its evidence file), and in MAX_TOTAL_USD. */
-export const MEASURED_SOURCES: readonly CallSource[] = [...HEADLINE_SOURCES, ...AUDIT_SOURCES];
+export const MEASURED_SOURCES: readonly CallSource[] = [...HEADLINE_SOURCES, ...AUDIT_SOURCES, CALL_SOURCES.RETEST];
+/** Sources a scheduled buy run writes: its per-run, per-seller-per-run and LOOP_DAILY_USD limits count them together. */
+export const SCHEDULED_SOURCES: readonly CallSource[] = [CALL_SOURCES.BUY, CALL_SOURCES.RETEST];
 
 /** Time limits from the spec. */
 export const INDETERMINATE_WINDOW_MS = 10 * 60 * 1000;

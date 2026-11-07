@@ -150,7 +150,7 @@ function interleave(allocs: PlanAllocation[]): { slots: Slot[]; sellerOrder: num
     if (l) l.push(a);
     else bySeller.set(a.sellerId, [a]);
   }
-  const planOrder = allocs.some((a) => a.tier === "finish" || a.tier === "admit" || a.tier === "maintenance" || a.tier === "breadth");
+  const planOrder = allocs.some((a) => a.tier === "finish" || a.tier === "admit" || a.tier === "maintenance" || a.tier === "breadth" || a.tier === "retest");
   const sellerOrder = planOrder ? [...bySeller.keys()] : [...bySeller.keys()].sort((a, b) => a - b);
   for (const l of bySeller.values()) l.sort((a, b) => a.resourceId - b.resourceId);
   const slots: Slot[] = [];
@@ -353,7 +353,7 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         db,
         payer: guarded.payer,
         runId,
-        source,
+        source: a.source ?? source,
         resource: { id: a.resourceId, sellerId: a.sellerId, url: urlWithExampleQuery(a.url, a.inputJson ?? null), method: a.method, ...requestBodyFor(a.method, a.inputJson ?? null) },
         ...(reference ? { reference } : {}),
         perCallCapAtomic: caps.perCallAtomic,

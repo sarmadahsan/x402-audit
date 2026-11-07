@@ -5,7 +5,7 @@
 import type { Db } from "../db/index.js";
 import { atomicToUsd, type Caps } from "../config/index.js";
 import type { SettlementFact, SettlementLookup } from "../pipeline/paidCall.js";
-import { AUDIT_SOURCES, CALL_SOURCES, MEASURED_SOURCES, type CallSource } from "../taxonomy.js";
+import { AUDIT_SOURCES, CALL_SOURCES, MEASURED_SOURCES, SCHEDULED_SOURCES, type CallSource } from "../taxonomy.js";
 import type { PaidResult, Payer, PayHooks } from "../x402/pay.js";
 import { confirmWithTimeout } from "../chain/confirm.js";
 
@@ -95,7 +95,7 @@ export interface RunLimits {
   source?: CallSource;
   perRunAtomic?: bigint;
   perSellerPerRunAtomic?: bigint;
-  /** Scheduled-buy budget for the UTC day, counted over source `buy` only (LOOP_DAILY_USD). The all-sources
+  /** Scheduled-buy budget for the UTC day, counted over sources `buy` and `retest` (LOOP_DAILY_USD). The all-sources
    * per-day cap (MAX_PER_DAY_USD) stays the backstop. */
   dayBudgetAtomic?: bigint;
 }
@@ -129,7 +129,8 @@ export function checkCaps(db: Db, i: CapCheckInput): CapBreach | null {
   }
   const r = i.run;
   if (r) {
-    const src = [r.source ?? CALL_SOURCES.BUY];
+    // A scheduled run writes buy and retest rows; its limits count both (a breadth or other run counts its own source).
+    const src = r.source === undefined || r.source === CALL_SOURCES.BUY ? [...SCHEDULED_SOURCES] : [r.source];
     if (r.perSellerPerRunAtomic !== undefined) {
       const s = spentAtomic(db, { since: r.since, sellerId: i.sellerId, sources: src });
       if (s + a > r.perSellerPerRunAtomic)
@@ -140,7 +141,7 @@ export function checkCaps(db: Db, i: CapCheckInput): CapBreach | null {
       if (s + a > r.perRunAtomic) return { reason: "cap_per_run", details: { spentThisRun: fmt(s), next: fmt(a), cap: fmt(r.perRunAtomic) } };
     }
     if (r.dayBudgetAtomic !== undefined) {
-      const s = spentAtomic(db, { since: day, sources: [CALL_SOURCES.BUY] });
+      const s = spentAtomic(db, { since: day, sources: [...SCHEDULED_SOURCES] });
       if (s + a > r.dayBudgetAtomic) return { reason: "cap_buy_day_budget", details: { spentToday: fmt(s), next: fmt(a), cap: fmt(r.dayBudgetAtomic) } };
     }
   }
