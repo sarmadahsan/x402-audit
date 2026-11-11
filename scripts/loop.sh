@@ -49,6 +49,7 @@
 #        scheduled run, so the revert is automatic); `scripts/loop.sh caps [epoch]` prints what applies at a moment.
 #        COVERAGE_SHARE, BREADTH_RUN_ENABLED, BREADTH_MAX_PER_CALL_USD, BREADTH_WEEKLY_USD are read by the CLI.
 #        LOOP_PUBLISH (1; 0 = export but do not commit or push)  BACKUP_BUCKET (unset = no backup)
+#        PROBE_ARCHIVE_ENABLED (0; 1 = daily move of old raw probe data to S3)  PROBE_ARCHIVE_KEEP_DAYS (7)  PROBE_ARCHIVE_MAX_DAYS (3)
 #        LOOP_PUBLISH_URL (https://github.com/sarmadahsan/paidfor-data.git; the server uses the SSH alias
 #        git@github-data:sarmadahsan/paidfor-data.git so its write deploy key for that repo is offered)
 set -uo pipefail
@@ -155,6 +156,18 @@ hourly() {
 
 wallet_pool_usd() {
   "${CLI[@]}" buy balances 2>>"$LOG" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s.slice(s.indexOf("{")));console.log(j.wallets.reduce((a,w)=>a+Number(w.usdc),0).toFixed(6))}catch{}})'
+}
+
+# Daily: move raw probe headers and bodies older than PROBE_ARCHIVE_KEEP_DAYS to S3 (src/probe/archive.ts). Runs before
+# the backup, which then copies less. Off unless PROBE_ARCHIVE_ENABLED=1; a failure clears nothing and retries next slot.
+archive_raw() {
+  local day="$1"
+  [ "${PROBE_ARCHIVE_ENABLED:-0}" = 1 ] || return 0
+  [ -f "$STATE/archive-$day" ] && return 0
+  if [ -z "${BACKUP_BUCKET:-}" ]; then log "archive $day: skipped, BACKUP_BUCKET not set"; return 0; fi
+  if run "${CLI[@]}" probe archive-raw --apply --bucket "$BACKUP_BUCKET" --keep-days "${PROBE_ARCHIVE_KEEP_DAYS:-7}" --max-days "${PROBE_ARCHIVE_MAX_DAYS:-3}"; then
+    log "archive $day: done"; touch "$STATE/archive-$day"
+  else log "archive $day: failed; nothing cleared beyond what was uploaded"; fi
 }
 
 backup() {
@@ -320,7 +333,7 @@ maybe_scheduled() {
   [ "$(cat "$STATE/last-buy-slot" 2>/dev/null)" = "$key" ] && return 0
   if [ -f "$STATE/buy.pid" ] && kill -0 "$(cat "$STATE/buy.pid")" 2>/dev/null; then log "scheduled buy $key: previous buy still running; will check next hour"; return 0; fi
   echo "$key" > "$STATE/last-buy-slot"   # once per slot, whether it buys or skips
-  ( scheduled_buy "$today" "$slot"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ) &
+  ( scheduled_buy "$today" "$slot"; archive_raw "$today"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ) &
 }
 
 # A scheduled buy the previous loop process started but never finished (2026-11-01 18:00 UTC: a deploy restarted the
@@ -433,7 +446,7 @@ case "${1:-loop}" in
     # own run: `scripts/loop.sh run-slot 2026-10-30 00` catches up a slot the loop skipped (its `skipped` row says why).
     # The loop sees its buy.pid and waits for it.
     today="${2:?usage: $0 run-slot <YYYY-MM-DD> <HH>}"; hh="$(printf %02d "$((10#${3:?usage: $0 run-slot <YYYY-MM-DD> <HH>}))")"
-    scheduled_buy "$today" "$hh"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ;;
+    scheduled_buy "$today" "$hh"; archive_raw "$today"; [ -f "$STATE/backup-$today" ] || backup "$today"; rm -f "$STATE/buy.pid" ;;
   dry-run-audit)
     # Planned audits from the live index, recorded as dry_run decisions; spends nothing.
     "${CLI[@]}" audit-triggers ;;
