@@ -70,8 +70,11 @@ interface RawRow {
   body_text: string | null;
 }
 
+/** The UTC calendar day of a timestamp, as YYYY-MM-DD. */
 const utcDay = (ts: number): string => new Date(ts).toISOString().slice(0, 10);
+/** Midnight UTC at or before a timestamp. */
 const dayStart = (ts: number): number => Math.floor(ts / DAY_MS) * DAY_MS;
+/** UTF-8 byte length of a raw column, 0 when it is null. */
 const rawLength = (s: string | null): number => (s === null ? 0 : Buffer.byteLength(s));
 
 /** Free bytes for an unprivileged writer on the filesystem holding `dir`. */
@@ -125,6 +128,7 @@ export function archiveKey(c: ArchiveChunk): string {
   return `${ARCHIVE_PREFIX}${c.day.slice(0, 7)}/${c.day}-ids-${c.minId}-${c.maxId}.ndjson.gz`;
 }
 
+/** Streams one range's rows that still hold raw data to a gzipped NDJSON file, and returns what it wrote. */
 async function writeChunk(db: Db, c: ArchiveChunk, file: string): Promise<{ rows: number; rawBytes: number }> {
   const page = db.prepare(
     `SELECT p.id, p.resource_id, r.url, p.client_identity, p.round_id, p.ts, p.status, p.headers_json, p.body_text
@@ -167,6 +171,7 @@ async function verifyChunk(file: string, c: ArchiveChunk, expected: { rows: numb
     throw new Error(`archive ${file}: read back ${rows} rows and ${rawBytes} bytes, wrote ${expected.rows} and ${expected.rawBytes}`);
 }
 
+/** SHA-256 of a file in base64, the form S3's checksum header takes. */
 async function fileSha256Base64(file: string): Promise<string> {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);

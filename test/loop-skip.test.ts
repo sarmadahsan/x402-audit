@@ -55,6 +55,7 @@ function scheduledBuy(o: { gateExit: number; pool?: string; gateOutput?: string;
   return { r, calls, log };
 }
 
+/** Runs loop.sh's archive_raw for one day against a stand-in CLI and reports what it called and logged. */
 function archiveRaw(env: Record<string, string>, marker = false) {
   const dir = mkdtempSync(join(tmpdir(), "loop-archive-"));
   dirs.push(dir);

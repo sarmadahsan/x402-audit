@@ -12,6 +12,7 @@ const NET = "eip155:8453";
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 10, 20, 3, 0, 0);
 const dirs: string[] = [];
+/** A temporary directory removed after each test. */
 const tmp = (): string => {
   const d = mkdtempSync(join(tmpdir(), "probe-archive-"));
   dirs.push(d);
@@ -21,6 +22,7 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
+/** An in-memory database with one resource, and a helper that adds a probe at a time with or without raw data. */
 function fixture(): { db: Db; resource: number; add: (ts: number, raw?: boolean) => number } {
   const db = openDb(":memory:");
   const resource = insertResource(db, { sellerId: insertSeller(db, "one.example"), url: "https://one.example/a", network: NET });
@@ -37,6 +39,7 @@ interface Stored {
   bytes: Buffer;
   sha: string;
 }
+/** An upload stand-in that keeps each file's bytes, key and checksum. */
 function recorder(): { stored: Stored[]; upload: ArchiveUpload } {
   const stored: Stored[] = [];
   return {
@@ -46,8 +49,11 @@ function recorder(): { stored: Stored[]; upload: ArchiveUpload } {
     },
   };
 }
+/** The parsed NDJSON rows of a stored file. */
 const lines = (s: Stored): Record<string, unknown>[] => gunzipSync(s.bytes).toString("utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+/** Probe rows still holding raw headers or body. */
 const rawLeft = (db: Db): number => (db.prepare("SELECT COUNT(*) n FROM probes WHERE headers_json IS NOT NULL OR body_text IS NOT NULL").get() as { n: number }).n;
+/** Default archive options for the tests: plenty of disk, clearing on. */
 const base = (o: { workDir: string; upload: ArchiveUpload }) => ({ now: NOW, keepDays: 7, maxDays: 10, trim: true, freeBytes: () => 1e12, ...o });
 
 describe("planArchive", () => {

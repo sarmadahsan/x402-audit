@@ -132,8 +132,8 @@ One-time setup, before `PROBE_ARCHIVE_ENABLED=1`:
 1. Let the server's role write the archive (add to the `paidfor-audit-backup-role` policy):
    `s3:PutObject` on `arn:aws:s3:::<bucket>/probe-raw/*`.
 2. Limit the bucket's 30-day expiry rule to `audit/`, or the archive would expire with the backups.
-3. Run once with `--upload-only --max-days 1`, inspect the file, then run without `--upload-only` and a larger
-   `--max-days` for the backlog.
+3. Run once with `--apply --upload-only --max-days 1`, inspect the file, then run `--apply` without `--upload-only`
+   and with a larger `--max-days` for the backlog.
 4. Reclaim the space with `--apply --vacuum` between loop cycles. It blocks writers and refuses without about twice the
    live data free.
 

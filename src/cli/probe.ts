@@ -9,6 +9,7 @@ import { probeLoop } from "../probe/schedule.js";
 import { buildProbeSet, listProbeSet } from "../probe/set.js";
 import { finishRun, startRun } from "./runs.js";
 
+/** Registers the `probe` commands: plan, run, report and archive-raw. */
 export function registerProbe(program: Command, globals: (cmd: Command) => { network: Network; db: string }) {
   const p = program.command("probe").description("capture 402 quotes without paying (free; never moves money)");
   p.command("plan")
