@@ -2,12 +2,14 @@ import type { Command } from "commander";
 import { loadFileConfigs, type Network } from "../config/index.js";
 import { openDb } from "../db/index.js";
 import { log } from "../log.js";
+import { archiveRawProbes, awsUploader, planArchive, vacuumIfRoom } from "../probe/archive.js";
 import { probeReport } from "../probe/report.js";
 import { runProbeRound } from "../probe/run.js";
 import { probeLoop } from "../probe/schedule.js";
 import { buildProbeSet, listProbeSet } from "../probe/set.js";
 import { finishRun, startRun } from "./runs.js";
 
+/** Registers the `probe` commands: plan, run, report and archive-raw. */
 export function registerProbe(program: Command, globals: (cmd: Command) => { network: Network; db: string }) {
   const p = program.command("probe").description("capture 402 quotes without paying (free; never moves money)");
   p.command("plan")
@@ -65,6 +67,39 @@ export function registerProbe(program: Command, globals: (cmd: Command) => { net
     .action(function (this: Command, o: { sinceHours?: number }) {
       const g = globals(this);
       console.log(probeReport(openDb(g.db), o.sinceHours ? { sinceMs: Date.now() - o.sinceHours * 3_600_000 } : {}));
+    });
+  p.command("archive-raw")
+    .description("move old raw probe headers and bodies to S3, then clear them locally; a dry run without --apply")
+    .option("--apply", "upload and clear; without it only the plan is printed", false)
+    .option("--upload-only", "upload and record but leave the rows; a later run without this clears them", false)
+    .option("--bucket <name>", "S3 bucket (default BACKUP_BUCKET)", process.env.BACKUP_BUCKET)
+    .option("--keep-days <n>", "whole UTC days of raw data to keep locally", (v) => parseInt(v, 10), 7)
+    .option("--max-days <n>", "days to archive in this run", (v) => parseInt(v, 10), 3)
+    .option("--work-dir <dir>", "where the temporary files go", "data/loop-state/probe-archive")
+    .option("--vacuum", "with --apply: compact the database afterwards (blocks writers; run between loop cycles)", false)
+    .action(async function (this: Command, o: { apply: boolean; uploadOnly: boolean; bucket?: string; keepDays: number; maxDays: number; workDir: string; vacuum: boolean }) {
+      const g = globals(this);
+      if (!Number.isInteger(o.keepDays) || o.keepDays < 1) throw new Error("--keep-days must be a whole number of at least 1");
+      if (!Number.isInteger(o.maxDays) || o.maxDays < 1) throw new Error("--max-days must be a whole number of at least 1");
+      const db = openDb(g.db);
+      const now = Date.now();
+      if (!o.apply) {
+        const chunks = planArchive(db, { now, keepDays: o.keepDays, maxDays: o.maxDays });
+        for (const c of chunks) console.log(`${c.day}: probes ${c.minId}..${c.maxId}`);
+        console.log(`${chunks.length} day(s) would be archived; pass --apply to do it`);
+        return;
+      }
+      if (!o.bucket) throw new Error("--bucket or BACKUP_BUCKET is required with --apply");
+      const runId = startRun(db, "probe archive-raw", o, g.network, false);
+      try {
+        const summary = await archiveRawProbes(db, { now, keepDays: o.keepDays, maxDays: o.maxDays, workDir: o.workDir, upload: awsUploader(o.bucket), trim: !o.uploadOnly, log: (m) => log.info(m) });
+        const vacuum = o.vacuum ? vacuumIfRoom(db, o.workDir) : undefined;
+        finishRun(db, runId, "ok", { ...summary, ...(vacuum ? { vacuum } : {}) });
+        console.log(`${summary.uploaded.length} day(s) archived, ${summary.trimmedRanges} range(s) cleared${vacuum ? `, database ${vacuum.beforeBytes} -> ${vacuum.afterBytes} bytes` : ""}`);
+      } catch (e) {
+        finishRun(db, runId, "error", { error: (e as Error).message });
+        throw e;
+      }
     });
   return p;
 }

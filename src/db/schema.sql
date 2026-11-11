@@ -469,3 +469,18 @@ CREATE TABLE IF NOT EXISTS unmapped_payees (
   matched_seller_id INTEGER REFERENCES sellers(id), -- set once a later refresh maps it to a seller
   matched_at      INTEGER
 );
+
+-- Raw probe responses moved to S3 (src/probe/archive.ts), one row per uploaded file. A row exists only after S3 accepted
+-- the file against its SHA-256; trimmed_at is set once headers_json and body_text are cleared for min_id..max_id.
+CREATE TABLE IF NOT EXISTS probe_archives (
+  min_id      INTEGER PRIMARY KEY,
+  max_id      INTEGER NOT NULL,
+  day         TEXT NOT NULL,            -- UTC day of the first row
+  s3_key      TEXT,                     -- null when the range held no raw data
+  rows        INTEGER NOT NULL,
+  raw_bytes   INTEGER NOT NULL,
+  gz_bytes    INTEGER NOT NULL,
+  sha256      TEXT,
+  archived_at INTEGER NOT NULL,
+  trimmed_at  INTEGER
+);

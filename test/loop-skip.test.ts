@@ -55,6 +55,41 @@ function scheduledBuy(o: { gateExit: number; pool?: string; gateOutput?: string;
   return { r, calls, log };
 }
 
+/** Runs loop.sh's archive_raw for one day against a stand-in CLI and reports what it called and logged. */
+function archiveRaw(env: Record<string, string>, marker = false) {
+  const dir = mkdtempSync(join(tmpdir(), "loop-archive-"));
+  dirs.push(dir);
+  writeFileSync(join(dir, "cli.sh"), `#!/usr/bin/env bash\necho "cli $*" >> "${dir}/calls.log"\nexit \${CLI_EXIT:-0}\n`);
+  const script = `
+    LOOP_SOURCE_ONLY=1 . "${REPO}/scripts/loop.sh" || exit 9
+    STATE="${dir}/state"; LOG="${dir}/loop.log"; mkdir -p "$STATE"
+    ${marker ? `touch "$STATE/archive-2026-11-20"` : ""}
+    CLI=(bash "${dir}/cli.sh")
+    archive_raw 2026-11-20
+  `;
+  const r = spawnSync("bash", ["-c", script], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: dir, X402_AUDIT_LIVE: "1", LOOP_RUN_USD: "1.00", LOOP_DAILY_USD: "4.00", ...env } });
+  const read = (f: string) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), "utf8") : "");
+  return { r, calls: read("calls.log"), log: read("loop.log"), done: existsSync(join(dir, "state/archive-2026-11-20")) };
+}
+
+describe("loop.sh archive_raw", () => {
+  it("does nothing unless PROBE_ARCHIVE_ENABLED=1", () => {
+    const { r, calls } = archiveRaw({ BACKUP_BUCKET: "b" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(calls).toBe("");
+  });
+  it("runs once a day against the backup bucket, and a failure leaves it to retry", () => {
+    const ok = archiveRaw({ PROBE_ARCHIVE_ENABLED: "1", BACKUP_BUCKET: "b" });
+    expect(ok.calls).toContain("cli probe archive-raw --apply --bucket b --keep-days 7 --max-days 3");
+    expect(ok.done).toBe(true);
+    expect(archiveRaw({ PROBE_ARCHIVE_ENABLED: "1", BACKUP_BUCKET: "b" }, true).calls).toBe("");
+    const failed = archiveRaw({ PROBE_ARCHIVE_ENABLED: "1", BACKUP_BUCKET: "b", CLI_EXIT: "1" });
+    expect(failed.r.status, failed.r.stderr).toBe(0);
+    expect(failed.done).toBe(false);
+    expect(failed.log).toContain("archive 2026-11-20: failed");
+  });
+});
+
 describe("loop.sh scheduled buy gates", () => {
   it("a `pnpm gate` that could not reach the tests (no marker) records the skip as a buy run row, posts health and exports; nothing is bought", () => {
     const { r, calls, log } = scheduledBuy({ gateExit: 2 });

@@ -117,3 +117,24 @@ dashboard. The public export does not carry test results. `pnpm gate` exits 1
 for a dirty tree, 2 when it could not reach the tests, and 0 otherwise, so use
 `pnpm test` to check the suite by hand. The money limit is the runtime caps,
 checked before every signature.
+
+## Archiving raw probe data
+
+`probe archive-raw` moves `probes.headers_json` and `probes.body_text` older than `--keep-days` (7) to
+`s3://$BACKUP_BUCKET/probe-raw/<yyyy-mm>/<day>-ids-<min>-<max>.ndjson.gz`, then clears them locally. Parsed fields
+(status, quote, pay-to, outcome, flags) stay, and nothing the verdicts or reports read changes. Without `--apply` it
+only prints the plan. `--upload-only` uploads and records without clearing, so a first file can be inspected; the next
+run without it clears those ranges. Every file is recorded in `probe_archives`. A row is cleared only after the file
+was read back and S3 accepted it against its SHA-256.
+
+One-time setup, before `PROBE_ARCHIVE_ENABLED=1`:
+
+1. Let the server's role write the archive (add to the `paidfor-audit-backup-role` policy):
+   `s3:PutObject` on `arn:aws:s3:::<bucket>/probe-raw/*`.
+2. Limit the bucket's 30-day expiry rule to `audit/`, or the archive would expire with the backups.
+3. Run once with `--apply --upload-only --max-days 1`, inspect the file, then run `--apply` without `--upload-only`
+   and with a larger `--max-days` for the backlog.
+4. Reclaim the space with `--apply --vacuum` between loop cycles. It blocks writers and refuses without about twice the
+   live data free.
+
+`scripts/loop.sh` changed, so the first deploy needs a service restart outside the buy windows.
