@@ -2,7 +2,8 @@
  * `export`: the public, machine-readable twin of the report, written to public-data/.
  * Fast and hacky by request. Every rate comes from the same named queries and Wilson code as the report
  * (src/report/queries.ts, src/report/compute.ts); nothing here re-derives the methodology.
- * Never writes request bodies, response bodies, validator evidence, or our wallet addresses.
+ * Never writes request bodies, response bodies, validator evidence, or our wallet addresses. (The one derived fact: the
+ * declared and received media types of a `format_mismatch` row, which the seller's 402 and its answer show anyone.)
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -153,6 +154,7 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
     usdc_spent_by_source: report.meta.spend_by_source.map((s) => ({ source: s.source, paid_calls: s.paid_calls, spent_usdc: s.spent_usdc, settled_usdc: s.settled_usdc })),
     outside_denominator: { our_error: h.excluded.our_error, indeterminate: h.excluded.indeterminate, not_paid: h.excluded.not_paid, unclassified: h.excluded.unclassified, unpaid_overcharge: h.excluded.unpaid_overcharge, unpaid_overcharge_exposure_usdc: atomicToUsd(h.excluded.exposure_atomic) },
     flagged_injection: h.flagged.injection,
+    format_mismatch_calls: num(q<{ n: number }>("headline_format_mismatch")[0]?.n),
     overcharge_sensitivity: h.sensitivity.map((r) => ({ min_ratio: r.min_ratio, overcharge_kept: r.overcharge_kept, overcharge_dropped: r.overcharge_dropped, rate: r.count.rate, wilson_low: r.count.lo, wilson_high: r.count.hi, dollar_rate: r.dollar_rate })),
     by_tier: report.by_tier.map((g) => ({ tier: g.key, n: g.n, failures: g.failures, rate: g.count.rate, wilson_low: g.count.lo, wilson_high: g.count.hi, dollar_rate: g.dollar.rate })),
     by_category: report.by_category.map((g) => ({ category: g.key, n: g.n, failures: g.failures, rate: g.count.rate, wilson_low: g.count.lo, wilson_high: g.count.hi, dollar_rate: g.dollar.rate })),
@@ -171,6 +173,17 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   type RateAgg = { n: number; failures: number; w_sum: string; w_failed: string; w_sumsq: number };
   const sellerRates = q<RateAgg & { seller_id: number }>("buy_sellers_min_calls", { min_calls: SELLER_LOW_SAMPLE_MIN_CALLS });
   const ftRows = q<{ seller_id: number; outcome: string; n: number }>("buy_seller_failure_types");
+  // Usable answers in another format than declared (issue 40): delivered, counted apart from the failures.
+  const fmtRows = new Map<number, { calls: number; last_ts: string | null; by_type: { declared: string | null; received: string | null; calls: number }[] }>();
+  for (const r of q<{ seller_id: number; declared: string | null; received: string | null; n: number; last_ts: number }>("buy_seller_format_mismatch")) {
+    const id = num(r.seller_id);
+    const m = fmtRows.get(id) ?? { calls: 0, last_ts: null, by_type: [] };
+    m.calls += num(r.n);
+    const t = iso(num(r.last_ts));
+    if (t && (!m.last_ts || t > m.last_ts)) m.last_ts = t;
+    m.by_type.push({ declared: r.declared ?? null, received: r.received ?? null, calls: num(r.n) });
+    fmtRows.set(id, m);
+  }
   const quoteRows = q<{ seller_id: number; resource_id: number; quote_atomic: string; n: number }>("buy_denominator_quotes");
   const meta = new Map(q<{ seller_id: number; domain: string; tier: string | null; category: string | null; volume_30d_atomic: string | null; volume_30d_source: string | null; volume_30d_computed_at: number | null; bazaar_listings: number; last_seen_ts: number }>("seller_meta").map((m) => [num(m.seller_id), m]));
   const payTos = new Map<number, string[]>();
@@ -234,6 +247,7 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
       wilson_low: c.lo,
       wilson_high: c.hi,
       failures_by_type: typesOf(ftRows.filter((x) => num(x.seller_id) === id)),
+      format_mismatch: fmtRows.get(id) ?? { calls: 0, last_ts: null, by_type: [] },
       dollar_weighted_rate: d.rate,
       median_quote_usdc: median == null ? null : atomicToUsd(median),
       last_seen: iso(num(m.last_seen_ts)),
@@ -544,6 +558,7 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`usdc_spent\`: USDC settled on-chain for our paid calls, buy and stress; \`usdc_signed\` is the upper bound we authorized (some authorizations were never settled); \`usdc_spent_by_source\` splits both by source.
 - \`outside_denominator\`: rows kept out of the rate (our_error, indeterminate, not_paid, unclassified, unpaid overcharge and its quoted exposure).
 - \`flagged_injection\`: denominator rows flagged for possible prompt injection, not counted as failures.
+- \`format_mismatch_calls\`: denominator rows whose answer was usable but in another format than the seller declared (flag \`format_mismatch\`, from 2026-11-13): counted as delivered, not as failures.
 - \`overcharge_sensitivity\`: headline rate if overcharges below a quote/reference ratio of 1.1 or 2.0 were not counted.
 - \`by_tier\` / \`by_category\`: denominator calls, failures, rate, Wilson interval and dollar-weighted rate per seller tier and category.
 - \`audit_purchases\`: paid audit calls and sellers audited, by source (\`audit_disagreement\`, \`audit_demand\`, \`audit_operator\`). Audit purchases count in each seller's own figures and evidence, never in the headline (\`count_weighted\`, \`dollar_weighted\`, \`failures_by_type\`), \`by_tier\` or \`by_category\`: triggered sampling oversamples contested and popular sellers. Sellers that entered through the user-candidate import stay out of those three until their first scheduled purchase is 7 days old.
@@ -564,6 +579,7 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`category\`: inference, data, scraping, compute or other, from listing keywords.
 - \`denominator_calls\` / \`failures\` / \`failure_rate\` / \`wilson_low\` / \`wilson_high\`: count-weighted rate and 95% Wilson interval.
 - \`failures_by_type\`: failures split into non_delivery, overcharge, duplicate, wrong_goods.
+- \`format_mismatch\`: denominator calls whose answer was usable but in another format than the seller declared, or had no Content-Type header (flag \`format_mismatch\`, from 2026-11-13): \`calls\`, \`last_ts\`, and \`by_type\` as \`{ declared, received, calls }\` (\`declared\` null when the seller declared no type, \`received\` null when there was no header). Counted as delivered: they are in \`denominator_calls\` and never in \`failures\`.
 - \`dollar_weighted_rate\`: share of the seller's denominator USDC that went to failed calls.
 - \`median_quote_usdc\`: median quoted price across the seller's denominator calls (lower median).
 - \`last_seen\`: latest buy call or unpaid probe to any of the seller's resources.

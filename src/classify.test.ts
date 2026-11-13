@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { classify, type ClassificationInput } from "./classify.js";
 import { ALL_FLAGS, ALL_OUTCOMES, INDETERMINATE_POLL_MAX_MS, type ValidatorName } from "./taxonomy.js";
+import { contentType } from "./validators/content_type.js";
+import { makeCtx } from "./validators/test-helpers.js";
 import type { ValidatorResult } from "./validators/types.js";
 
 const pass: ValidatorResult = { status: "pass", evidence: {} };
 const fail: ValidatorResult = { status: "fail", evidence: {}, reason: "test" };
 const skip: ValidatorResult = { status: "skipped", evidence: {}, reason: "no config" };
+/** content_type's verdict on usable content in another format than declared (issue 40). */
+const formatWarning: ValidatorResult = { status: "pass", reason: "content_type_mismatch", evidence: { expected: "application/json", actual: "text/markdown", warning: true } };
 
 function allPass(): Partial<Record<ValidatorName, ValidatorResult>> {
   return {
@@ -248,7 +252,7 @@ describe("classify: one test per flag", () => {
         truncatedByUs: true,
         resolvedLate: true,
         rateLimited: true,
-        ...withValidators({ injection_scan: fail }),
+        ...withValidators({ injection_scan: fail, content_type: formatWarning }),
       }),
     );
     // our_error wins over unpaid_overcharge, so unpaid_overcharge is absent here and overcharged is set.
@@ -374,5 +378,40 @@ describe("classify: bigint-safe amounts", () => {
 describe("classify: schema_missing edge cases", () => {
   it("absent wrong_goods validators (validation never ran) do not set schema_missing", () => {
     expect(classify(base({ responseReceived: false, validators: {} })).flags).toEqual([]);
+  });
+});
+
+describe("classify: usable content in another format than declared (issue 40)", () => {
+  it("is ok with the format_mismatch flag, not non_delivery", () => {
+    const c = classify(base(withValidators({ content_type: formatWarning })));
+    expect(c.outcome).toBe("ok");
+    expect(c.flags).toEqual(["format_mismatch"]);
+    expect(c.reasons).toContain("format_mismatch:content_type_mismatch expected=application/json actual=text/markdown");
+  });
+
+  it("the aiact-api.com row, judged by the real validator: application/json declared, the article sent as text/markdown", async () => {
+    const ct = await contentType.run(
+      makeCtx({ requirements: { mimeType: "application/json" }, response: { headers: { "content-type": "text/markdown; charset=utf-8" }, body: "# Article 5\n\nProhibited AI practices." } }),
+    );
+    const c = classify(base(withValidators({ content_type: ct })));
+    expect(c.outcome).toBe("ok");
+    expect(c.flags).toContain("format_mismatch");
+  });
+
+  it("a 200 HTML page where JSON was declared stays non_delivery, without the flag", async () => {
+    const ct = await contentType.run(makeCtx({ requirements: { mimeType: "application/json" }, response: { headers: { "content-type": "text/html" }, body: "<html>Bad gateway</html>" } }));
+    const c = classify(base(withValidators({ content_type: ct })));
+    expect(c.outcome).toBe("non_delivery");
+    expect(c.flags).not.toContain("format_mismatch");
+  });
+
+  it("empty, truncated or non-2xx answers stay non_delivery and keep the flag as a secondary note", () => {
+    for (const v of [{ non_empty: fail }, { not_truncated: fail }]) {
+      const c = classify(base(withValidators({ content_type: formatWarning, ...v })));
+      expect(c.outcome).toBe("non_delivery");
+      expect(c.flags).toContain("format_mismatch");
+    }
+    const c = classify(base({ responseStatus: 500, ...withValidators({ content_type: formatWarning, http_status: fail }) }));
+    expect(c.outcome).toBe("non_delivery");
   });
 });

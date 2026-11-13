@@ -195,6 +195,7 @@ from later data.
 | `truncated_by_us` | We stopped reading the body at 2 MB; `not_truncated` was evaluated on declared length and framing, not on the full body. |
 | `rate_limited` | Seller returned 429 at some point during this intent (the row itself is `our_error`). |
 | `charged_then_rejected` | A settlement exists and the response was a 4xx client error (other than 402 or 429): the seller took payment before validating or looking up the request. The row is `non_delivery` (money gone, nothing delivered); this flag lets the report show how much of `non_delivery` is sellers that charge before validating, including requests we built from an empty or absent listing example. |
+| `format_mismatch` | The paid answer is usable but in another format than the seller declared (or had no `Content-Type` header): `content_type` passed with a warning (reason `content_type_mismatch` or `missing_content_type`, `evidence.warning: true`). Not a failure (issue 40, 2026-11-13); the export counts these rows per seller (`format_mismatch`). |
 
 ## Validators
 
@@ -213,9 +214,29 @@ returns `pass` by default.** Mapping from validator failures to outcomes:
 |---|---|
 | `http_status` | `non_delivery` |
 | `non_empty` | `non_delivery` |
-| `content_type` | `non_delivery` |
+| `content_type` | `non_delivery` (only an error-shaped answer; see "Format warnings") |
 | `not_truncated` | `non_delivery` |
 | `json_schema` | `wrong_goods` |
 | `entity_matches` | `wrong_goods` |
 | `freshness` | `wrong_goods` |
 | `injection_scan` | `injection` (and always sets `injection_hit`) |
+
+### Format warnings (2026-11-13)
+
+`content_type` compares the response's media type with the one the seller declared in its 402 (`application/json`
+when it declared none), ignoring parameters and case; the JSON family (`application/json`, `text/json`, any `+json`
+except `application/problem+json`) is one format. A mismatch, or a missing header, over a usable body is a
+**warning**, not a failure: status `pass`, `reason` `content_type_mismatch` or `missing_content_type`,
+`evidence.warning: true`, and the classifier sets `format_mismatch`. It stays a `fail` (so `non_delivery`) when the
+answer has the shape of an error rather than of content:
+
+- an HTML page (`text/html`, `application/xhtml+xml`) where HTML was not declared (`content_type_mismatch`), or a
+  body that begins with `<!doctype html` or `<html` under a mismatched or missing header (`html_body`);
+- an undeclared `application/problem+json` document;
+- a body that should be JSON and does not parse (`body_not_json`): a JSON label, or JSON expected and the body
+  begins with `{` or `[`.
+
+Empty, truncated and non-2xx answers fail through `non_empty`, `not_truncated` and `http_status` as before. A
+`format_mismatch` row on a failed call is a secondary note; the outcome is the failure. Rows classified before this
+rule are re-judged with `buy reclassify` (every row keeps its response headers and body, and the quote's
+`mimeType`), which records each change in `reclassifications`.
