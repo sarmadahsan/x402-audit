@@ -83,6 +83,11 @@ describe("content_type: the format rule", () => {
     expect(await run({ declared: "application/json", header: null, body: "<html>error</html>" })).toMatchObject({ status: "fail", reason: "html_body" });
   });
 
+  it("warns on JSON served under an HTML label (JSON mislabelled), and still fails HTML under that label", async () => {
+    expect(await run({ declared: "application/json", header: "text/html; charset=utf-8", body: '{"article":"usable content"}' })).toMatchObject({ status: "pass", reason: "content_type_mismatch", evidence: { actual: "text/html", warning: true } });
+    expect(await run({ declared: "application/json", header: "text/html", body: '{"article":' })).toMatchObject({ status: "fail", reason: "content_type_mismatch" });
+  });
+
   it("passes HTML where HTML or a wildcard covering it was declared", async () => {
     expect(await run({ declared: "text/html", header: "text/html", body: "<html></html>" })).toMatchObject({ status: "pass" });
     expect((await run({ declared: "text/*", header: "text/html", body: "<html></html>" })).reason).toBeUndefined();

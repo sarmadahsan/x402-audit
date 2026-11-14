@@ -230,7 +230,8 @@ except `application/problem+json`) is one format. A mismatch, or a missing heade
 `evidence.warning: true`, and the classifier sets `format_mismatch`. It stays a `fail` (so `non_delivery`) when the
 answer has the shape of an error rather than of content:
 
-- an HTML page (`text/html`, `application/xhtml+xml`) where HTML was not declared (`content_type_mismatch`), or a
+- an HTML page (`text/html`, `application/xhtml+xml`) where HTML was not declared (`content_type_mismatch`; an HTML
+  label over a body that parses as JSON is JSON mislabelled, so a warning), or a
   body that begins with `<!doctype html` or `<html` under a mismatched or missing header (`html_body`);
 - an undeclared `application/problem+json` document;
 - a body that should be JSON and does not parse (`body_not_json`): a JSON label, or JSON expected and the body

@@ -63,7 +63,9 @@ export const contentType: Validator = {
     const actual = mediaType(header);
     const base = { header, actual, expected, expected_source };
     if (!matches(expected, actual) && !(jsonFamily(expected) && jsonFamily(actual))) {
-      if ((isHtmlType(actual) && !htmlExpected(expected)) || actual === PROBLEM_JSON) {
+      if (actual === PROBLEM_JSON) return { status: "fail", reason: "content_type_mismatch", evidence: base };
+      // An HTML label over a body that parses as JSON is JSON mislabelled, so usable; anything else under it is a page.
+      if (isHtmlType(actual) && !htmlExpected(expected) && !(looksJson(h) && parseJsonBody(body).ok)) {
         return { status: "fail", reason: "content_type_mismatch", evidence: base };
       }
       if (!htmlExpected(expected) && looksHtml(h)) return { status: "fail", reason: "html_body", evidence: { ...base, bytes } };
