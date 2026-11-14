@@ -107,6 +107,12 @@ describe("content_type: the format rule", () => {
     expect(await run({ declared: "application/json", header: null, body: '{"a":' })).toMatchObject({ status: "fail", reason: "body_not_json" });
   });
 
+  it("looks past any amount of leading whitespace for an HTML page or broken JSON", async () => {
+    const pad = " \n".repeat(300);
+    expect(await run({ declared: "application/json", header: "text/plain", body: `${pad}<html>Bad gateway</html>` })).toMatchObject({ status: "fail", reason: "html_body" });
+    expect(await run({ declared: "application/json", header: "text/plain", body: `${pad}{"a":` })).toMatchObject({ status: "fail", reason: "body_not_json" });
+  });
+
   it("still fails a JSON-labelled body that does not parse", async () => {
     expect(await run({ declared: "application/json", header: "application/json", body: "plain words" })).toMatchObject({ status: "fail", reason: "body_not_json" });
   });

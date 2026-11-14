@@ -384,7 +384,7 @@ export const QUERIES = {
 
   /**
    * Usable answers in another format than declared (flag format_mismatch, issue 40) among a seller's paid-denominator
-   * rows, by declared and received media type (declared is null when the seller declared none). Not failures.
+   * rows that did not fail for another reason (a flagged row also overcharged or truncated counts only as a failure), by declared and received media type (declared is null when the seller declared none). Not failures.
    */
   buy_seller_format_mismatch: `${SELLER_CTE}
     SELECT b.seller_id AS seller_id,
@@ -392,11 +392,11 @@ export const QUERIES = {
       CASE WHEN json_valid(v.evidence_json) THEN json_extract(v.evidence_json, '$.actual') END AS received,
       COUNT(*) AS n, MAX(c.ts) AS last_ts
     FROM b JOIN calls c ON c.id = b.id LEFT JOIN validator_results v ON v.call_id = b.id AND v.validator = '${VALIDATORS.CONTENT_TYPE}'
-    WHERE in_denom = 1 AND ${hasFlag("b.flags", FLAGS.FORMAT_MISMATCH)}
+    WHERE in_denom = 1 AND failed = 0 AND ${hasFlag("b.flags", FLAGS.FORMAT_MISMATCH)}
     GROUP BY 1, 2, 3 ORDER BY 1, n DESC, 2, 3`,
   /** Headline paid-denominator rows with the format_mismatch flag (summary.json `format_mismatch_calls`). */
   headline_format_mismatch: `${BUY_CTE}
-    SELECT COUNT(*) AS n FROM b WHERE in_denom = 1 AND ${hasFlag("b.flags", FLAGS.FORMAT_MISMATCH)}`,
+    SELECT COUNT(*) AS n FROM b WHERE in_denom = 1 AND failed = 0 AND ${hasFlag("b.flags", FLAGS.FORMAT_MISMATCH)}`,
 
   /** Paid audit purchases by source, and per seller (the export's "includes N audit purchases"). */
   audit_purchases_by_source: `SELECT c.source AS source, COUNT(*) AS paid_calls, COUNT(DISTINCT c.seller_id) AS sellers

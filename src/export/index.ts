@@ -558,7 +558,7 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`usdc_spent\`: USDC settled on-chain for our paid calls, buy and stress; \`usdc_signed\` is the upper bound we authorized (some authorizations were never settled); \`usdc_spent_by_source\` splits both by source.
 - \`outside_denominator\`: rows kept out of the rate (our_error, indeterminate, not_paid, unclassified, unpaid overcharge and its quoted exposure).
 - \`flagged_injection\`: denominator rows flagged for possible prompt injection, not counted as failures.
-- \`format_mismatch_calls\`: denominator rows whose answer was usable but in another format than the seller declared (flag \`format_mismatch\`, from 2026-11-13): counted as delivered, not as failures.
+- \`format_mismatch_calls\`: denominator rows whose answer was usable but in another format than the seller declared (flag \`format_mismatch\`, from 2026-11-13) that did not fail for another reason: counted as delivered. A flagged row that failed otherwise (overcharge, truncated) counts only in the failures, so the two never overlap.
 - \`overcharge_sensitivity\`: headline rate if overcharges below a quote/reference ratio of 1.1 or 2.0 were not counted.
 - \`by_tier\` / \`by_category\`: denominator calls, failures, rate, Wilson interval and dollar-weighted rate per seller tier and category.
 - \`audit_purchases\`: paid audit calls and sellers audited, by source (\`audit_disagreement\`, \`audit_demand\`, \`audit_operator\`). Audit purchases count in each seller's own figures and evidence, never in the headline (\`count_weighted\`, \`dollar_weighted\`, \`failures_by_type\`), \`by_tier\` or \`by_category\`: triggered sampling oversamples contested and popular sellers. Sellers that entered through the user-candidate import stay out of those three until their first scheduled purchase is 7 days old.
@@ -579,7 +579,7 @@ All files carry \`generated_at\`, \`network\` (CAIP-2) and \`git_commit\` (harne
 - \`category\`: inference, data, scraping, compute or other, from listing keywords.
 - \`denominator_calls\` / \`failures\` / \`failure_rate\` / \`wilson_low\` / \`wilson_high\`: count-weighted rate and 95% Wilson interval.
 - \`failures_by_type\`: failures split into non_delivery, overcharge, duplicate, wrong_goods.
-- \`format_mismatch\`: denominator calls whose answer was usable but in another format than the seller declared, or had no Content-Type header (flag \`format_mismatch\`, from 2026-11-13): \`calls\`, \`last_ts\`, and \`by_type\` as \`{ declared, received, calls }\` (\`declared\` null when the seller declared no type, \`received\` null when there was no header). Counted as delivered: they are in \`denominator_calls\` and never in \`failures\`.
+- \`format_mismatch\`: denominator calls whose answer was usable but in another format than the seller declared, or had no Content-Type header (flag \`format_mismatch\`, from 2026-11-13): \`calls\`, \`last_ts\`, and \`by_type\` as \`{ declared, received, calls }\` (\`declared\` null when the seller declared no type, \`received\` null when there was no header). Only rows that did not fail for another reason (a flagged row that was also overcharged or truncated counts only in \`failures\`), so these are in \`denominator_calls\` and never in \`failures\`.
 - \`dollar_weighted_rate\`: share of the seller's denominator USDC that went to failed calls.
 - \`median_quote_usdc\`: median quoted price across the seller's denominator calls (lower median).
 - \`last_seen\`: latest buy call or unpaid probe to any of the seller's resources.
