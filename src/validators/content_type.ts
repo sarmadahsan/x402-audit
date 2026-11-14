@@ -26,9 +26,18 @@ const htmlExpected = (mt: string) => isHtmlType(mt) || mt === "*/*" || mt === "t
 /** The JSON family as one format: application/json, text/json and +json types, except the error-document type. */
 const jsonFamily = (mt: string) => isJsonMediaType(mt) && mt !== PROBLEM_JSON;
 
-/** The body's first 256 characters after the BOM and any leading whitespace, lower-cased. */
+/**
+ * The body's first 256 characters after the BOM, leading whitespace and any leading HTML comments, lower-cased. An
+ * unterminated leading comment reads as HTML: it is markup either way.
+ */
 function head(body: Uint8Array): string {
-  return decodeBody(body).replace(/^\uFEFF/, "").trimStart().slice(0, 256).toLowerCase();
+  let t = decodeBody(body).replace(/^\uFEFF/, "").trimStart();
+  while (t.startsWith("<!--")) {
+    const end = t.indexOf("-->");
+    if (end < 0) return "<html";
+    t = t.slice(end + 3).trimStart();
+  }
+  return t.slice(0, 256).toLowerCase();
 }
 const looksHtml = (h: string) => h.startsWith("<!doctype html") || h.startsWith("<html");
 const looksJson = (h: string) => h.startsWith("{") || h.startsWith("[");

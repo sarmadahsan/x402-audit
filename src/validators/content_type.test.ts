@@ -88,6 +88,12 @@ describe("content_type: the format rule", () => {
     expect(await run({ declared: "application/json", header: "text/html", body: '{"article":' })).toMatchObject({ status: "fail", reason: "content_type_mismatch" });
   });
 
+  it("sees an HTML page behind leading comments, and keeps JSON behind none", async () => {
+    expect(await run({ declared: "application/json", header: "text/plain", body: "<!-- gateway -->\n<html>Bad gateway</html>" })).toMatchObject({ status: "fail", reason: "html_body" });
+    expect(await run({ declared: "application/json", header: null, body: "<!-- a --><!-- b --> <!DOCTYPE html><html></html>" })).toMatchObject({ status: "fail", reason: "html_body" });
+    expect(await run({ declared: "application/json", header: "text/plain", body: "<!-- never closed" })).toMatchObject({ status: "fail", reason: "html_body" });
+  });
+
   it("passes HTML where HTML or a wildcard covering it was declared", async () => {
     expect(await run({ declared: "text/html", header: "text/html", body: "<html></html>" })).toMatchObject({ status: "pass" });
     expect((await run({ declared: "text/*", header: "text/html", body: "<html></html>" })).reason).toBeUndefined();
