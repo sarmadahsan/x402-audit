@@ -17,6 +17,7 @@ import {
   type ReferenceSource,
   type ValidatorName,
 } from "./taxonomy.js";
+import { isFormatWarning } from "./validators/content_type.js";
 import type { ValidatorResult } from "./validators/types.js";
 
 export interface ClassificationInput {
@@ -125,6 +126,13 @@ export function classify(input: ClassificationInput): Classification {
   if (input.settlementCount >= 1 && input.responseStatus !== undefined && input.responseStatus >= 400 && input.responseStatus < 500 && ![402, 429].includes(input.responseStatus)) {
     flags.add(FLAGS.CHARGED_THEN_REJECTED);
     reasons.push(`charged_then_rejected:status=${input.responseStatus}`);
+  }
+
+  // Usable content in another format than declared (issue 40): content_type passed with a warning. Never a failure.
+  const ct = input.validators?.[VALIDATORS.CONTENT_TYPE];
+  if (isFormatWarning(ct)) {
+    flags.add(FLAGS.FORMAT_MISMATCH);
+    reasons.push(`format_mismatch:${ct.reason} expected=${String(ct.evidence.expected)} actual=${String(ct.evidence.actual)}`);
   }
 
   if (failed(input, VALIDATORS.INJECTION_SCAN)) {
