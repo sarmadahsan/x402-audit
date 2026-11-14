@@ -243,7 +243,7 @@ buy_args() {
   local seed="$1" since="$2"
   effective_caps
   echo --seed "$seed" --no-persist-tiers --budget-usd "$RUN_USD" --run-usd "$RUN_USD" --per-call-usd "$LOOP_PER_CALL_USD" \
-    --runs-per-day "$(runs_per_day)" --day-budget-usd "$DAILY_USD" --resume-since "$since" --concurrency "$LOOP_BUY_CONCURRENCY" --expensive --candidates \
+    --runs-per-day "$(runs_per_day)" --day-budget-usd "$DAILY_USD" --resume-since "$since" --concurrency "$LOOP_BUY_CONCURRENCY" --expensive --candidates --retest \
     --allocation coverage
 }
 
