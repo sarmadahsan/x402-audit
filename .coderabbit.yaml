@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Spend reviews deliberately. CodeRabbit's included allowance is rate limited
+# per developer, and every pushed commit would otherwise start a review.
+#
+# - Draft PRs are not reviewed. Marking one ready for review starts one review.
+# - A non-draft PR gets one automatic review when it is opened. Pushes after
+#   that are NOT reviewed automatically.
+#
+# To get a review (or a re-review of later pushes), comment on the PR:
+#   @coderabbitai review
+#
+# Merge rule: the CodeRabbit check must pass on the final commit. After any
+# push that follows the last review, comment `@coderabbitai review` and wait
+# for it; no review starts by itself, so waiting without the comment never ends.
+reviews:
+  auto_review:
+    drafts: false
+    auto_incremental_review: false
