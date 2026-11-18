@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { erc20Abi, formatUnits } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { buildBuyPlan, renderPlan, assertPlanWithinCaps, planToJSON, type BuyPlan, type PlanAllocation } from "../buy/plan.js";
+import { buildBuyPlan, renderPlan, assertPlanWithinCaps, deductResumed, planToJSON, type BuyPlan, type PlanAllocation } from "../buy/plan.js";
 import { runBuy } from "../buy/run.js";
 import { loadServiceConfigs, serviceLookup } from "../buy/services.js";
 import { blockAtTimestamp, makeChainClient, usdcFor } from "../chain/client.js";
@@ -11,6 +11,7 @@ import { breadthAllocations, candidateAllocations, expensiveAllocations } from "
 import { fetchDemand } from "../audit/triggers.js";
 import { SELLER_SHARE_OF_RUN, buildCoveragePlan, planPrice, projectCoverage, renderCoverage, resourceBackoffs, rowsFromAllocations, sellerUniverse, writeRunAllocations, type AllocationRow } from "../buy/allocate.js";
 import { CALL_SOURCES } from "../taxonomy.js";
+import { retestAllocations, retestRunBudget } from "../buy/retest.js";
 import type { RunLimits } from "../buy/guard.js";
 import { openDb, type Db } from "../db/index.js";
 import { log } from "../log.js";
@@ -186,11 +187,12 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
     .option("--day-budget-usd <usd>", "scheduled-buy budget for the UTC day over source buy (LOOP_DAILY_USD); MAX_PER_DAY_USD stays the all-sources backstop", parseFloat)
     .option("--expensive", "add config/expensive-sellers.yaml: one call per listed seller under its weekly frequency, at its own cap clamped to MAX_PER_CALL_USD", false)
     .option("--candidates", "add one call per queued user candidate (only when CANDIDATE_BUYS_ENABLED=1; otherwise they are listed and skipped)", false)
+    .option("--retest", "with --allocation coverage: add the re-test lane for sellers our data rates avoid (src/buy/retest.ts), RETEST_SHARE of the run and under RETEST_WEEKLY_USD; buys only when RETEST_ENABLED=1, otherwise the lane is listed and skipped", false)
     .option("--allocation <mode>", "stratified (the study design) or coverage (scheduled runs: sellers below 30 calls first, then maintenance)", "stratified")
     .option("--breadth", "the weekly breadth run instead of a scheduled run: one call per seller with no resource under --per-call-usd, at BREADTH_MAX_PER_CALL_USD, under BREADTH_WEEKLY_USD; buys only when BREADTH_RUN_ENABLED=1", false)
     .option("--slot <key>", "the scheduled run slot this run is for, e.g. 2026-10-30T00 (recorded in the row's args)")
     .option("--gate-file <path>", "the marker `pnpm gate` wrote before this run (data/.gate.json): its test outcome is recorded in the row's notes as `gate`; advisory, it never stops the run")
-    .action(async function (this: Command, o: { slot?: string; gateFile?: string; seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean; perCallUsd?: number; runUsd?: number; runsPerDay?: number; dayBudgetUsd?: number; expensive: boolean; candidates: boolean; allocation: string; breadth: boolean }) {
+    .action(async function (this: Command, o: { slot?: string; gateFile?: string; seed?: number; maxCalls?: number; confirmMinutes: number; confirmIntervalSeconds: number; resumeSince?: string; concurrency: number; budgetUsd?: number; persistTiers: boolean; perCallUsd?: number; runUsd?: number; runsPerDay?: number; dayBudgetUsd?: number; expensive: boolean; candidates: boolean; retest: boolean; allocation: string; breadth: boolean }) {
       const g = globals(this);
       const gate = moneyGate(g, requireLive);
       const env = loadEnv();
@@ -238,6 +240,34 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         } else if (lane.allocations.length) laneNotes.push(`candidate lane: ${lane.allocations.length} queued candidate(s) not bought, CANDIDATE_BUYS_ENABLED is not 1 (${lane.allocations.map((a) => a.url).join(", ")}).`);
         for (const d of lane.deferred) laneNotes.push(`candidate lane: ${d.url} left queued, ${d.reason}.`);
       }
+      // The re-test lane (scheduled coverage runs only): planned before coverage, from the same buyable universe, and the
+      // sellers it buys are left out of this run's coverage lanes so one seller is not bought twice for two reasons.
+      const retestSellers = new Set<number>();
+      let demand: Map<string, number> | undefined;
+      if (o.retest && !o.breadth && o.allocation === "coverage") {
+        demand = await demandMap(env.PAIDFOR_INDEX_URL);
+        const runBudgetForLane = usdToAtomic(o.budgetUsd ?? files.sample.max_total_usd);
+        const sellerCap = (runBudgetForLane * BigInt(Math.round(SELLER_SHARE_OF_RUN * 100))) / 100n;
+        const universe = sellerUniverse(db, { network: g.network, capAtomic: caps.perCallAtomic, now: runStart, exclude: files.exclude, backoffs: resourceBackoffs(db, runStart) });
+        const lane = retestAllocations(db, {
+          network: g.network,
+          now: runStart,
+          budgetAtomic: retestRunBudget(runBudgetForLane, env.RETEST_SHARE, lanes),
+          weeklyBudgetAtomic: usdToAtomic(env.RETEST_WEEKLY_USD),
+          sellerCapAtomic: sellerCap,
+          perCallCapAtomic: caps.perCallAtomic,
+          universe,
+          skipDomains: ownCapDomains,
+          demand,
+        });
+        const names = lane.allocations.map((a) => `${a.sellerDomain} x${a.calls}`).join(", ");
+        if (env.RETEST_ENABLED === "1") {
+          lanes.push(...lane.allocations);
+          for (const a of lane.allocations) retestSellers.add(a.sellerId);
+          if (lane.allocations.length) laneNotes.push(`retest lane: ${lane.allocations.reduce((n, a) => n + a.calls, 0)} call(s) added (${names}); ${atomicToUsd(lane.weeklyRemainingAtomic)} USDC of RETEST_WEEKLY_USD left before this run.`);
+        } else if (lane.allocations.length) laneNotes.push(`retest lane: ${lane.allocations.length} allocation(s) not bought, RETEST_ENABLED is not 1 (${names}).`);
+        for (const s of lane.skipped) laneNotes.push(`retest lane: ${s.domain} (${s.phase}) not bought, ${s.reason}.`);
+      }
       let plan: BuyPlan;
       if (o.breadth) {
         const breadthCap = usdToAtomic(Math.min(env.BREADTH_MAX_PER_CALL_USD, env.MAX_PER_CALL_USD));
@@ -254,8 +284,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         for (const a of lanes) a.planAtomic = planPrice(a.priceAtomic);
         const laneSpend = lanes.reduce((a, x) => a + (x.planAtomic ?? x.priceAtomic) * BigInt(x.calls), 0n);
         const budget = (runBudget * 95n) / 100n - laneSpend;
-        const demand = await demandMap(env.PAIDFOR_INDEX_URL);
-        const cov = buildCoveragePlan(db, { network: g.network, caps, budgetAtomic: budget > 0n ? budget : 0n, runBudgetAtomic: runBudget, coverageShare: env.COVERAGE_SHARE, seed: o.seed ?? files.sample.seed, now: runStart, exclude: files.exclude, inflowFloorUsd: env.MAINTENANCE_INFLOW_FLOOR_USD, ownCapDomains, demand, tiersSince: Date.parse(env.COVERAGE_TIERS_SINCE), ...(live ? { recordTooExpensive: true } : {}) });
+        demand ??= await demandMap(env.PAIDFOR_INDEX_URL);
+        const cov = buildCoveragePlan(db, { skipSellerIds: retestSellers, network: g.network, caps, budgetAtomic: budget > 0n ? budget : 0n, runBudgetAtomic: runBudget, coverageShare: env.COVERAGE_SHARE, seed: o.seed ?? files.sample.seed, now: runStart, exclude: files.exclude, inflowFloorUsd: env.MAINTENANCE_INFLOW_FLOOR_USD, ownCapDomains, demand, tiersSince: Date.parse(env.COVERAGE_TIERS_SINCE), ...(live ? { recordTooExpensive: true } : {}) });
         for (const b of cov.backoffs) log.info(`back-off: resource ${b.resourceId} ${b.url} (${b.outcomes.join(", ")}) until ${new Date(b.until).toISOString()}`);
         backoffRows = cov.rows.filter((r) => r.pool === "backoff");
         coverageText = renderCoverage(cov, { lanes, runBudgetAtomic: runBudget });
@@ -275,7 +305,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         // Trim one call at a time from the largest stratified allocations until the plan fits the budget; the
         // expensive and candidate lanes keep their single call.
         while (plan.totalSpendAtomic > plan.sampleMaxTotalAtomic) {
-          const a = [...plan.allocations].filter((x) => x.calls > 0 && x.tier !== "expensive" && x.tier !== "candidate").sort((x, y) => y.calls - x.calls || (y.priceAtomic > x.priceAtomic ? 1 : -1))[0];
+          const a = [...plan.allocations].filter((x) => x.calls > 0 && x.tier !== "expensive" && x.tier !== "candidate" && x.tier !== "retest").sort((x, y) => y.calls - x.calls || (y.priceAtomic > x.priceAtomic ? 1 : -1))[0];
           if (!a) break;
           a.calls -= 1;
           plan.totalCalls -= 1;
@@ -302,17 +332,20 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
         plan.allocations = plan.allocations.map((a) => ({ ...a, calls: counts.get(a.resourceId)! })).filter((a) => a.calls > 0);
         plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
       }
-      // Resume: calls already made for a resource (any earlier live run, any outcome) count against its allocation,
-      // so a halted or crashed run can be restarted without resampling the first resources.
+      // Resume: calls already made for a resource count against its allocation, so a halted or crashed run can be
+      // restarted without resampling the first resources. Scheduled buys count every earlier buy call unless
+      // --resume-since narrows it; re-test allocations are new each run, so only re-test calls made since an explicit
+      // --resume-since (the restarted run) count against them (deductResumed).
       if (live && !o.breadth) {
         const sinceMs = o.resumeSince ? Date.parse(o.resumeSince) : 0;
         if (o.resumeSince && !Number.isFinite(sinceMs)) throw new Error(`--resume-since is not a date: ${o.resumeSince}`);
+        const sources = o.resumeSince ? [CALL_SOURCES.BUY, CALL_SOURCES.RETEST] : [CALL_SOURCES.BUY];
         const done = new Map(
           // our_error rows are excluded from the denominator, so they do not consume the resource's allocation.
-          (db.prepare("SELECT resource_id, COUNT(*) n FROM calls WHERE source = 'buy' AND outcome != 'our_error' AND ts >= ? GROUP BY resource_id").all(sinceMs) as { resource_id: number; n: number }[]).map((r) => [r.resource_id, r.n]),
+          (db.prepare(`SELECT source, resource_id, COUNT(*) n FROM calls WHERE source IN (${sources.map(() => "?").join(", ")}) AND outcome != 'our_error' AND ts >= ? GROUP BY source, resource_id`).all(...sources, sinceMs) as { source: string; resource_id: number; n: number }[]).map((r) => [`${r.source}:${r.resource_id}`, r.n]),
         );
         const before = plan.totalCalls;
-        plan.allocations = plan.allocations.map((a) => ({ ...a, calls: Math.max(0, a.calls - (done.get(a.resourceId) ?? 0)) })).filter((a) => a.calls > 0);
+        plan.allocations = deductResumed(plan.allocations, done);
         plan.totalCalls = plan.allocations.reduce((s, a) => s + a.calls, 0);
         if (plan.totalCalls !== before) log.info(`resume: ${before - plan.totalCalls} call(s) already made in earlier runs are subtracted from the plan`);
       }
@@ -329,7 +362,7 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
       // The payer refuses anything above the largest cap any allocation in this plan carries (never above MAX_PER_CALL_USD).
       const payerCap = plan.allocations.reduce((m, a) => (a.perCallCapAtomic !== undefined && a.perCallCapAtomic > m ? a.perCallCapAtomic : m), caps.perCallAtomic);
       const payers = live ? payersFromEnv(env, g.network, payerCap) : ephemeralPayers(g.network, payerCap);
-      const runLimits: RunLimits | undefined = o.breadth
+      const baseLimits: RunLimits | undefined = o.breadth
         ? { since: runStart, source: CALL_SOURCES.BREADTH, perRunAtomic: breadthRemaining ?? 0n }
         : o.runUsd !== undefined || o.runsPerDay !== undefined || o.dayBudgetUsd !== undefined
           ? {
@@ -343,6 +376,8 @@ export function registerBuy(program: Command, globals: (cmd: Command) => MoneyGl
               ...(o.dayBudgetUsd !== undefined ? { dayBudgetAtomic: usdToAtomic(o.dayBudgetUsd) } : {}),
             }
           : undefined;
+      // The re-test lane's weekly budget is checked again at every signature, at the real quote.
+      const runLimits: RunLimits | undefined = retestSellers.size ? { ...(baseLimits ?? { since: runStart }), retestWeeklyAtomic: usdToAtomic(env.RETEST_WEEKLY_USD) } : baseLimits;
       const client = makeChainClient({ rpcUrl: rpcFor(env, g.network), network: g.network });
       // Receipts for seller-reported tx hashes come from the canonical-head RPC (BASE_RPC_URL); logs from the logs RPC.
       const receiptClient = g.network === MAINNET && env.BASE_RPC_URL !== env.BASE_LOGS_RPC_URL ? makeChainClient({ rpcUrl: env.BASE_RPC_URL, network: g.network }) : undefined;

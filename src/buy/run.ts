@@ -150,7 +150,7 @@ function interleave(allocs: PlanAllocation[]): { slots: Slot[]; sellerOrder: num
     if (l) l.push(a);
     else bySeller.set(a.sellerId, [a]);
   }
-  const planOrder = allocs.some((a) => a.tier === "finish" || a.tier === "admit" || a.tier === "maintenance" || a.tier === "breadth");
+  const planOrder = allocs.some((a) => a.tier === "finish" || a.tier === "admit" || a.tier === "maintenance" || a.tier === "breadth" || a.tier === "retest");
   const sellerOrder = planOrder ? [...bySeller.keys()] : [...bySeller.keys()].sort((a, b) => a - b);
   for (const l of bySeller.values()) l.sort((a, b) => a.resourceId - b.resourceId);
   const slots: Slot[] = [];
@@ -167,6 +167,11 @@ function priceEventFlag(db: Db, resourceId: number, kind: string, now: number): 
   return Boolean(db.prepare(`SELECT 1 FROM price_events WHERE resource_id = ? AND kind = ? AND ts >= ? LIMIT 1`).get(resourceId, kind, now - 7 * 24 * 3600_000));
 }
 
+/**
+ * Execute a buy plan: interleave sellers, check every cap before quoting and again before signing, pay through the
+ * guarded payer, classify each call and record it. Each allocation may carry its own source (the re-test lane);
+ * a re-test weekly breach closes only the re-test allocations, a seller cap parks the seller, any other breach halts.
+ */
 export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
   if (o.payers.length === 0) throw new Error("runBuy: at least one payer is required");
   if (!o.dryRun && !o.settlementLookup && !o.settlementLookupFactory) throw new Error("runBuy: settlementLookup or settlementLookupFactory is required");
@@ -229,6 +234,17 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
     const action = reason === "cap_per_seller_per_run" ? "seller parked for the rest of this run" : "seller parked until next UTC day";
     if (!o.dryRun) insertHalt(db, runId, reason, { ...(details as object), action, until }, realNow());
     L.warn(`seller ${sellerId} reached its ${reason === "cap_per_seller_per_run" ? "per-run" : "daily"} cap; parked`, details);
+  };
+  /** The re-test lane's weekly budget is spent: drop its remaining calls, the rest of the run goes on. */
+  const closeRetest = (details: unknown, stage: string, notMade = 0) => {
+    // notMade: the call that met the cap, already taken off its slot but never quoted.
+    let dropped = notMade;
+    for (const s of slots) if (s.alloc.source === CALL_SOURCES.RETEST && s.remaining > 0) {
+      dropped += s.remaining;
+      s.remaining = 0;
+    }
+    if (!o.dryRun) insertHalt(db, runId, "cap_retest_weekly", { ...(details as object), stage, action: "re-test lane closed for this run", dropped }, realNow());
+    L.warn(`re-test weekly budget reached; ${dropped} re-test call(s) dropped, the run goes on`, details);
   };
   const isPark = (r: CapBreach["reason"]) => r === "cap_per_seller_per_day" || r === "cap_per_seller_per_run";
   const source = o.source ?? CALL_SOURCES.BUY;
@@ -329,9 +345,13 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
       // Cap check before anything is quoted, using the expected price. An allocation may carry its own per-call cap
       // (config/expensive-sellers.yaml); every other cap is unchanged.
       const caps = a.perCallCapAtomic !== undefined ? { ...o.caps, perCallAtomic: a.perCallCapAtomic } : o.caps;
-      const capInput = { caps, sellerId: a.sellerId, scope: capScope, ...(o.runLimits ? { run: o.runLimits } : {}) };
+      const capInput = { caps, sellerId: a.sellerId, scope: capScope, source: a.source ?? source, ...(o.runLimits ? { run: o.runLimits } : {}) };
       const expected = BigInt(reference?.amountAtomic ?? a.priceAtomic.toString());
       const pre = checkCaps(db, { ...capInput, amountAtomic: expected, now: realNow() });
+      if (pre?.reason === "cap_retest_weekly") {
+        closeRetest({ ...pre.details, resourceId: a.resourceId }, "before_quote", 1);
+        continue;
+      }
       if (pre && isPark(pre.reason)) {
         parkSeller(a.sellerId, { ...pre.details, resourceId: a.resourceId, stage: "before_quote" }, pre.reason as "cap_per_seller_per_day");
         continue;
@@ -353,7 +373,7 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
         db,
         payer: guarded.payer,
         runId,
-        source,
+        source: a.source ?? source,
         resource: { id: a.resourceId, sellerId: a.sellerId, url: urlWithExampleQuery(a.url, a.inputJson ?? null), method: a.method, ...requestBodyFor(a.method, a.inputJson ?? null) },
         ...(reference ? { reference } : {}),
         perCallCapAtomic: caps.perCallAtomic,
@@ -391,7 +411,8 @@ export async function runBuy(db: Db, o: RunBuyOptions): Promise<BuyStats> {
 
       if (breach) {
         const b = breach as CapBreach;
-        if (isPark(b.reason)) {
+        if (b.reason === "cap_retest_weekly") closeRetest({ ...b.details, resourceId: a.resourceId, callId: out.callId }, "before_sign");
+        else if (isPark(b.reason)) {
           parkSeller(a.sellerId, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" }, b.reason as "cap_per_seller_per_day");
         } else {
           halt(b.reason, { ...b.details, resourceId: a.resourceId, callId: out.callId, stage: "before_sign" });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { openDb, type Db } from "../db/index.js";
 import { usdToAtomic, type Caps, type SampleConfig } from "../config/index.js";
-import { apportion, assertPlanWithinCaps, buildBuyPlan, renderPlan, seededRandom } from "./plan.js";
+import { apportion, assertPlanWithinCaps, buildBuyPlan, deductResumed, type PlanAllocation, renderPlan, seededRandom } from "./plan.js";
 import { checkCaps, spentAtomic, utcDayStart } from "./guard.js";
 import { modalAtomic, referencePriceFor } from "./reference.js";
 
@@ -146,5 +146,26 @@ describe("reference price and spend accounting", () => {
     expect(c({ totalAtomic: 239999n })).toBe("cap_total");
     expect(c({ stressTotalAtomic: 59999n }, 10000n, "stress")).toBe("cap_stress_total");
     expect(c({}, caps.perCallAtomic + 1n)).toBe("cap_per_call");
+  });
+});
+
+describe("deductResumed", () => {
+  const alloc = (resourceId: number, calls: number, tier: PlanAllocation["tier"] = "core"): PlanAllocation =>
+    ({ resourceId, sellerId: resourceId, sellerDomain: `s${resourceId}.test`, url: `https://s${resourceId}.test/`, method: "GET", calls, priceAtomic: 1000n, tier } as unknown as PlanAllocation);
+
+  it("leaves a new re-test sentinel alone when only old buy calls exist on its resource (no --resume-since)", () => {
+    const out = deductResumed([alloc(1, 1, "retest")], new Map([["buy:1", 12]]));
+    expect(out.map((a) => a.calls)).toEqual([1]);
+  });
+  it("subtracts re-test calls from a re-test allocation when the caller counted them (an explicit resume)", () => {
+    expect(deductResumed([alloc(1, 4, "retest")], new Map([["retest:1", 3]])).map((a) => a.calls)).toEqual([1]);
+    expect(deductResumed([alloc(1, 1, "retest")], new Map([["retest:1", 1]]))).toEqual([]);
+  });
+  it("subtracts buy calls from other lanes, never re-test calls", () => {
+    expect(deductResumed([alloc(1, 3)], new Map([["buy:1", 2], ["retest:1", 5]])).map((a) => a.calls)).toEqual([1]);
+  });
+  it("uses each earlier call once across allocations on the same resource", () => {
+    const out = deductResumed([alloc(1, 2), alloc(1, 2, "candidate")], new Map([["buy:1", 3]]));
+    expect(out.map((a) => [a.tier, a.calls])).toEqual([["candidate", 1]]);
   });
 });
