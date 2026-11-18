@@ -6,7 +6,10 @@ export interface ValidatorResult {
   status: ValidatorStatus;
   /** Machine-readable evidence; stored verbatim in validator_results.evidence_json. */
   evidence: Record<string, unknown>;
-  /** Required when status is "fail" or "skipped". */
+  /**
+   * Required when status is "fail" or "skipped". On a "pass" it names a warning (`evidence.warning` is true): the
+   * content_type validator passes a usable body in another format than declared this way (issue 40).
+   */
   reason?: string;
 }
 

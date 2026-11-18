@@ -61,6 +61,7 @@ export const FLAGS = {
   TRUNCATED_BY_US: "truncated_by_us",
   RATE_LIMITED: "rate_limited",
   CHARGED_THEN_REJECTED: "charged_then_rejected",
+  FORMAT_MISMATCH: "format_mismatch",
 } as const;
 export type Flag = (typeof FLAGS)[keyof typeof FLAGS];
 export const ALL_FLAGS: readonly Flag[] = Object.values(FLAGS);

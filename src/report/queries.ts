@@ -21,7 +21,7 @@
  *   value. Dust (below the dust floor) is removed in JS before the mode is taken.
  */
 import type { Db } from "../db/index.js";
-import { AUDIT_SOURCES, FLAGS, HEADLINE_FAILURE_OUTCOMES, HEADLINE_SOURCES, MEASURED_SOURCES, OUTCOMES, PAID_DENOMINATOR_OUTCOMES } from "../taxonomy.js";
+import { AUDIT_SOURCES, FLAGS, HEADLINE_FAILURE_OUTCOMES, HEADLINE_SOURCES, MEASURED_SOURCES, OUTCOMES, PAID_DENOMINATOR_OUTCOMES, VALIDATORS } from "../taxonomy.js";
 
 const sqlList = (xs: Iterable<string>): string => [...xs].map((x) => `'${x.replace(/'/g, "''")}'`).join(", ");
 const DENOM_LIST = sqlList(PAID_DENOMINATOR_OUTCOMES);
@@ -381,6 +381,22 @@ export const QUERIES = {
       FROM b JOIN calls c ON c.id = b.id WHERE in_denom = 1
     ) x WHERE x.rn <= ${SELLER_WINDOW_CALLS}
     ORDER BY x.seller_id, x.ts DESC`,
+
+  /**
+   * Usable answers in another format than declared (flag format_mismatch, issue 40) among a seller's paid-denominator
+   * rows that did not fail for another reason (a flagged row also overcharged or truncated counts only as a failure), by declared and received media type (declared is null when the seller declared none). Not failures.
+   */
+  buy_seller_format_mismatch: `${SELLER_CTE}
+    SELECT b.seller_id AS seller_id,
+      CASE WHEN json_valid(v.evidence_json) AND json_extract(v.evidence_json, '$.expected_source') = 'requirements' THEN json_extract(v.evidence_json, '$.expected') END AS declared,
+      CASE WHEN json_valid(v.evidence_json) THEN json_extract(v.evidence_json, '$.actual') END AS received,
+      COUNT(*) AS n, MAX(c.ts) AS last_ts
+    FROM b JOIN calls c ON c.id = b.id LEFT JOIN validator_results v ON v.call_id = b.id AND v.validator = '${VALIDATORS.CONTENT_TYPE}'
+    WHERE in_denom = 1 AND failed = 0 AND ${hasFlag("b.flags", FLAGS.FORMAT_MISMATCH)}
+    GROUP BY 1, 2, 3 ORDER BY 1, n DESC, 2, 3`,
+  /** Headline paid-denominator rows with the format_mismatch flag (summary.json `format_mismatch_calls`). */
+  headline_format_mismatch: `${BUY_CTE}
+    SELECT COUNT(*) AS n FROM b WHERE in_denom = 1 AND failed = 0 AND ${hasFlag("b.flags", FLAGS.FORMAT_MISMATCH)}`,
 
   /** Paid audit purchases by source, and per seller (the export's "includes N audit purchases"). */
   audit_purchases_by_source: `SELECT c.source AS source, COUNT(*) AS paid_calls, COUNT(DISTINCT c.seller_id) AS sellers
