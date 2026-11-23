@@ -233,8 +233,12 @@ export function listProbeSet(db: Db): ProbeSetRow[] {
  */
 export const ELIGIBLE_PROBE_RESOURCE_SQL = `s.excluded = 0 AND r.network = ? AND r.scheme = 'exact' AND COALESCE(r.transfer_method, 'eip3009') != 'permit2'
        AND r.pay_to IS NOT NULL AND r.declared_price_atomic GLOB '[0-9]*' AND r.url NOT LIKE '%{%' AND r.url NOT LIKE '%/:%'`;
-/** Pick order within a seller: busiest listing first, then cheapest, then the oldest row. */
-export const PROBE_PICK_ORDER_SQL = `COALESCE(r.bazaar_calls_30d, -1) DESC, CAST(r.declared_price_atomic AS INTEGER), r.id`;
+/**
+ * Pick order within a seller: a listed resource before a user candidate (source `user`; the buy lanes never price a
+ * `user` row, so a seller covered only by one would stay unbuyable), then busiest listing, then cheapest, then the
+ * oldest row.
+ */
+export const PROBE_PICK_ORDER_SQL = `(r.source = 'user') ASC, COALESCE(r.bazaar_calls_30d, -1) DESC, CAST(r.declared_price_atomic AS INTEGER), r.id`;
 
 export interface AddAllSellersOptions {
   /** CAIP-2 network. */

@@ -46,8 +46,9 @@ export function registerProbe(program: Command, globals: (cmd: Command) => { net
     .option("--once", "run one round and exit", false)
     .option("--every-minutes <n>", "loop period", (v) => parseInt(v, 10), 60)
     .option("--max-rounds <n>", "stop after N rounds", (v) => parseInt(v, 10))
-    .option("--concurrency <n>", "sellers probed at once (one request in flight per seller)", (v) => parseInt(v, 10), DEFAULT_PROBE_CONCURRENCY)
-    .option("--max-minutes <n>", "stop a round that has run this long; 0 = no limit", (v) => parseInt(v, 10), DEFAULT_PROBE_MAX_DURATION_MS / 60_000)
+    // Number(), not parseInt: "0.5" must fail the whole-number check below, not become 0 (which would mean no limit).
+    .option("--concurrency <n>", "sellers probed at once (one request in flight per seller)", (v) => Number(v), DEFAULT_PROBE_CONCURRENCY)
+    .option("--max-minutes <n>", "stop a round that has run this long; 0 = no limit", (v) => Number(v), DEFAULT_PROBE_MAX_DURATION_MS / 60_000)
     .action(async function (this: Command, o: { once: boolean; everyMinutes: number; maxRounds?: number; concurrency: number; maxMinutes: number }) {
       if (!Number.isInteger(o.concurrency) || o.concurrency < 1) throw new Error("--concurrency must be a whole number of at least 1");
       if (!Number.isInteger(o.maxMinutes) || o.maxMinutes < 0) throw new Error("--max-minutes must be a whole number of at least 0");

@@ -152,6 +152,23 @@ describe("addAllSellersToProbeSet (stratum all)", () => {
     expect(listProbeSet(db)).toHaveLength(5);
   });
 
+  it("prefers a listed resource over a user candidate, so the pick is one the buy lanes can price", () => {
+    const { db } = dayOne();
+    const mixed = insertSeller(db, "mixed.example");
+    // The candidate probe filled price and pay-to on the user row, and it is cheaper; neither has Bazaar calls.
+    const userRow = insertResource(db, { sellerId: mixed, url: "https://mixed.example/checked", network: NET, source: "user", declaredPriceAtomic: "100" });
+    const listed = insertResource(db, { sellerId: mixed, url: "https://mixed.example/listed", network: NET, source: "bazaar", declaredPriceAtomic: "5000" });
+    addAllSellersToProbeSet(db, { network: NET, now: 5000, exclude });
+    const pick = listProbeSet(db).filter((s) => s.sellerId === mixed);
+    expect(pick.map((s) => s.resourceId)).toEqual([listed]);
+    expect(pick[0]!.resourceId).not.toBe(userRow);
+    // A seller with only a user row is still probed on it (the candidate lane buys it under its own gate).
+    const only = insertSeller(db, "only-user.example");
+    const onlyRow = insertResource(db, { sellerId: only, url: "https://only-user.example/checked", network: NET, source: "user" });
+    addAllSellersToProbeSet(db, { network: NET, now: 6000, exclude });
+    expect(listProbeSet(db).find((s) => s.sellerId === only)?.resourceId).toBe(onlyRow);
+  });
+
   it("covers a seller that arrives later and never deletes a row", () => {
     const { db, ids } = dayOne();
     addAllSellersToProbeSet(db, { network: NET, now: 5000, exclude });
