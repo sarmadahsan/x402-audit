@@ -32,7 +32,7 @@ Every subcommand is dry-run by default and writes to the one SQLite file in `X40
 | `pnpm cli discover run` / `discover report` | no | pull the CDP Bazaar index and `config/manual-sellers.yaml`; top sellers by 30-day volume |
 | `pnpm cli chain scan-volume --days 30` | no | USDC transfers to every known pay-to over 30 days; ranks sellers (`chain top`) |
 | `pnpm cli chain verify-sample` / `verify-all` / `report` | no | EIP-3009 verification by receipt sampling; market-wide overcharge and duplicate-loop floors |
-| `pnpm cli probe plan` / `probe run --once` / `probe run` / `probe report` | no | select the probe set; one round or an hourly loop from two client identities; quote drift and pay-to changes |
+| `pnpm cli probe plan` / `probe select [--apply]` / `probe run --once` / `probe run` / `probe report` | no | `plan` rebuilds the top and tail strata; `select` adds one resource for every listed seller not yet in the set (stratum `all`, never deletes); without `--apply` it only reports who would join, by category, and the round size; `run` is one round or an hourly loop from two client identities, `--concurrency` sellers at a time (8) and at most `--max-minutes` (45) a round; `report` lists quote drift and pay-to changes |
 | `pnpm cli buy plan` | no | stratified plan with planned spend per stratum; refuses above `MAX_TOTAL_USD` |
 | `pnpm cli buy balances` | no | pool wallet USDC balances |
 | `pnpm cli buy run` | **only with `--live`, `X402_AUDIT_LIVE=1`, `--network eip155:8453`** | execute the plan under the caps; writes the `attempts` ledger before every signature |

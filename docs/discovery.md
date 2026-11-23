@@ -24,7 +24,10 @@ how the unmapped-payee figure is computed. Code: `src/discover/refresh.ts` (`dis
 Every new seller from 1 and 2 has tier NULL (as in the widened phases), gets one resource in the probe set
 (`probe_set.stratum = discovery`, busiest listing first, at most 300 per refresh) so the next hourly probe quotes it
 for free, and enters the coverage pool of the next scheduled run because it has zero calls (docs/PLAN.md
-"Coverage-first allocation").
+"Coverage-first allocation"). Since 2026-11-23 `probe select` runs before every hourly round and gives one resource
+(stratum `all`, same predicate and pick order) to every seller no active probe row covers, so a seller the daily cap
+left out, a candidate seller, or a seller listed before the probe set existed is quoted within the hour as well
+(docs/PLAN.md "Probe set: every listed seller").
 
 ## Facilitators
 

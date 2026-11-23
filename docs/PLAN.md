@@ -150,7 +150,9 @@ posted to the index (`docs/audit-callback.md`). Nothing is bought unless
 ### Schedule (2026-10-29)
 
 `scripts/loop.sh` under systemd (`paidfor-audit.service`, one long-running
-unit; no timer): every hour a probe round, settlement re-checks and an export.
+unit; no timer): every hour `probe select`, a probe round over every listed
+seller (see "Probe set: every listed seller"), settlement re-checks and an
+export.
 At 00:00, 06:00, 12:00 and 18:00 UTC a scheduled run replaces the old daily
 buy: the free candidate import, then `buy run --live` with a seed per run
 (date and hour), `--budget-usd 1.00 --run-usd 1.00 --per-call-usd 0.10
@@ -256,9 +258,52 @@ run with its plan. Breadth rows count in the headline (docs/taxonomy.md).
 recrawl, `config/seed-sellers.yaml`, and Base payees of facilitator
 settlements in the last 24 hours that no known seller claims
 (`unmapped_payees`, with 30-day inflow). New sellers get tier NULL, one
-resource in the probe set, and the coverage pool of the next run. No purchase
-happens in refresh. `discover import-candidates` now runs after every
+resource in the probe set (stratum `discovery`, at most 300 a refresh; the
+hourly `probe select` covers any left over as stratum `all`), and the coverage
+pool of the next run. No purchase happens in refresh. `discover import-candidates` now runs after every
 scheduled run.
+
+### Probe set: every listed seller (2026-11-23)
+
+Until now the hourly probe set was a sample: `probe plan` picked one resource
+for each of the top 60 sellers by volume plus a seeded random tail (600 at
+the last rebuild), and `discover refresh` added one resource per seller that
+was new at a daily refresh (stratum `discovery`, at most 300 a day). The
+coverage lane of the scheduled buys only admits a seller that has answered a
+402 probe (`src/buy/allocate.ts`, `src/buy/plan.ts`), so a seller present on
+day one that lost the tail draw was never probed and never bought: on
+2026-11-23 that was 3,217 of 4,303 listed sellers (OceanAlt asked why it was
+missing from the export). Inclusion in the index is still automatic and
+cannot be bought or requested; it is now also complete.
+
+- Stratum `all` (`probe select`, `src/probe/set.ts`
+  `addAllSellersToProbeSet`): one eligible resource for every seller that no
+  active probe row covers, under the same predicate as `discovery` (Base
+  `exact`, EIP-3009, pay-to and numeric listed price present, no path
+  template, seller not excluded, not under `config/exclude.yaml`) and the same
+  pick order (busiest listing, then cheapest). It only adds rows, or
+  reactivates one of its own after a `probe plan` rebuild; nothing is deleted.
+  `scripts/loop.sh` runs it (`--apply`) before every hourly round, so a seller that
+  arrives through refresh, the candidate import or an operator audit is quoted
+  the next hour. Without `--apply` the command only prints who would join, by
+  category, and the round size.
+- Rate: the round grows from about 2,100 to about 4,300 resources, two
+  identities each. The sequential round (one request at a time, 250 ms
+  apart, 20 s timeout) took about 35 minutes for the smaller set, so
+  `probe run` now visits `--concurrency` sellers at once (default 8, loop
+  variable `PROBE_CONCURRENCY`), one request in flight per seller and a
+  seller's requests still back to back for the price-discrimination check.
+  At the production average of about half a second per request that is about
+  ten minutes for the full set. A round still running after `--max-minutes`
+  (45, `PROBE_ROUND_MINUTES`) stops, reports `truncated` and the sellers it
+  did not reach as `skipped`, and the next round starts from a new shuffle.
+  Probes are unpaid requests; no money moves.
+- Effect on buying: a seller joins the admit lane of the next scheduled run
+  after its first 402 probe, at its quoted price times 1.2, under the same
+  budgets as before (nothing in `COVERAGE_SHARE`, the run cap or the per-call
+  cap changes). About 3,200 zero-call sellers therefore queue behind demand,
+  inflow and price in the admit lane and are reached over the following
+  weeks, two calls a run each.
 
 ### Settlement confirmation
 

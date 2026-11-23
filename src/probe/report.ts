@@ -3,6 +3,7 @@ import type { Db } from "../db/index.js";
 import { atomicToUsd } from "../config/index.js";
 import { CLIENT_IDENTITIES, IDENTITY_NOTE } from "./identities.js";
 import { modalAmount } from "./run.js";
+import { PROBE_STRATA } from "./set.js";
 
 export interface ProbeReportOptions {
   /** Only probes/events with ts >= sinceMs. Default: everything. */
@@ -89,14 +90,16 @@ export function probeReport(db: Db, opts: ProbeReportOptions = {}): string {
   const first = probes[0]?.ts;
   const last = probes[probes.length - 1]?.ts;
   const rounds = new Set(probes.map((p) => p.round_id).filter((r): r is string => r !== null));
-  const top = setCounts.find((c) => c.stratum === "top")?.n ?? 0;
-  const tail = setCounts.find((c) => c.stratum === "tail")?.n ?? 0;
+  const setSize = setCounts.reduce((n, c) => n + c.n, 0);
+  const known: readonly string[] = PROBE_STRATA;
+  const byStratum = [...known.filter((st) => setCounts.some((c) => c.stratum === st)), ...setCounts.map((c) => c.stratum).filter((st) => !known.includes(st)).sort()]
+    .map((st) => `${st} ${setCounts.find((c) => c.stratum === st)?.n ?? 0}`);
   const usedIds = [...new Set(probes.map((p) => p.client_identity))].sort();
 
   out.push(`- Date range: ${first !== undefined && last !== undefined ? `${iso(first)} to ${iso(last)}` : "-"}`);
   out.push(`- Rounds: ${rounds.size}`);
   out.push(`- Probes: ${probes.length}`);
-  out.push(`- Resources in active probe set: ${top + tail} (top ${top}, tail ${tail})`);
+  out.push(`- Resources in active probe set: ${setSize}${byStratum.length ? ` (${byStratum.join(", ")})` : ""}`);
   out.push(`- Client identities used: ${usedIds.length ? usedIds.join(", ") : "-"}`);
   for (const id of usedIds) {
     const known = CLIENT_IDENTITIES.find((c) => c.id === id);
