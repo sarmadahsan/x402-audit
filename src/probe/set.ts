@@ -1,14 +1,19 @@
 /**
- * Probe set: the fixed list of resources `probe` visits each round.
+ * Probe set: the list of resources `probe` visits each round, one per seller.
  *
- * Two strata (docs/PLAN.md):
- *  - top:  one resource from each of the top-N sellers by 30-day volume rank
- *          (rank_30d ASC NULLS LAST, then calls_30d_bazaar DESC, then domain).
- *  - tail: a seeded uniform random sample of eligible resources from all other
- *          sellers, at most one per seller.
+ * Four strata (docs/PLAN.md "Probe set: every listed seller"):
+ *  - top:       one resource from each of the top-N sellers by 30-day volume rank
+ *               (rank_30d ASC NULLS LAST, then calls_30d_bazaar DESC, then domain). `probe plan`.
+ *  - tail:      a seeded uniform random sample of eligible resources from all other
+ *               sellers, at most one per seller. `probe plan`.
+ *  - discovery: one resource per seller new at a daily `discover refresh` (src/discover/refresh.ts).
+ *  - all:       one resource per eligible seller the other strata left out, so every listed seller
+ *               is quoted hourly and can enter the coverage lane of the scheduled buys. `probe select --apply`,
+ *               run by scripts/loop.sh before every round; idempotent. Without --apply it only reports.
  *
- * Rebuilding never deletes: every existing row is marked inactive, then the new
- * selection is upserted (resource_id is UNIQUE), so selection history stays auditable.
+ * Rebuilding never deletes: `probe plan` marks every existing row inactive, then upserts the new
+ * selection (resource_id is UNIQUE), so selection history stays auditable. `probe select` only adds
+ * rows (or reactivates one of its own).
  */
 import type { Db } from "../db/index.js";
 import { isExcluded, type ExcludeConfig } from "../config/index.js";
@@ -38,10 +43,13 @@ export interface BuildProbeSetResult {
   skippedPermit2: number;
 }
 
+export const PROBE_STRATA = ["top", "tail", "discovery", "all"] as const;
+export type ProbeStratum = (typeof PROBE_STRATA)[number];
+
 export interface ProbeSetRow {
   probeSetId: number;
   resourceId: number;
-  stratum: "top" | "tail";
+  stratum: ProbeStratum;
   seed: number;
   selectedAt: number;
   url: string;
@@ -215,4 +223,140 @@ export function listProbeSet(db: Db): ProbeSetRow[] {
        ORDER BY p.stratum, p.id`,
     )
     .all() as ProbeSetRow[];
+}
+
+/**
+ * The eligibility predicate of the incremental strata (`discovery`, `all`), on `resources r JOIN sellers s`:
+ * the seller is not excluded, the resource is on the network with scheme `exact`, pays by EIP-3009 (not permit2),
+ * names a pay-to and a numeric declared price, and its URL is not a path template (/users/{id}, /coin/:symbol),
+ * which cannot be fetched literally. The network is the one bound parameter.
+ */
+export const ELIGIBLE_PROBE_RESOURCE_SQL = `s.excluded = 0 AND r.network = ? AND r.scheme = 'exact' AND COALESCE(r.transfer_method, 'eip3009') != 'permit2'
+       AND r.pay_to IS NOT NULL AND r.declared_price_atomic GLOB '[0-9]*' AND r.url NOT LIKE '%{%' AND r.url NOT LIKE '%/:%'`;
+/**
+ * Pick order within a seller: a listed resource before a user candidate (source `user`; the buy lanes never price a
+ * `user` row, so a seller covered only by one would stay unbuyable), then busiest listing, then cheapest, then the
+ * oldest row.
+ */
+export const PROBE_PICK_ORDER_SQL = `(r.source = 'user') ASC, COALESCE(r.bazaar_calls_30d, -1) DESC, CAST(r.declared_price_atomic AS INTEGER), r.id`;
+
+export interface AddAllSellersOptions {
+  /** CAIP-2 network. */
+  network: string;
+  /** Selection timestamp (ms). */
+  now: number;
+  /** config/exclude.yaml: a seller or URL prefix listed there never joins, like in `probe plan`. */
+  exclude?: ExcludeConfig;
+  /** Report only; write nothing. */
+  dryRun?: boolean;
+  /** Client identities per resource, for the expected request count (default 2). */
+  identities?: number;
+}
+
+export interface AddAllSellersReport {
+  /** Rows in `sellers`. */
+  sellers: number;
+  /** sellers.excluded = 1. */
+  excludedSellers: number;
+  /** Sellers with an active probe_set row before this selection, by stratum. */
+  coveredBefore: number;
+  coveredByStratum: Record<string, number>;
+  /** Sellers that get (or, in a dry run, would get) an `all` row, by sellers.category. */
+  joining: number;
+  joiningByCategory: Record<string, number>;
+  /** Not covered, not excluded, and no resource passes the eligibility predicate. */
+  noEligibleResource: number;
+  /** Not covered, with eligible resources, every one of them under a config/exclude.yaml rule. */
+  excludedByConfig: number;
+  /** Active resources in the set before and after, and the requests one round sends after. */
+  roundBefore: number;
+  roundAfter: number;
+  requestsPerRound: number;
+  /** Rows written (0 in a dry run). */
+  added: number;
+  dryRun: boolean;
+}
+
+interface AllCandidate {
+  id: number;
+  url: string;
+  seller_id: number;
+  domain: string;
+  category: string | null;
+}
+
+/**
+ * Stratum `all`: one eligible resource for every seller that no active probe_set row covers, under the same predicate
+ * and pick order as `discovery` (ELIGIBLE_PROBE_RESOURCE_SQL, PROBE_PICK_ORDER_SQL). Never deletes or deactivates:
+ * a resource already in probe_set (inactive, from an old tail draw) is reactivated as `all`. Idempotent: a second
+ * call adds nothing. The report says who joins, by category, and why the rest do not.
+ */
+export function addAllSellersToProbeSet(db: Db, opts: AddAllSellersOptions): AddAllSellersReport {
+  const identities = opts.identities ?? 2;
+  const sellers = (db.prepare("SELECT COUNT(*) n, SUM(excluded = 1) x FROM sellers").get() as { n: number; x: number | null });
+  const covered = db
+    .prepare(
+      `SELECT r.seller_id, MIN(p.stratum) stratum FROM probe_set p JOIN resources r ON r.id = p.resource_id
+       WHERE p.active = 1 GROUP BY r.seller_id`,
+    )
+    .all() as { seller_id: number; stratum: string }[];
+  const coveredIds = new Set(covered.map((c) => c.seller_id));
+  const coveredByStratum: Record<string, number> = {};
+  for (const c of covered) coveredByStratum[c.stratum] = (coveredByStratum[c.stratum] ?? 0) + 1;
+  const roundBefore = (db.prepare("SELECT COUNT(*) n FROM probe_set WHERE active = 1").get() as { n: number }).n;
+
+  // Every eligible resource of every uncovered seller, in pick order, so the first row per seller is the pick.
+  const rows = db
+    .prepare(
+      `SELECT r.id, r.url, r.seller_id, s.domain, s.category FROM resources r JOIN sellers s ON s.id = r.seller_id
+       WHERE ${ELIGIBLE_PROBE_RESOURCE_SQL}
+       ORDER BY r.seller_id, ${PROBE_PICK_ORDER_SQL}`,
+    )
+    .all(opts.network) as AllCandidate[];
+  const picks: AllCandidate[] = [];
+  const picked = new Set<number>();
+  const sawEligible = new Set<number>();
+  for (const r of rows) {
+    if (coveredIds.has(r.seller_id) || picked.has(r.seller_id)) continue;
+    sawEligible.add(r.seller_id);
+    if (opts.exclude !== undefined && isExcluded(opts.exclude, r.domain, r.url) !== null) continue;
+    picks.push(r);
+    picked.add(r.seller_id);
+  }
+  const uncovered = (db.prepare("SELECT id FROM sellers WHERE excluded = 0").all() as { id: number }[]).filter((r) => !coveredIds.has(r.id)).length;
+  const joiningByCategory: Record<string, number> = {};
+  for (const r of picks) {
+    const c = r.category ?? "uncategorized";
+    joiningByCategory[c] = (joiningByCategory[c] ?? 0) + 1;
+  }
+
+  let added = 0;
+  if (!opts.dryRun && picks.length) {
+    const ins = db.prepare(
+      `INSERT INTO probe_set (resource_id, stratum, seed, selected_at, active, note) VALUES (?, 'all', 0, ?, 1, 'probe select')
+       ON CONFLICT(resource_id) DO UPDATE SET stratum = 'all', selected_at = excluded.selected_at, active = 1, note = excluded.note`,
+    );
+    db.transaction(() => {
+      for (const r of picks) {
+        ins.run(r.id, opts.now);
+        added++;
+      }
+    })();
+  }
+  const roundAfter = roundBefore + picks.length;
+  return {
+    sellers: sellers.n,
+    excludedSellers: sellers.x ?? 0,
+    coveredBefore: coveredIds.size,
+    coveredByStratum,
+    joining: picks.length,
+    joiningByCategory,
+    noEligibleResource: uncovered - sawEligible.size,
+    excludedByConfig: sawEligible.size - picks.length,
+    roundBefore,
+    roundAfter,
+    requestsPerRound: roundAfter * identities,
+    added,
+    dryRun: opts.dryRun === true,
+  };
 }

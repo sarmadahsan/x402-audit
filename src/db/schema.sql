@@ -77,11 +77,12 @@ CREATE INDEX IF NOT EXISTS resources_seller ON resources(seller_id);
 CREATE INDEX IF NOT EXISTS resources_payto ON resources(pay_to);
 
 -- ------------------------------------------------------------------- probe
--- The fixed set of resources `probe` visits each round. Rebuilt only by `probe plan`.
+-- The set of resources `probe` visits each round, one per seller. `probe plan` rebuilds top and tail (deactivating,
+-- never deleting); `discover refresh` adds discovery rows; `probe select` adds an `all` row for every other seller.
 CREATE TABLE IF NOT EXISTS probe_set (
   id           INTEGER PRIMARY KEY,
   resource_id  INTEGER NOT NULL UNIQUE REFERENCES resources(id),
-  stratum      TEXT NOT NULL,                  -- top|tail
+  stratum      TEXT NOT NULL,                  -- top|tail|discovery|all
   seed         INTEGER NOT NULL,
   selected_at  INTEGER NOT NULL,
   active       INTEGER NOT NULL DEFAULT 1,

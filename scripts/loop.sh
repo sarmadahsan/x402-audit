@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Keeps the public index alive without an operator.
-#   hourly : one probe round over the current probe set, settlement re-check (moves no money), export, publish
+#   hourly : `probe select` (every listed seller not yet in the probe set gets one resource, stratum all; free, adds
+#            only), one probe round over the whole probe set (PROBE_CONCURRENCY sellers at a time, one request in flight
+#            per seller, stopped after PROBE_ROUND_MINUTES), settlement re-check (moves no money), export, publish
 #   6-hour : at each hour in LOOP_RUN_HOURS_UTC (00, 06, 12, 18), a gated live buy with coverage-first allocation
 #            (--allocation coverage: COVERAGE_SHARE of the run to sellers below 30 calls, the rest to maintenance; every
 #            planned call written to run_allocations before signing) plus the expensive-sellers lane and, when
@@ -50,6 +52,7 @@
 #        COVERAGE_SHARE, BREADTH_RUN_ENABLED, BREADTH_MAX_PER_CALL_USD, BREADTH_WEEKLY_USD are read by the CLI.
 #        LOOP_PUBLISH (1; 0 = export but do not commit or push)  BACKUP_BUCKET (unset = no backup)
 #        PROBE_ARCHIVE_ENABLED (0; 1 = daily move of old raw probe data to S3)  PROBE_ARCHIVE_KEEP_DAYS (7)  PROBE_ARCHIVE_MAX_DAYS (3)
+#        PROBE_CONCURRENCY (8; sellers probed at once)  PROBE_ROUND_MINUTES (45; a round still running then stops)
 #        LOOP_PUBLISH_URL (https://github.com/sarmadahsan/paidfor-data.git; the server uses the SSH alias
 #        git@github-data:sarmadahsan/paidfor-data.git so its write deploy key for that repo is offered)
 set -uo pipefail
@@ -145,7 +148,10 @@ hourly() {
   if [ -e halt ]; then
     log "halt file present: skipping probe and settlement re-check"
   else
-    run "${CLI[@]}" probe run --once || log "probe round failed; continuing"
+    # Free: one resource for every listed seller not yet in the set (stratum all), so sellers that arrived since the last
+    # round (discover refresh, candidate import, a seller the daily cap left out) are quoted this hour. Adds only.
+    run "${CLI[@]}" probe select --apply || log "probe select failed; probing the current set"
+    run "${CLI[@]}" probe run --once --concurrency "${PROBE_CONCURRENCY:-8}" --max-minutes "${PROBE_ROUND_MINUTES:-45}" || log "probe round failed; continuing"
     health_post probe
     # Indeterminate and unconfirmed rows are re-checked for 24 h after a buy; moves no money.
     run "${CLI[@]}" buy resolve || true
@@ -306,7 +312,8 @@ scheduled_buy() {
     fi
   fi
   if [ "$((10#$hh))" -eq "$((10#$LOOP_REFRESH_HOUR_UTC))" ]; then
-    # Free: Bazaar recrawl, seed hosts, unmapped facilitator payees; new sellers join the probe set for the next hour.
+    # Free: Bazaar recrawl, seed hosts, unmapped facilitator payees; new sellers join the probe set for the next hour
+    # (refresh adds up to 300 as stratum discovery; `probe select` in hourly() covers the rest as stratum all).
     run "${CLI[@]}" discover refresh || log "discover refresh $today: exited non-zero"
   fi
   export_publish || true

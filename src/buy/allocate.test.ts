@@ -75,6 +75,18 @@ describe("buildCoveragePlan", () => {
     expect(c.stats.sellersAllAboveCap).toBe(1);
   });
 
+  it("a never-probed seller enters the admit lane as soon as one 402 probe is on record, at its quoted price", () => {
+    const d = universe();
+    expect(buildCoveragePlan(d, opts(usdToAtomic(1))).plan.allocations.some((a) => a.sellerId === 8)).toBe(false);
+    // The hourly round quotes seller 8's resource (what `probe select` + one round do for a day-one seller).
+    d.prepare("INSERT INTO probes (resource_id, client_identity, ts, status, amount_atomic, network) VALUES (80, 'A', ?, 402, '1000', ?)").run(NOW - 1_800_000, NET);
+    const c = buildCoveragePlan(d, opts(usdToAtomic(1)));
+    const s8 = c.plan.allocations.filter((a) => a.sellerId === 8);
+    expect(s8.map((a) => [a.tier, a.resourceId, a.priceAtomic, a.planAtomic])).toEqual([["admit", 80, 1000n, 1200n]]);
+    expect(s8[0]!.calls).toBe(2);
+    expect(c.rows.find((r) => r.sellerId === 8)?.pool).toBe("admit");
+  });
+
   it("new zero-call sellers get the 5-call target unless they matter", () => {
     const d = universe();
     // Seller 1 was first bought after the tiers began, with 3 calls: 2 to go to 5, so it is in the finish lane.

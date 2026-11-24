@@ -193,7 +193,8 @@ describe("halt", () => {
         if (calls === 1) writeFileSync(join(root, "halt"), "");
         return fetch(input, init);
       };
-      const s = await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, fetchImpl: haltAfterFirst, perRequestGapMs: 0, log: silentLog, haltRoot: root });
+      // One seller at a time, so the halt written by the first request is seen before the second seller starts.
+      const s = await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, fetchImpl: haltAfterFirst, perRequestGapMs: 0, log: silentLog, haltRoot: root, concurrency: 1 });
       expect(s.halted).toBe(true);
       expect(s.resources).toBe(1);
       expect(s.requests).toBe(2);
@@ -203,6 +204,85 @@ describe("halt", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("concurrency", () => {
+  /** Twelve sellers, each with one resource at the mock's /ok, told apart by a query parameter the mock ignores. */
+  function manySellers(db: Db, n: number): void {
+    for (let i = 0; i < n; i++) {
+      const s = insertSeller(db, `many${i}.mock`, { rank: i + 1 });
+      insertResource(db, { sellerId: s, url: `${seller.url}/ok?s=${i}`, network: NET, declaredPriceAtomic: "10000" });
+    }
+    buildProbeSet(db, { topSellers: n, tailResources: 0, seed: 1, network: NET });
+  }
+  /** A fetch that records how many requests are in flight overall and per seller, and the identity order per seller. */
+  function tracking(delayMs: number) {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const perSeller = new Map<string, { inFlight: number; max: number; agents: string[] }>();
+    const fetchImpl: FetchImpl = async (input, init) => {
+      const key = new URL(String(input)).searchParams.get("s") ?? "?";
+      const p = perSeller.get(key) ?? { inFlight: 0, max: 0, agents: [] };
+      perSeller.set(key, p);
+      inFlight++;
+      p.inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      p.max = Math.max(p.max, p.inFlight);
+      p.agents.push(String((init?.headers as Record<string, string>)["user-agent"]));
+      await new Promise((r) => setTimeout(r, delayMs));
+      try {
+        return await fetch(input, init);
+      } finally {
+        inFlight--;
+        p.inFlight--;
+      }
+    };
+    return { fetchImpl, perSeller, max: () => maxInFlight };
+  }
+
+  it("probes several sellers at once but one request at a time per seller, identities in order", async () => {
+    const db = openDb(":memory:");
+    manySellers(db, 12);
+    const t = tracking(30);
+    const s = await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, fetchImpl: t.fetchImpl, perRequestGapMs: 0, log: silentLog, haltRoot: NO_HALT, concurrency: 4 });
+    expect([s.resources, s.requests, s.got402, s.truncated, s.skipped]).toEqual([12, 24, 24, false, 0]);
+    expect(t.max()).toBeGreaterThan(1);
+    expect(t.max()).toBeLessThanOrEqual(4);
+    expect(t.perSeller.size).toBe(12);
+    for (const p of t.perSeller.values()) {
+      expect(p.max).toBe(1);
+      expect(p.agents).toEqual([IDENTITY_A.headers["user-agent"], "node identity-b"]);
+    }
+    // Every row of a round shares its round id; one row per resource x identity.
+    expect((db.prepare("SELECT COUNT(DISTINCT round_id) n FROM probes").get() as { n: number }).n).toBe(1);
+    expect((db.prepare("SELECT COUNT(*) n FROM probes").get() as { n: number }).n).toBe(24);
+  });
+
+  it("concurrency 1 is the old sequential round", async () => {
+    const db = openDb(":memory:");
+    manySellers(db, 5);
+    const t = tracking(5);
+    const s = await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, fetchImpl: t.fetchImpl, perRequestGapMs: 0, log: silentLog, haltRoot: NO_HALT, concurrency: 1 });
+    expect([s.resources, s.requests, t.max()]).toEqual([5, 10, 1]);
+  });
+
+  it("stops starting sellers once the time budget is spent and reports the rest as skipped", async () => {
+    const db = openDb(":memory:");
+    manySellers(db, 12);
+    const t = tracking(60);
+    const s = await runProbeRound(db, { network: NET, identities: TEST_IDENTITIES, fetchImpl: t.fetchImpl, perRequestGapMs: 0, log: silentLog, haltRoot: NO_HALT, concurrency: 2, maxDurationMs: 50 });
+    expect(s.truncated).toBe(true);
+    expect(s.halted).toBe(false);
+    expect(s.resources).toBeLessThan(12);
+    expect(s.resources + s.skipped).toBe(12);
+    // A seller that was started is finished: both identities, never half a seller.
+    expect(s.requests).toBe(s.resources * 2);
+    // maxDurationMs 0 means no budget.
+    const db2 = openDb(":memory:");
+    manySellers(db2, 3);
+    const s2 = await runProbeRound(db2, { network: NET, identities: TEST_IDENTITIES, fetchImpl: tracking(5).fetchImpl, perRequestGapMs: 0, log: silentLog, haltRoot: NO_HALT, maxDurationMs: 0 });
+    expect([s2.resources, s2.truncated, s2.skipped]).toEqual([3, false, 0]);
   });
 });
 

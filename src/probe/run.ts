@@ -3,6 +3,14 @@
  * recording every 402 quote in `probes`, plus price_events for drift, pay-to changes and
  * price discrimination. Never signs or pays.
  *
+ * Rate (docs/PLAN.md "Probe set: every listed seller"): the set is shuffled, grouped by seller, and visited by
+ * `concurrency` workers (default DEFAULT_PROBE_CONCURRENCY). One worker holds one seller at a time and sends that
+ * seller's requests one after another, `perRequestGapMs` apart, so a host never sees two of our requests at once and
+ * the identities stay back to back for the price-discrimination check. With about 4,300 sellers x 2 identities and the
+ * production average of about half a second per request (gap included), 8 workers finish in about 10 minutes; the
+ * sequential round took about 35 minutes for half the set. `maxDurationMs` (default DEFAULT_PROBE_MAX_DURATION_MS)
+ * ends a round that overruns, so the hourly cycle keeps its hour; the next round starts from a new shuffle.
+ *
  * Probe outcomes (docs/taxonomy.md "Probe rows"): ok | overcharge | our_error, or NULL when the
  * resource was not probeable (no 402, no Base-exact requirement, unreachable). NULL rows are
  * reported as counts by `error` and never blamed on the seller or on us.
@@ -33,6 +41,10 @@ export type Logger = typeof defaultLog;
 
 /** Harness default when a quote declares no maxTimeoutSeconds (v2 requires it, v1 too; kept for safety). */
 export const DEFAULT_MAX_TIMEOUT_SECONDS = 30;
+/** Sellers visited at once in a round (one in-flight request per seller). */
+export const DEFAULT_PROBE_CONCURRENCY = 8;
+/** A round that is still running after this long stops and reports `truncated`; the loop runs hourly. */
+export const DEFAULT_PROBE_MAX_DURATION_MS = 45 * 60_000;
 /** Largest request body we will derive from a bazaar input example. */
 const MAX_EXAMPLE_BODY_BYTES = 2048;
 
@@ -53,6 +65,10 @@ export interface ProbeRoundOptions {
   orderSeed?: number;
   /** Aborts between requests (used by probeLoop). */
   signal?: AbortSignal;
+  /** Sellers probed at once; requests to one seller are never concurrent. Default DEFAULT_PROBE_CONCURRENCY. */
+  concurrency?: number;
+  /** Stop starting sellers once the round has run this long (ms). Default DEFAULT_PROBE_MAX_DURATION_MS; 0 = no limit. */
+  maxDurationMs?: number;
 }
 
 export interface RoundStats {
@@ -78,6 +94,10 @@ export interface RoundStats {
   /** quote_drift events written this round. */
   quoteDrift: number;
   halted: boolean;
+  /** The round hit maxDurationMs before every seller was visited; the sellers left out are counted in `skipped`. */
+  truncated: boolean;
+  /** Sellers not visited this round (halt, abort or time budget). */
+  skipped: number;
   durationMs: number;
 }
 
@@ -385,8 +405,11 @@ export async function runProbeRound(db: Db, opts: ProbeRoundOptions): Promise<Ro
   const identities = opts.identities ?? CLIENT_IDENTITIES;
   const timeoutMs = opts.timeoutMs ?? 20_000;
   const gapMs = opts.perRequestGapMs ?? 250;
+  const concurrency = Math.max(1, Math.trunc(opts.concurrency ?? DEFAULT_PROBE_CONCURRENCY));
+  const maxDurationMs = opts.maxDurationMs ?? DEFAULT_PROBE_MAX_DURATION_MS;
   const log = opts.log;
   const started = Date.now();
+  const deadline = maxDurationMs > 0 ? started + maxDurationMs : Infinity;
   const roundId = randomUUID();
 
   const stats: RoundStats = {
@@ -404,15 +427,29 @@ export async function runProbeRound(db: Db, opts: ProbeRoundOptions): Promise<Ro
     slow: 0,
     quoteDrift: 0,
     halted: false,
+    truncated: false,
+    skipped: 0,
     durationMs: 0,
   };
 
   const set = shuffle(listProbeSet(db), mulberry32(opts.orderSeed ?? Math.floor(Math.random() * 2 ** 32)));
+  // One group per seller, in shuffled order of first appearance: a worker takes a whole group, so a seller's
+  // resources (and both identities of each) are requested one after another, never at the same time.
+  const groups: ProbeSetRow[][] = [];
+  const groupBySeller = new Map<number, ProbeSetRow[]>();
+  for (const row of set) {
+    let g = groupBySeller.get(row.sellerId);
+    if (!g) {
+      g = [];
+      groupBySeller.set(row.sellerId, g);
+      groups.push(g);
+    }
+    g.push(row);
+  }
   const insertProbe = db.prepare(INSERT_PROBE_SQL);
   const rateLimitedSellers = new Set<number>();
-  let firstRequest = true;
 
-  log.info(`probe round ${roundId}: ${set.length} resources x ${identities.length} identities`);
+  log.info(`probe round ${roundId}: ${set.length} resources (${groups.length} sellers) x ${identities.length} identities, ${Math.min(concurrency, groups.length)} at a time`);
 
   const probeOne = async (row: ProbeSetRow, identity: ClientIdentity): Promise<ProbeOutcome> => {
     const req = buildRequest(row, identity);
@@ -592,23 +629,17 @@ export async function runProbeRound(db: Db, opts: ProbeRoundOptions): Promise<Ro
     }
   };
 
-  for (const row of set) {
-    if (haltRequested(opts.haltRoot, "probe")) {
-      log.warn(`probe round ${roundId}: halt file present, stopping`);
-      stats.halted = true;
-      break;
-    }
-    if (opts.signal?.aborted) break;
+  const probeResource = async (row: ProbeSetRow, worker: { first: boolean }): Promise<void> => {
     if (rateLimitedSellers.has(row.sellerId)) {
       log.debug(`probe: skipping ${row.url}, seller ${row.sellerDomain} rate-limited this round`);
-      continue;
+      return;
     }
     stats.resources++;
 
     const results: { identity: ClientIdentity; out: ProbeOutcome }[] = [];
     for (const identity of identities) {
-      if (!firstRequest) await sleep(gapMs, opts.signal);
-      firstRequest = false;
+      if (!worker.first) await sleep(gapMs, opts.signal);
+      worker.first = false;
       const out = await probeOne(row, identity);
       results.push({ identity, out });
       switch (out.kind) {
@@ -640,7 +671,38 @@ export async function runProbeRound(db: Db, opts: ProbeRoundOptions): Promise<Ro
     } catch (e) {
       log.error(`probe: price discrimination check failed for ${row.url}`, errMsg(e));
     }
-  }
+  };
+
+  // The worker pool: each worker takes the next seller group until the groups run out, a halt file appears, the
+  // signal aborts, or the time budget is spent. Checks happen between sellers, never mid-seller.
+  let next = 0;
+  let stop = false;
+  const worker = async (): Promise<void> => {
+    const state = { first: true };
+    while (!stop && next < groups.length) {
+      if (haltRequested(opts.haltRoot, "probe")) {
+        if (!stop) log.warn(`probe round ${roundId}: halt file present, stopping`);
+        stats.halted = true;
+        stop = true;
+        break;
+      }
+      if (opts.signal?.aborted) {
+        stop = true;
+        break;
+      }
+      if (Date.now() >= deadline) {
+        if (!stop) log.warn(`probe round ${roundId}: ${maxDurationMs} ms budget spent with ${groups.length - next} sellers left, stopping`);
+        stats.truncated = true;
+        stop = true;
+        break;
+      }
+      const group = groups[next++];
+      if (!group) break;
+      for (const row of group) await probeResource(row, state);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, groups.length) }, worker));
+  stats.skipped = groups.length - Math.min(next, groups.length);
 
   stats.durationMs = Date.now() - started;
   log.info(`probe round ${roundId} done`, stats);

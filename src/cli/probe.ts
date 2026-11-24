@@ -4,12 +4,21 @@ import { openDb } from "../db/index.js";
 import { log } from "../log.js";
 import { archiveRawProbes, awsUploader, planArchive, vacuumIfRoom } from "../probe/archive.js";
 import { probeReport } from "../probe/report.js";
-import { runProbeRound } from "../probe/run.js";
+import { DEFAULT_PROBE_CONCURRENCY, DEFAULT_PROBE_MAX_DURATION_MS, runProbeRound } from "../probe/run.js";
 import { probeLoop } from "../probe/schedule.js";
-import { buildProbeSet, listProbeSet } from "../probe/set.js";
+import { addAllSellersToProbeSet, buildProbeSet, listProbeSet } from "../probe/set.js";
 import { finishRun, startRun } from "./runs.js";
 
-/** Registers the `probe` commands: plan, run, report and archive-raw. */
+/**
+ * A whole-number flag value, or NaN for anything else. Not parseInt ("0.5" would become 0, which for --max-minutes
+ * means no limit) and not bare Number() ("" and " " would become 0 too). The caller's range check rejects NaN.
+ */
+export function parseWhole(v: string): number {
+  if (!/^\s*[+-]?\d+\s*$/.test(v)) return NaN;
+  return Number(v);
+}
+
+/** Registers the `probe` commands: plan, select, run, report and archive-raw. */
 export function registerProbe(program: Command, globals: (cmd: Command) => { network: Network; db: string }) {
   const p = program.command("probe").description("capture 402 quotes without paying (free; never moves money)");
   p.command("plan")
@@ -26,21 +35,41 @@ export function registerProbe(program: Command, globals: (cmd: Command) => { net
       console.log(JSON.stringify({ ...r, seed }));
       for (const row of listProbeSet(db)) console.log(`${row.stratum}\t${row.sellerDomain}\t${row.method} ${row.url}`);
     });
+  p.command("select")
+    .description("one eligible resource for every listed seller the probe set does not cover yet (stratum all); never deletes a row; free. Without --apply only the report is printed: who would join, by category, and the round size")
+    .option("--apply", "write the rows; without it nothing changes", false)
+    .action(function (this: Command, o: { apply: boolean }) {
+      const g = globals(this);
+      const db = openDb(g.db);
+      const files = loadFileConfigs();
+      // The root --dry-run flag is about money and is on by default, so this command has its own switch, like archive-raw.
+      const r = addAllSellersToProbeSet(db, { network: g.network, now: Date.now(), exclude: files.exclude, dryRun: !o.apply });
+      console.log(JSON.stringify(r));
+      const fmt = (o: Record<string, number>) => Object.entries(o).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([k, v]) => `${k} ${v}`).join(", ") || "-";
+      console.log(`${r.dryRun ? "dry run (pass --apply to write): " : ""}${r.sellers} sellers (${r.excludedSellers} excluded); ${r.coveredBefore} already in the probe set (${fmt(r.coveredByStratum)})`);
+      console.log(`${r.dryRun ? "would join" : "joined"} as stratum all: ${r.joining} (${fmt(r.joiningByCategory)}); not joining: ${r.noEligibleResource} with no eligible resource, ${r.excludedByConfig} under config/exclude.yaml`);
+      console.log(`round: ${r.roundBefore} -> ${r.roundAfter} resources, ${r.requestsPerRound} unpaid requests an hour`);
+    });
   p.command("run")
     .description("probe every resource in the set from two client identities; --once for one round, default hourly loop")
     .option("--once", "run one round and exit", false)
     .option("--every-minutes <n>", "loop period", (v) => parseInt(v, 10), 60)
     .option("--max-rounds <n>", "stop after N rounds", (v) => parseInt(v, 10))
-    .action(async function (this: Command, o: { once: boolean; everyMinutes: number; maxRounds?: number }) {
+    .option("--concurrency <n>", "sellers probed at once (one request in flight per seller)", parseWhole, DEFAULT_PROBE_CONCURRENCY)
+    .option("--max-minutes <n>", "stop a round that has run this long; 0 = no limit", parseWhole, DEFAULT_PROBE_MAX_DURATION_MS / 60_000)
+    .action(async function (this: Command, o: { once: boolean; everyMinutes: number; maxRounds?: number; concurrency: number; maxMinutes: number }) {
+      if (!Number.isInteger(o.concurrency) || o.concurrency < 1) throw new Error("--concurrency must be a whole number of at least 1");
+      if (!Number.isInteger(o.maxMinutes) || o.maxMinutes < 0) throw new Error("--max-minutes must be a whole number of at least 0");
       const g = globals(this);
       const db = openDb(g.db);
       const runId = startRun(db, "probe run", o, g.network, false);
       const ac = new AbortController();
       process.on("SIGINT", () => ac.abort());
       process.on("SIGTERM", () => ac.abort());
+      const round = { concurrency: o.concurrency, maxDurationMs: o.maxMinutes * 60_000 };
       try {
         if (o.once) {
-          const stats = await runProbeRound(db, { runId, network: g.network, log, signal: ac.signal });
+          const stats = await runProbeRound(db, { runId, network: g.network, log, signal: ac.signal, ...round });
           finishRun(db, runId, stats.halted ? "halted" : "ok", stats);
           console.log(JSON.stringify(stats));
         } else {
@@ -49,6 +78,7 @@ export function registerProbe(program: Command, globals: (cmd: Command) => { net
             network: g.network,
             log,
             signal: ac.signal,
+            ...round,
             everyMs: o.everyMinutes * 60_000,
             ...(o.maxRounds ? { maxRounds: o.maxRounds } : {}),
             onRound: (s) => log.info("probe round done", s),

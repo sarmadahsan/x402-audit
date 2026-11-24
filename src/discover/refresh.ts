@@ -14,7 +14,8 @@
  *     floor); a later refresh that finds the payee in a listing marks it matched.
  *
  * Every new seller has tier NULL, gets one resource in the probe set (stratum `discovery`) so the next hourly probe
- * sees it, and enters the coverage pool of the next scheduled run because it has zero calls.
+ * sees it, and enters the coverage pool of the next scheduled run because it has zero calls. A seller the per-refresh
+ * cap leaves out is picked up by `probe select` (stratum `all`, src/probe/set.ts) before the next round.
  */
 import type { Db } from "../db/index.js";
 import { MAINNET, type ExcludeConfig, type ManualResourceConfig } from "../config/index.js";
@@ -24,6 +25,7 @@ import { seededRandom } from "../buy/plan.js";
 import { fetchQuote, selectRequirements } from "../x402/quote.js";
 import type { FetchImpl } from "../x402/http.js";
 import { runDiscover, toCaip2, type DiscoverLogger } from "./index.js";
+import { ELIGIBLE_PROBE_RESOURCE_SQL, PROBE_PICK_ORDER_SQL } from "../probe/set.js";
 
 export interface SeedSeller {
   host: string;
@@ -100,14 +102,14 @@ function knownPayTos(db: Db): Set<string> {
   return new Set(rows.map((r) => r.p));
 }
 
-/** One resource per new seller into the probe set (stratum `discovery`), busiest listing first. */
+/** One resource per new seller into the probe set (stratum `discovery`), busiest listing first (the predicate and order are
+ * shared with stratum `all`, src/probe/set.ts). */
 export function addNewSellersToProbeSet(db: Db, sellerIds: readonly number[], o: { network: string; now: number; max: number }): number {
   if (!sellerIds.length) return 0;
   const pick = db.prepare(
     `SELECT r.id FROM resources r JOIN sellers s ON s.id = r.seller_id
-     WHERE r.seller_id = ? AND s.excluded = 0 AND r.network = ? AND r.scheme = 'exact' AND COALESCE(r.transfer_method, 'eip3009') != 'permit2'
-       AND r.pay_to IS NOT NULL AND r.declared_price_atomic GLOB '[0-9]*' AND r.url NOT LIKE '%{%' AND r.url NOT LIKE '%/:%'
-     ORDER BY COALESCE(r.bazaar_calls_30d, -1) DESC, CAST(r.declared_price_atomic AS INTEGER), r.id LIMIT 1`,
+     WHERE r.seller_id = ? AND ${ELIGIBLE_PROBE_RESOURCE_SQL}
+     ORDER BY ${PROBE_PICK_ORDER_SQL} LIMIT 1`,
   );
   const calls = db.prepare("SELECT COALESCE(calls_30d_bazaar, 0) c FROM sellers WHERE id = ?");
   const ordered = [...sellerIds].sort((a, b) => (calls.get(b) as { c: number }).c - (calls.get(a) as { c: number }).c || a - b);
