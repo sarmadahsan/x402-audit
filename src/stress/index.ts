@@ -363,3 +363,126 @@ export function stressReport(db: Db): string {
   ];
   return out.join("\n") + "\n";
 }
+
+/** One settlement of a stress call, as `stress.json` publishes it: enough to find the transfer on-chain. */
+export interface StressSettlementRecord {
+  tx_hash: string;
+  log_index: number | null;
+  block_number: number | null;
+  block_at: string | null;
+  to: string;
+  value_usdc: string;
+  /** The EIP-3009 nonce read from the AuthorizationUsed event in the same transaction, when the lookup saw one. */
+  nonce: string | null;
+  source: string;
+  explorer_url: string;
+}
+
+/** One paid call of a stress intent, as `stress.json` publishes it. Never carries our wallet address. */
+export interface StressCallRecord {
+  test: "duplicate" | "timeout";
+  intent: string;
+  intent_short: string;
+  call: number;
+  resource: string;
+  called_at: string | null;
+  aborted_by_us: boolean;
+  paid: boolean;
+  amount_usdc: string | null;
+  pay_to: string | null;
+  /** The nonce in the EIP-3009 authorization this call signed. */
+  signed_nonce: string | null;
+  outcome: string | null;
+  settlements: StressSettlementRecord[];
+}
+
+/** One stress intent, as `stress.json` publishes it: the join key for `calls` and the count the tables show. */
+export interface StressIntentRecord {
+  test: "duplicate" | "timeout";
+  intent: string;
+  intent_short: string;
+  resource: string;
+  calls: number;
+  /** Distinct settlement transactions for the intent, however they were attributed to its calls. */
+  settlements: number;
+  double_settled: boolean;
+  /** Settlements matched to the intent but to none of its calls. Empty when every settlement has its call. */
+  unattributed_settlements: StressSettlementRecord[];
+}
+
+type SettlementRow = { tx_hash: string; log_index: number | null; block_number: number | null; block_ts: number | null; to_addr: string; value_atomic: string; nonce: string | null; source: string };
+
+const epochIso = (v: number | null | undefined): string | null => (v ? new Date(v < 1e12 ? v * 1000 : v).toISOString() : null);
+
+/**
+ * The per-call and per-intent records behind the stress tables, for `stress.json`. Each call lists the nonce it signed
+ * and the settlements matched to it (transaction hash, block, pay-to, value, the nonce the chain event carried), so a
+ * reader can check every row with one `authorizationState(authorizer, nonce)` call on the USDC contract and one look at
+ * the named transaction. The payer is not listed (the export never writes our wallets); it is the `from` of the
+ * transfer in the named transaction. `explorer` is the transaction URL prefix for the network.
+ */
+export function stressCalls(db: Db, explorer: string): { intents: StressIntentRecord[]; calls: StressCallRecord[] } {
+  type CallRow = { id: number; intent_id: string; url: string; ts: number; error: string | null; paid: number; amount_paid_atomic: string | null; quote_pay_to: string | null; nonce: string | null; outcome: string | null; source: string };
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.intent_id, r.url, c.ts, c.error, c.paid, c.amount_paid_atomic, c.quote_pay_to, c.nonce, c.outcome, c.source
+       FROM calls c JOIN resources r ON r.id = c.resource_id
+       WHERE c.source IN ('stress_duplicate', 'stress_timeout') ORDER BY c.id`,
+    )
+    .all() as CallRow[];
+  const cols = "tx_hash, log_index, block_number, block_ts, to_addr, value_atomic, nonce, source";
+  const byCall = db.prepare(`SELECT ${cols} FROM settlements WHERE call_id = ? ORDER BY block_number, log_index, id`);
+  const unattributed = db.prepare(`SELECT ${cols} FROM settlements WHERE intent_id = ? AND call_id IS NULL ORDER BY block_number, log_index, id`);
+  const record = (s: SettlementRow): StressSettlementRecord => ({
+    tx_hash: s.tx_hash,
+    log_index: s.log_index,
+    block_number: s.block_number,
+    block_at: epochIso(s.block_ts),
+    to: s.to_addr,
+    value_usdc: atomicToUsd(s.value_atomic),
+    nonce: s.nonce,
+    source: s.source,
+    explorer_url: explorer + s.tx_hash,
+  });
+  const test = (source: string): "duplicate" | "timeout" => (source === "stress_duplicate" ? "duplicate" : "timeout");
+  const seq = new Map<string, number>();
+  const calls: StressCallRecord[] = rows.map((c) => {
+    const k = `${c.source}\0${c.intent_id}`;
+    const n = (seq.get(k) ?? 0) + 1;
+    seq.set(k, n);
+    return {
+      test: test(c.source),
+      intent: c.intent_id,
+      intent_short: c.intent_id.slice(0, 8),
+      call: n,
+      resource: c.url,
+      called_at: epochIso(c.ts),
+      aborted_by_us: /^(aborted|timeout):/.test(c.error ?? ""),
+      paid: c.paid === 1,
+      amount_usdc: c.amount_paid_atomic && /^\d+$/.test(c.amount_paid_atomic) ? atomicToUsd(c.amount_paid_atomic) : null,
+      pay_to: c.quote_pay_to,
+      signed_nonce: c.nonce,
+      outcome: c.outcome,
+      settlements: (byCall.all(c.id) as SettlementRow[]).map(record),
+    };
+  });
+  const intents: StressIntentRecord[] = [];
+  const seen = new Set<string>();
+  for (const c of rows) {
+    const k = `${c.source}\0${c.intent_id}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const n = settlementsForIntent(db, c.intent_id);
+    intents.push({
+      test: test(c.source),
+      intent: c.intent_id,
+      intent_short: c.intent_id.slice(0, 8),
+      resource: c.url,
+      calls: seq.get(k) ?? 0,
+      settlements: n,
+      double_settled: n > 1,
+      unattributed_settlements: (unattributed.all(c.intent_id) as SettlementRow[]).map(record),
+    });
+  }
+  return { intents, calls };
+}
