@@ -374,7 +374,8 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   // Per-intent and per-call records behind the tables (2026-11-25, x402-foundation/x402#4367): the signed nonce, and
   // each settlement's transaction hash, block, pay-to, value and chain nonce, so every count in the tables is checkable
   // on-chain. The payer is not written (see the file comment); it is the `from` of the transfer in the named transaction.
-  const stress = stressCalls(db, explorer);
+  // One snapshot for the calls, their settlements and the per-intent counts: the loop may commit a settlement meanwhile.
+  const stress = db.transaction(() => stressCalls(db, explorer))();
   const stressJson = {
     ...header,
     summary: report.stress,
@@ -383,7 +384,7 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
     calls: stress.calls,
     verification: {
       usdc_contract: o.network === MAINNET ? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" : null,
-      how: "For a call, read the transfer in each settlement's tx_hash: its from is the authorizer. authorizationState(authorizer, signed_nonce) on the USDC contract is true once the authorization settled. Two settlements on one intent with two different signed nonces are two signatures by the client; the same nonce on two transactions cannot settle twice. The tables' settlements column counts distinct tx_hash per intent.",
+      how: "For a call, read the transaction in each settlement's tx_hash: the USDC Transfer in it names the authorizer as from, and an AuthorizationUsed(authorizer, nonce) event in the same transaction ties that transfer to the call's signed_nonce. That pair is the proof of settlement. authorizationState(authorizer, signed_nonce) on the USDC contract is only a first check: it turns true once the nonce was consumed, by a settlement or by a cancellation (AuthorizationCanceled), and never turns back, so false proves no settlement and true alone does not prove one. Two settlements on one intent with two different signed nonces are two signatures by the client; one nonce cannot be used twice. The tables' settlements column counts distinct tx_hash per intent.",
     },
   };
   const probeJson = { ...header, summary: report.probes, report_summary: probeMd.summary, tables: probeMd.sections };
@@ -655,7 +656,7 @@ Resources whose quote is above the per-call cap that applies to them (0.10 USDC 
 - \`tables\`: the stress report's tables (duplicate per resource, timeout per resource, totals) as rows keyed by column header. Its \`settlements\` column counts distinct settlement transactions per intent.
 - \`intents\`: one row per stress intent with the full \`intent\` id (the tables show its first 8 characters as \`intent_short\`), the test, the resource, the number of calls, the distinct settlement transactions and \`double_settled\`. \`unattributed_settlements\` lists settlements matched to the intent but to none of its calls; normally empty.
 - \`calls\` (since 2026-11-25): one row per paid stress call, in call order within the intent. \`signed_nonce\` is the EIP-3009 nonce of the authorization this call signed; \`aborted_by_us\` is whether we dropped the connection (timeout test, call 1); \`settlements\` lists every on-chain settlement matched to the call: \`tx_hash\`, \`log_index\`, \`block_number\`, \`block_at\`, \`to\` (the pay-to that received it), \`value_usdc\`, \`nonce\` (from the AuthorizationUsed event in that transaction, when the lookup saw one), \`source\` (chain, facilitator_header or x402scan) and \`explorer_url\`. Our wallet address is not listed, as nowhere in this export; it is the \`from\` of the transfer in the named transaction.
-- \`verification\`: how to check a row without trusting this file. USDC on Base exposes \`authorizationState(address authorizer, bytes32 nonce) -> bool\`; it is true exactly once the authorization settled. For a call, take the \`from\` of the transfer in any listed \`tx_hash\` as the authorizer and ask the contract about \`signed_nonce\`. Two settlements on one intent with two different \`signed_nonce\` values are two signatures by the client (the duplicate the test measures); one nonce can never settle twice, so a row claiming that would be a counting error, not a settlement.
+- \`verification\`: how to check a row without trusting this file. Open the transaction in a listed \`tx_hash\`: the USDC \`Transfer\` in it names the authorizer as \`from\`, and an \`AuthorizationUsed(authorizer, nonce)\` event in the same transaction ties that transfer to the call's \`signed_nonce\`. That pair is the proof of settlement. \`authorizationState(address authorizer, bytes32 nonce) -> bool\` on the USDC contract is a quick first check, not the proof: it turns true once the nonce was consumed, by a settlement or by a cancellation (\`AuthorizationCanceled\`), and never turns back, so false proves there was no settlement and true alone does not prove one. Two settlements on one intent with two different \`signed_nonce\` values are two signatures by the client (the duplicate the test measures); one nonce can never be used twice, so a row claiming that would be a counting error, not a settlement.
 
 ## probe.json
 - \`summary\`: probe rounds, probes, outcomes, and price event counts (price discrimination, pay-to changes, quote drift).
