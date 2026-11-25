@@ -12,7 +12,7 @@ import type { Db } from "../db/index.js";
 import { computeReport, countRate, dollarRate, modeOf } from "../report/compute.js";
 import { runQuery, SELLER_WINDOW_CALLS, type QueryParams } from "../report/queries.js";
 import { probeReport } from "../probe/report.js";
-import { stressReport } from "../stress/index.js";
+import { stressCalls, stressReport } from "../stress/index.js";
 import { AUDIT_SOURCES, CALL_SOURCES, HEADLINE_FAILURE_OUTCOMES, MEASURED_SOURCES } from "../taxonomy.js";
 import { sellerDenominatorCalls, sellerUniverse, SELLER_TARGET_CALLS } from "../buy/allocate.js";
 import { utcDayStart } from "../buy/guard.js";
@@ -371,7 +371,21 @@ export function runExport(db: Db, o: ExportOptions): { files: string[]; sellers:
   // ------------------------------------------------------- stress / probe
   const stressMd = markdownTables(stressReport(db));
   const probeMd = markdownTables(probeReport(db));
-  const stressJson = { ...header, summary: report.stress, tables: stressMd.sections };
+  // Per-intent and per-call records behind the tables (2026-11-25, x402-foundation/x402#4367): the signed nonce, and
+  // each settlement's transaction hash, block, pay-to, value and chain nonce, so every count in the tables is checkable
+  // on-chain. The payer is not written (see the file comment); it is the `from` of the transfer in the named transaction.
+  const stress = stressCalls(db, explorer);
+  const stressJson = {
+    ...header,
+    summary: report.stress,
+    tables: stressMd.sections,
+    intents: stress.intents,
+    calls: stress.calls,
+    verification: {
+      usdc_contract: o.network === MAINNET ? "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" : null,
+      how: "For a call, read the transfer in each settlement's tx_hash: its from is the authorizer. authorizationState(authorizer, signed_nonce) on the USDC contract is true once the authorization settled. Two settlements on one intent with two different signed nonces are two signatures by the client; the same nonce on two transactions cannot settle twice. The tables' settlements column counts distinct tx_hash per intent.",
+    },
+  };
   const probeJson = { ...header, summary: report.probes, report_summary: probeMd.summary, tables: probeMd.sections };
 
   // ------------------------------------------------- candidates / too_expensive
@@ -638,7 +652,10 @@ Resources whose quote is above the per-call cap that applies to them (0.10 USDC 
 ## stress.json
 - \`summary\`: duplicate test (intents, intents settled twice, rate, Wilson interval) and timeout test (intents, first call aborted, settled despite abort, retried, second settlement on retry).
 - Timeout test definitions. An intent is one seller: call 1 is sent with payment and the connection is dropped 2 seconds later, then call 2 retries like a naive client. \`first_call_aborted\` counts intents where the drop actually happened (call 1 ended with an abort or client timeout; a seller that answered within 2 seconds was not aborted). \`settled_despite_abort\` counts intents where call 1 was aborted and a settlement on-chain matches call 1 itself (its own nonce), so a settlement produced by the retry does not count. \`second_settlement_on_retry\` counts intents with a retry and at least two settlements in total.
-- \`tables\`: the stress report's tables (duplicate per resource, timeout per resource, totals) as rows keyed by column header.
+- \`tables\`: the stress report's tables (duplicate per resource, timeout per resource, totals) as rows keyed by column header. Its \`settlements\` column counts distinct settlement transactions per intent.
+- \`intents\`: one row per stress intent with the full \`intent\` id (the tables show its first 8 characters as \`intent_short\`), the test, the resource, the number of calls, the distinct settlement transactions and \`double_settled\`. \`unattributed_settlements\` lists settlements matched to the intent but to none of its calls; normally empty.
+- \`calls\` (since 2026-11-25): one row per paid stress call, in call order within the intent. \`signed_nonce\` is the EIP-3009 nonce of the authorization this call signed; \`aborted_by_us\` is whether we dropped the connection (timeout test, call 1); \`settlements\` lists every on-chain settlement matched to the call: \`tx_hash\`, \`log_index\`, \`block_number\`, \`block_at\`, \`to\` (the pay-to that received it), \`value_usdc\`, \`nonce\` (from the AuthorizationUsed event in that transaction, when the lookup saw one), \`source\` (chain, facilitator_header or x402scan) and \`explorer_url\`. Our wallet address is not listed, as nowhere in this export; it is the \`from\` of the transfer in the named transaction.
+- \`verification\`: how to check a row without trusting this file. USDC on Base exposes \`authorizationState(address authorizer, bytes32 nonce) -> bool\`; it is true exactly once the authorization settled. For a call, take the \`from\` of the transfer in any listed \`tx_hash\` as the authorizer and ask the contract about \`signed_nonce\`. Two settlements on one intent with two different \`signed_nonce\` values are two signatures by the client (the duplicate the test measures); one nonce can never settle twice, so a row claiming that would be a counting error, not a settlement.
 
 ## probe.json
 - \`summary\`: probe rounds, probes, outcomes, and price event counts (price discrimination, pay-to changes, quote drift).
